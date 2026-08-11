@@ -10,6 +10,7 @@ builder.Services.AddCors(options => options.AddPolicy("ViteLocal", policy =>
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSingleton<IGraphStore, GraphStore>();
+builder.Services.AddSingleton<IGraphFreshnessService, GraphFreshnessService>();
 builder.Services.AddTraceLensAnalyzer();
 
 var app = builder.Build();
@@ -21,6 +22,7 @@ var api = app.MapGroup("/api");
 api.MapAnalyzeEndpoints();
 api.MapGraphEndpoints();
 api.MapSourceEndpoints();
+api.MapFreshnessEndpoints();
 
 if (app.Environment.IsProduction())
 {

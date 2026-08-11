@@ -15,12 +15,24 @@ main { padding: 22px; min-height: 100vh; }
 .app-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 14px; }
 .app-header h1 { margin: 0; font-size: 28px; letter-spacing: -.04em; }
 .eyebrow { color: #7990ae; font-size: 11px; text-transform: uppercase; letter-spacing: .12em; }
-.app-header form { display: flex; width: min(720px, 65vw); gap: 8px; }
+.app-header form { display: flex; width: min(620px, 55vw); gap: 8px; }
 .app-header input { flex: 1; color: #e7edf7; background: #111827; border: 1px solid #2d3a4f; border-radius: 8px; padding: 10px 12px; }
 .primary { color: #08111b; background: #79d4ff; border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 750; }
 .analysis-summary { color: #97a8bf; font-size: 12px; margin: -7px 0 12px; text-align: right; }
 .global-error, .panel-message.error { color: #ffb4b4; background: #5a202633; border: 1px solid #7b343f; }
 .global-error { padding: 10px 14px; margin-bottom: 12px; border-radius: 8px; }
+.freshness-control { display: flex; align-items: center; gap: 6px; margin-left: auto; white-space: nowrap; }
+.freshness-control > button { color: #b9c7d9; background: #111827; border: 1px solid #304059; border-radius: 999px; padding: 6px 10px; font-size: 11px; }
+.freshness-control > button:hover:not(:disabled) { color: #e7edf7; border-color: #4d6383; }
+.freshness-badge { display: flex; align-items: center; gap: 6px; color: #91a1b6; background: #172131; border: 1px solid #2b394d; border-radius: 999px; padding: 6px 10px; font-size: 11px; font-weight: 700; }
+.freshness-dot { width: 7px; height: 7px; border-radius: 50%; background: #8390a2; }
+.freshness-badge.fresh { color: #9de2c7; background: #12342c; border-color: #286c58; }
+.freshness-badge.fresh .freshness-dot { background: #64ddb0; box-shadow: 0 0 7px #64ddb088; }
+.freshness-badge.stale { color: #ffc68e; background: #422a17; border-color: #89552b; }
+.freshness-badge.stale .freshness-dot { background: #ffa652; box-shadow: 0 0 7px #ffa65288; }
+.freshness-badge.unknown { color: #ffaaaa; background: #3a2025; border-color: #753942; }
+.freshness-badge.checking .freshness-dot { animation: freshness-pulse 1s ease-in-out infinite alternate; }
+@keyframes freshness-pulse { to { opacity: .3; } }
 
 .workspace { display: grid; grid-template-columns: 245px minmax(450px, 1fr) minmax(390px, .8fr); gap: 12px; height: calc(100vh - 105px); min-height: 650px; }
 .panel { background: #111827e8; border: 1px solid #263247; border-radius: 10px; overflow: hidden; }

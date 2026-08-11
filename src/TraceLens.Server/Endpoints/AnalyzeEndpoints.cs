@@ -10,7 +10,7 @@ public static class AnalyzeEndpoints
         return group;
     }
 
-    private static async Task<IResult> AnalyzeAsync(
+    internal static async Task<IResult> AnalyzeAsync(
         AnalyzeRequest request,
         ITraceLensAnalyzer analyzer,
         IGraphStore graphStore,
@@ -23,15 +23,16 @@ public static class AnalyzeEndpoints
 
         try
         {
+            var previousAnalyzedAt = graphStore.Current?.AnalyzedAt;
             var result = await analyzer.AnalyzeAsync(request.SolutionPath, cancellationToken);
             graphStore.Set(result.Graph);
-            return Results.Ok(new
-            {
-                entryPointCount = result.Graph.EntryPoints.Count,
-                nodeCount = result.Graph.Nodes.Count,
-                edgeCount = result.Graph.Edges.Count,
-                result.ElapsedMs
-            });
+            return Results.Ok(new AnalyzeResponse(
+                result.Graph.EntryPoints.Count,
+                result.Graph.Nodes.Count,
+                result.Graph.Edges.Count,
+                result.ElapsedMs,
+                result.Graph.AnalyzedAt,
+                previousAnalyzedAt));
         }
         catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
         {
@@ -41,3 +42,11 @@ public static class AnalyzeEndpoints
 }
 
 public sealed record AnalyzeRequest(string SolutionPath);
+
+public sealed record AnalyzeResponse(
+    int EntryPointCount,
+    int NodeCount,
+    int EdgeCount,
+    long ElapsedMs,
+    DateTimeOffset AnalyzedAt,
+    DateTimeOffset? PreviousAnalyzedAt);

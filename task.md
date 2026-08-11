@@ -82,7 +82,7 @@
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| POST | `/api/analyze` | body `{ "solutionPath": string }`. 분석을 동기 실행하고 결과 요약(`{ entryPointCount, nodeCount, edgeCount, elapsedMs }`)을 반환. 서버는 마지막으로 분석한 `solutionPath`를 프로세스 메모리에 상태로 유지한다(로컬 단일 사용자 도구이므로 세션 관리 불필요). |
+| POST | `/api/analyze` | body `{ "solutionPath": string }`. 분석을 동기 실행하고 결과 요약(`{ entryPointCount, nodeCount, edgeCount, elapsedMs, analyzedAt, previousAnalyzedAt }`)을 반환. 첫 분석의 `previousAnalyzedAt`은 `null`이다. 서버는 마지막으로 분석한 `solutionPath`를 프로세스 메모리에 상태로 유지한다(로컬 단일 사용자 도구이므로 세션 관리 불필요). |
 | GET | `/api/graph/entrypoints` | 현재 로드된 그래프의 진입점 목록(`entryPoints`)을 반환. 초기 화면에서 "어떤 엔드포인트부터 볼지" 선택에 사용. |
 | GET | `/api/graph` | 현재 로드된 `GraphDocument` 전체(`nodes`, `edges`)를 반환. 레벨 단위로 어떻게 보여줄지는 프론트엔드가 결정한다(0.6 참고). |
 | GET | `/api/source?file=&start=&end=` | 지정한 파일의 `start`~`end` 라인을 반환. `file`이 `solutionPath` 하위 경로가 아니면 400을 반환한다(경로 탈출 방지). |
@@ -148,18 +148,18 @@
 
 ### 2.1 Server
 
-- [ ] `GET /api/freshness` 구현: 저장된 `fileHashes`의 각 파일을 다시 읽어 해시 재계산, 하나라도 다르면 `stale` + 변경된 파일 목록 반환
-- [ ] `POST /api/analyze` 재호출(=재분석) 시 기존 `graph.json`을 덮어쓰기 전에 이전 `analyzedAt`을 응답에 함께 포함(프론트에서 "이전: hh:mm → 이후: hh:mm" 같은 표시에 사용 가능)
+- [x] `GET /api/freshness` 구현: 저장된 `fileHashes`의 각 파일을 다시 읽어 해시 재계산, 하나라도 다르면 `stale` + 변경된 파일 목록 반환
+- [x] `POST /api/analyze` 재호출(=재분석) 시 기존 `graph.json`을 덮어쓰기 전에 이전 `analyzedAt`을 응답에 함께 포함(프론트에서 "이전: hh:mm → 이후: hh:mm" 같은 표시에 사용 가능)
 
 ### 2.2 Client
 
-- [ ] `FreshnessBadge.tsx`: 화면 진입 시 및 일정 주기(예: 30초)로 `/api/freshness` 폴링, 상태에 따라 배지 스타일 전환(목업의 fresh/stale 배지 디자인 재사용)
-- [ ] "다시 분석" 버튼: `/api/analyze` 재호출 → 그래프/배지 갱신, 진행 중에는 버튼 비활성화 + 로딩 표시
+- [x] `FreshnessBadge.tsx`: 화면 진입 시 및 일정 주기(예: 30초)로 `/api/freshness` 폴링, 상태에 따라 배지 스타일 전환(목업의 fresh/stale 배지 디자인 재사용)
+- [x] "다시 분석" 버튼: `/api/analyze` 재호출 → 그래프/배지 갱신, 진행 중에는 버튼 비활성화 + 로딩 표시
 
 ### 2.3 완료 기준
 
-- [ ] 그래프에 포함된 파일 하나를 실제로 수정한 뒤 새로고침 없이도 배지가 "변경됨"으로 바뀐다
-- [ ] "다시 분석"을 누르면 배지가 "최신 상태"로 돌아오고 그래프에 변경 사항이 반영된다
+- [x] 그래프에 포함된 파일 하나를 실제로 수정한 뒤 새로고침 없이도 배지가 "변경됨"으로 바뀐다
+- [x] "다시 분석"을 누르면 배지가 "최신 상태"로 돌아오고 그래프에 변경 사항이 반영된다
 
 ---
 

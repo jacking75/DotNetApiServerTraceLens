@@ -43,6 +43,14 @@ export interface AnalyzeSummary {
   nodeCount: number
   edgeCount: number
   elapsedMs: number
+  analyzedAt: string
+  previousAnalyzedAt: string | null
+}
+
+export interface FreshnessResponse {
+  status: 'fresh' | 'stale'
+  analyzedAt: string
+  changedFiles: string[]
 }
 
 export interface SourceResponse {

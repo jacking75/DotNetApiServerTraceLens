@@ -2,11 +2,18 @@ import { lazy, Suspense, useCallback, useState } from 'react'
 import { analyzeSolution, getEntryPoints, getGraph } from './api/client'
 import { AskPanel } from './components/AskPanel'
 import { Breadcrumb, type BreadcrumbItem } from './components/Breadcrumb'
+import { FreshnessBadge } from './components/FreshnessBadge'
 import { findNode, getDrilldownWindow, getInitialWindow } from './graph/windowing'
 import type { AnalyzeSummary, EntryPoint, GraphDocument, GraphNode, GraphWindow } from './types/graph'
 
 const CodePanel = lazy(() => import('./components/CodePanel').then((module) => ({ default: module.CodePanel })))
 const GraphView = lazy(() => import('./components/GraphView').then((module) => ({ default: module.GraphView })))
+
+const formatTime = (value: string) => new Intl.DateTimeFormat('ko-KR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+}).format(new Date(value))
 
 export default function App() {
   const [solutionPath, setSolutionPath] = useState('')
@@ -15,22 +22,48 @@ export default function App() {
   const [graph, setGraph] = useState<GraphDocument | null>(null)
   const [graphWindow, setGraphWindow] = useState<GraphWindow | null>(null)
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
+  const [selectedEntryPointId, setSelectedEntryPointId] = useState<string | null>(null)
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([])
+  const [freshnessRevision, setFreshnessRevision] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const analyze = async () => {
+  const analyze = async (isReanalysis = false) => {
     if (!solutionPath.trim()) return
     setBusy(true)
     setError(null)
-    setGraph(null)
-    setGraphWindow(null)
-    setSelectedNode(null)
+    if (!isReanalysis) {
+      setSummary(null)
+      setEntryPoints([])
+      setGraph(null)
+      setGraphWindow(null)
+      setSelectedNode(null)
+      setSelectedEntryPointId(null)
+      setBreadcrumbs([])
+    }
     try {
       const nextSummary = await analyzeSolution(solutionPath.trim())
       const nextEntryPoints = await getEntryPoints()
       setSummary(nextSummary)
       setEntryPoints(nextEntryPoints)
+      if (isReanalysis && selectedEntryPointId) {
+        const selectedEntryPoint = nextEntryPoints.find((entryPoint) => entryPoint.nodeId === selectedEntryPointId)
+        if (selectedEntryPoint) {
+          const nextGraph = await getGraph()
+          const node = findNode(nextGraph, selectedEntryPoint.nodeId) ?? null
+          setGraph(nextGraph)
+          setGraphWindow(getInitialWindow(nextGraph, selectedEntryPoint.nodeId))
+          setSelectedNode(node)
+          setBreadcrumbs([{ nodeId: selectedEntryPoint.nodeId, label: node?.displayName ?? selectedEntryPoint.route }])
+        } else {
+          setGraph(null)
+          setGraphWindow(null)
+          setSelectedNode(null)
+          setSelectedEntryPointId(null)
+          setBreadcrumbs([])
+        }
+      }
+      setFreshnessRevision((current) => current + 1)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '분석에 실패했다.')
     } finally {
@@ -48,6 +81,7 @@ export default function App() {
       setGraph(nextGraph)
       setGraphWindow(initialWindow)
       setSelectedNode(node)
+      setSelectedEntryPointId(entryPoint.nodeId)
       setBreadcrumbs([{ nodeId: entryPoint.nodeId, label: node?.displayName ?? entryPoint.route }])
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '그래프를 불러오지 못했다.')
@@ -79,7 +113,13 @@ export default function App() {
           <div className="eyebrow">ASP.NET Core call explorer</div>
           <h1>TraceLens</h1>
         </div>
-        <form onSubmit={(event) => { event.preventDefault(); void analyze() }}>
+        <FreshnessBadge
+          canReanalyze={summary !== null}
+          refreshKey={freshnessRevision}
+          analyzing={busy}
+          onReanalyze={() => analyze(true)}
+        />
+        <form onSubmit={(event) => { event.preventDefault(); void analyze(false) }}>
           <input
             value={solutionPath}
             onChange={(event) => setSolutionPath(event.target.value)}
@@ -96,6 +136,9 @@ export default function App() {
       {summary && (
         <div className="analysis-summary">
           진입점 {summary.entryPointCount} · 노드 {summary.nodeCount} · 엣지 {summary.edgeCount} · {summary.elapsedMs}ms
+          {summary.previousAnalyzedAt && (
+            <> · 재분석 {formatTime(summary.previousAnalyzedAt)} → {formatTime(summary.analyzedAt)}</>
+          )}
         </div>
       )}
 

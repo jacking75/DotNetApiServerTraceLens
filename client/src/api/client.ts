@@ -1,4 +1,4 @@
-import type { AnalyzeSummary, EntryPoint, GraphDocument, SourceResponse } from '../types/graph'
+import type { AnalyzeSummary, EntryPoint, FreshnessResponse, GraphDocument, SourceResponse } from '../types/graph'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
@@ -24,6 +24,10 @@ export function getEntryPoints(): Promise<EntryPoint[]> {
 
 export function getGraph(): Promise<GraphDocument> {
   return request('/api/graph')
+}
+
+export function getFreshness(): Promise<FreshnessResponse> {
+  return request('/api/freshness')
 }
 
 export function getSource(file: string, start: number, end: number): Promise<SourceResponse> {
