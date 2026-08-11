@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
     <ProjectReference Include="..\TraceLens.Analyzer\TraceLens.Analyzer.csproj" />
+    <ProjectReference Include="..\TraceLens.Mcp\TraceLens.Mcp.csproj" />
   </ItemGroup>
 </Project>

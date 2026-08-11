@@ -169,27 +169,27 @@
 
 ### 3.1 TraceLens.Mcp (신규 프로젝트)
 
-- [ ] 공식 MCP C# SDK(`ModelContextProtocol` 패키지)로 stdio 기반 로컬 MCP 서버 구성
-- [ ] 도구: `get_node(nodeId)` — 노드 메타데이터 + 소스 반환, `get_source(file, startLine, endLine)`, `get_callers(nodeId)` / `get_callees(nodeId)` — 그래프 인접 노드 조회, `get_entrypoints()`, `search_symbol(query)` — 이름으로 노드 검색
-- [ ] 데이터 소스는 현재 로드된 `.tracelens/graph.json`을 그대로 읽음(Server와 파일을 공유, 별도 DB 없음)
-- [ ] Claude Code 쪽 설정 예시를 `docs/mcp-setup.md`에 기록(`claude mcp add` 명령 또는 `.mcp.json` 예시)
+- [x] 공식 MCP C# SDK(`ModelContextProtocol` 패키지)로 stdio 기반 로컬 MCP 서버 구성
+- [x] 도구: `get_node(nodeId)` — 노드 메타데이터 + 소스 반환, `get_source(file, startLine, endLine)`, `get_callers(nodeId)` / `get_callees(nodeId)` — 그래프 인접 노드 조회, `get_entrypoints()`, `search_symbol(query)` — 이름으로 노드 검색
+- [x] 데이터 소스는 현재 로드된 `.tracelens/graph.json`을 그대로 읽음(Server와 파일을 공유, 별도 DB 없음)
+- [x] Claude Code 쪽 설정 예시를 `docs/mcp-setup.md`에 기록(`claude mcp add` 명령 또는 `.mcp.json` 예시)
 
 ### 3.2 Server
 
-- [ ] `POST /api/ask` 중 `mode: "mcp"` 처리: 캡처된 위치 정보 + 질문을 프롬프트로 포맷 → `claude -p "<prompt>" --mcp-config <mcp 설정 경로>`를 `System.Diagnostics.Process`로 헤드리스 실행 → stdout을 Server-Sent Events로 클라이언트에 스트리밍
-- [ ] `mode: "editor"` 처리: 서버가 `code --goto {file}:{line}`을 로컬 프로세스로 실행(실패 시 프론트가 `vscode://file/...` URI를 여는 방식으로 폴백)
-- [ ] 프로세스 실행 로직은 테스트 가능하도록 `IProcessRunner` 인터페이스로 감싸서 실제 프로세스 실행 없이 단위 테스트 가능하게 함
+- [x] `POST /api/ask` 중 `mode: "mcp"` 처리: 캡처된 위치 정보 + 질문을 프롬프트로 포맷 → `claude -p "<prompt>" --mcp-config <mcp 설정 경로>`를 `System.Diagnostics.Process`로 헤드리스 실행 → stdout을 Server-Sent Events로 클라이언트에 스트리밍
+- [x] `mode: "editor"` 처리: 서버가 `code --goto {file}:{line}`을 로컬 프로세스로 실행(실패 시 프론트가 `vscode://file/...` URI를 여는 방식으로 폴백)
+- [x] 프로세스 실행 로직은 테스트 가능하도록 `IProcessRunner` 인터페이스로 감싸서 실제 프로세스 실행 없이 단위 테스트 가능하게 함
 
 ### 3.3 Client
 
-- [ ] `AskPanel.tsx`에 "MCP 직접 연동" 모드 활성화: `/api/ask` 호출 + SSE 구독, 응답 스트림을 채팅 버블 형태로 표시(목업의 로그 영역 UI 재사용)
-- [ ] "에디터에서 열기" 모드 연결
+- [x] `AskPanel.tsx`에 "MCP 직접 연동" 모드 활성화: `/api/ask` 호출 + SSE 구독, 응답 스트림을 채팅 버블 형태로 표시(목업의 로그 영역 UI 재사용)
+- [x] "에디터에서 열기" 모드 연결
 
 ### 3.4 완료 기준
 
-- [ ] Claude Code가 로컬 MCP 서버의 도구 목록을 인식하고 `get_source` 등을 실제로 호출할 수 있다
+- [x] Claude Code가 로컬 MCP 서버의 도구 목록을 인식하고 `get_source` 등을 실제로 호출할 수 있다
 - [ ] 그래프에서 노드를 선택하고 "MCP 직접 연동"으로 질문을 보내면, 실제 Claude Code 응답이 UI 로그 영역에 스트리밍되어 보인다
-- [ ] 클립보드/에디터 모드가 3단계 이후에도 그대로 동작한다(회귀 없음)
+- [x] 클립보드/에디터 모드가 3단계 이후에도 그대로 동작한다(회귀 없음)
 
 ---
 

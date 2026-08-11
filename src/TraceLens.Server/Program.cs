@@ -11,6 +11,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSingleton<IGraphStore, GraphStore>();
 builder.Services.AddSingleton<IGraphFreshnessService, GraphFreshnessService>();
+builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
+builder.Services.AddSingleton<IMcpConfigWriter, McpConfigWriter>();
 builder.Services.AddTraceLensAnalyzer();
 
 var app = builder.Build();
@@ -23,6 +25,7 @@ api.MapAnalyzeEndpoints();
 api.MapGraphEndpoints();
 api.MapSourceEndpoints();
 api.MapFreshnessEndpoints();
+api.MapAskEndpoints();
 
 if (app.Environment.IsProduction())
 {

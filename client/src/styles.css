@@ -57,12 +57,23 @@ main { padding: 22px; min-height: 100vh; }
 .graph-canvas { width: 100%; height: 100%; }
 .graph-help { position: absolute; z-index: 2; bottom: 10px; left: 12px; color: #75859a; font-size: 11px; pointer-events: none; }
 
-.right-column { display: grid; grid-template-rows: minmax(340px, 1fr) 290px; gap: 12px; min-height: 0; }
+.right-column { display: grid; grid-template-rows: minmax(320px, 1fr) minmax(310px, .9fr); gap: 12px; min-height: 0; }
 .code-panel { display: flex; flex-direction: column; min-height: 0; }
 .code-panel > section, .code-panel > .monaco-editor { flex: 1; }
 .tracelens-highlight { background: #24456555; border-left: 2px solid #79d4ff; }
-.ask-panel { padding-bottom: 12px; }
+.ask-panel { display: flex; flex-direction: column; min-height: 0; }
+.ask-mode-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 8px 12px 0; }
+.ask-mode-tabs button { color: #8290a4; background: #0c1320; border: 1px solid #263247; border-radius: 6px; padding: 6px 5px; font-size: 10px; }
+.ask-mode-tabs button.active { color: #a9e7ff; border-color: #3e7695; background: #153044; }
+.ask-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 12px; }
 .captured-context { margin: 12px; padding: 10px; color: #a8b5c7; background: #0c1320; border: 1px solid #263247; border-radius: 7px; font-family: Consolas, monospace; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .ask-panel textarea { display: block; width: calc(100% - 24px); height: 72px; margin: 0 12px 8px; resize: none; color: #e7edf7; background: #0c1320; border: 1px solid #2c3b52; border-radius: 7px; padding: 9px; }
-.ask-panel > .primary { margin-left: 12px; }
-.copy-message { display: inline; margin-left: 10px; color: #8acfb9; font-size: 11px; }
+.ask-actions { display: flex; align-items: center; gap: 10px; margin: 0 12px; }
+.copy-message { color: #8acfb9; font-size: 11px; line-height: 1.4; }
+.ask-response { display: flex; flex-direction: column; gap: 7px; margin: 0 12px 9px; }
+.chat-bubble { max-width: 92%; padding: 8px 10px; border-radius: 8px; font-size: 11px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-bubble.user { align-self: flex-end; color: #d9eff9; background: #1d4860; }
+.chat-bubble.assistant { align-self: flex-start; color: #dce6f3; background: #1c2738; border: 1px solid #304059; }
+.ask-response details { color: #75859a; font-size: 10px; }
+.ask-response summary { cursor: pointer; }
+.ask-response pre { max-height: 90px; overflow: auto; white-space: pre-wrap; }

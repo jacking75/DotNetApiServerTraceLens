@@ -31,7 +31,7 @@ flowchart TB
     subgraph Local["로컬 머신 (localhost 전용)"]
         Server[TraceLens.Server\nASP.NET Core Minimal API]
         Analyzer[TraceLens.Analyzer\nRoslyn 기반 분석기]
-        Mcp["TraceLens.Mcp\n(3단계) 로컬 전용 MCP 서버"]
+        Mcp["TraceLens.Mcp\n로컬 전용 MCP 서버"]
         CC[Claude Code CLI]
     end
 
@@ -46,8 +46,8 @@ flowchart TB
     Analyzer -->|파싱| Target
     Analyzer -->|결과 저장| Graph
     Server -->|결과 로드| Graph
-    Server -.->|3단계: 헤드리스 호출| CC
-    CC -.->|3단계: 도구 조회| Mcp
+    Server -.->|헤드리스 호출| CC
+    CC -.->|도구 조회| Mcp
     Mcp -.->|소스/노드 조회| Graph
 ```
 
@@ -59,7 +59,7 @@ flowchart TB
 | 서버 | ASP.NET Core Minimal API | 그래프 서빙, 소스 서빙, React 정적 파일 호스팅을 겸함 |
 | 프론트엔드 | React + TypeScript (Vite) | Cytoscape.js(그래프), Monaco Editor(코드 뷰) |
 | 데이터 저장 | JSON 파일 (`.tracelens/` 아래) | 구현 단순함 우선, 필요해지면 이후 교체 검토 |
-| 에이전트 연동 | Claude Code CLI + 로컬 MCP 서버 | 3단계에서 추가, 원격 노출 없이 로컬에서만 동작 |
+| 에이전트 연동 | Claude Code CLI + 로컬 MCP 서버 | 원격 노출 없이 로컬에서만 동작 |
 
 ## 시작하기
 

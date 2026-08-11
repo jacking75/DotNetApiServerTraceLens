@@ -59,3 +59,22 @@ export interface SourceResponse {
   endLine: number
   content: string
 }
+
+export type AskMode = 'clipboard' | 'mcp' | 'editor'
+
+export interface AskRequest {
+  nodeId: string
+  question: string | null
+  mode: 'mcp' | 'editor'
+}
+
+export interface AskEvent {
+  type: 'delta' | 'log' | 'error' | 'done'
+  text: string | null
+}
+
+export interface EditorResponse {
+  opened: boolean
+  fallbackUri: string
+  error: string | null
+}
