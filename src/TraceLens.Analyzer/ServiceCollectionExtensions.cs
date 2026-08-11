@@ -1,0 +1,15 @@
+using Microsoft.Extensions.DependencyInjection;
+
+namespace TraceLens.Analyzer;
+
+public static class ServiceCollectionExtensions
+{
+    public static IServiceCollection AddTraceLensAnalyzer(this IServiceCollection services) => services
+        .AddScoped<SolutionLoader>()
+        .AddScoped<EntryPointScanner>()
+        .AddScoped<DiResolver>()
+        .AddScoped<NodeClassifier>()
+        .AddScoped<CallGraphWalker>()
+        .AddScoped<SnapshotHasher>()
+        .AddScoped<ITraceLensAnalyzer, TraceLensAnalyzer>();
+}

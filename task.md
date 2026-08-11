@@ -107,38 +107,38 @@
 
 ### 1.1 Analyzer
 
-- [ ] `SolutionLoader`: `MSBuildWorkspace`로 `.sln` 로드, 컴파일 성공 여부 확인, 실패한 프로젝트는 경고만 남기고 계속 진행
-- [ ] `EntryPointScanner`: `tracelens.config.json`의 `entryPointAttributes`에 해당하는 액션 메서드를 전체 프로젝트에서 스캔, `httpMethod`/`route` 추출(클래스 레벨 `[Route]` + 메서드 레벨 라우트 결합)
-- [ ] `DiResolver`: `Program.cs`(또는 `Startup.cs`)의 `AddScoped<TInterface, TImpl>` 등록 구문을 파싱해서 인터페이스 → 구현체 매핑 테이블 생성. 매핑을 못 찾으면 해당 호출은 그래프에서 제외하고 로그만 남김(예외로 죽지 않게)
-- [ ] `CallGraphWalker`: 진입점부터 BFS로 호출 그래프 탐색. 각 메서드 본문의 `InvocationExpressionSyntax`를 세만틱 모델로 심볼 해석 → 인터페이스면 `DiResolver`로 구현체 해석 → 해석된 메서드가 분석 대상 솔루션 내부 코드면 재귀 진행, 아니면(BCL/외부 패키지) 그래프에 포함하지 않고 무시. `maxCallDepth` 도달 시 중단
-- [ ] `NodeClassifier`: `tracelens.config.json`의 `kindRules`로 각 노드의 `kind` 결정
-- [ ] `SnapshotHasher`: 그래프에 등장한 파일들의 SHA-256 계산
-- [ ] `GraphDocument` 직렬화 (`System.Text.Json`), `.tracelens/graph.json`으로 저장
-- [ ] 단위 테스트: `tests/TraceLens.Analyzer.Tests/Fixtures`에 컨트롤러 1개 + 서비스 1개 + 리포지토리 1개짜리 미니 솔루션을 만들어두고, 분석 결과 노드 수/엣지 수/kind 분류가 기대값과 일치하는지 검증
+- [x] `SolutionLoader`: `MSBuildWorkspace`로 `.sln` 로드, 컴파일 성공 여부 확인, 실패한 프로젝트는 경고만 남기고 계속 진행
+- [x] `EntryPointScanner`: `tracelens.config.json`의 `entryPointAttributes`에 해당하는 액션 메서드를 전체 프로젝트에서 스캔, `httpMethod`/`route` 추출(클래스 레벨 `[Route]` + 메서드 레벨 라우트 결합)
+- [x] `DiResolver`: `Program.cs`(또는 `Startup.cs`)의 `AddScoped<TInterface, TImpl>` 등록 구문을 파싱해서 인터페이스 → 구현체 매핑 테이블 생성. 매핑을 못 찾으면 해당 호출은 그래프에서 제외하고 로그만 남김(예외로 죽지 않게)
+- [x] `CallGraphWalker`: 진입점부터 BFS로 호출 그래프 탐색. 각 메서드 본문의 `InvocationExpressionSyntax`를 세만틱 모델로 심볼 해석 → 인터페이스면 `DiResolver`로 구현체 해석 → 해석된 메서드가 분석 대상 솔루션 내부 코드면 재귀 진행, 아니면(BCL/외부 패키지) 그래프에 포함하지 않고 무시. `maxCallDepth` 도달 시 중단
+- [x] `NodeClassifier`: `tracelens.config.json`의 `kindRules`로 각 노드의 `kind` 결정
+- [x] `SnapshotHasher`: 그래프에 등장한 파일들의 SHA-256 계산
+- [x] `GraphDocument` 직렬화 (`System.Text.Json`), `.tracelens/graph.json`으로 저장
+- [x] 단위 테스트: `tests/TraceLens.Analyzer.Tests/Fixtures`에 컨트롤러 1개 + 서비스 1개 + 리포지토리 1개짜리 미니 솔루션을 만들어두고, 분석 결과 노드 수/엣지 수/kind 분류가 기대값과 일치하는지 검증
 
 ### 1.2 Server
 
-- [ ] `Program.cs`: Minimal API 부트스트랩, `.tracelens` 폴더 관리, 마지막 분석 결과를 메모리에 캐시하는 `IGraphStore` 싱글톤
-- [ ] `POST /api/analyze`, `GET /api/graph/entrypoints`, `GET /api/graph`, `GET /api/source` 구현 (0.5 계약대로)
-- [ ] `/api/source`의 경로 검증 로직: `Path.GetFullPath`로 정규화 후 `solutionPath` 하위인지 확인, 아니면 400
-- [ ] 개발 중에는 Vite dev server(`localhost:5173`)에서 오는 요청을 CORS로 허용(로컬 전용이므로 `localhost`만 허용 목록에 추가)
+- [x] `Program.cs`: Minimal API 부트스트랩, `.tracelens` 폴더 관리, 마지막 분석 결과를 메모리에 캐시하는 `IGraphStore` 싱글톤
+- [x] `POST /api/analyze`, `GET /api/graph/entrypoints`, `GET /api/graph`, `GET /api/source` 구현 (0.5 계약대로)
+- [x] `/api/source`의 경로 검증 로직: `Path.GetFullPath`로 정규화 후 `solutionPath` 하위인지 확인, 아니면 400
+- [x] 개발 중에는 Vite dev server(`localhost:5173`)에서 오는 요청을 CORS로 허용(로컬 전용이므로 `localhost`만 허용 목록에 추가)
 
 ### 1.3 Client
 
-- [ ] `App.tsx`: 솔루션 경로 입력 → `/api/analyze` 호출 → 진입점 목록 표시 → 진입점 선택 시 그래프 로드
-- [ ] `GraphView.tsx`: Cytoscape.js로 노드/엣지 렌더링, `breadthfirst` 또는 `dagre` 레이아웃으로 위→아래 흐름 표현, 0.6의 윈도잉 로직 적용, 노드 클릭 이벤트로 선택 상태 갱신, 분기 지점 노드에는 드릴다운 아이콘 표시
-- [ ] `client/src/graph/windowing.ts`: 포커스 노드 + 레벨에 따라 보여줄 노드/엣지 서브셋을 계산하는 순수 함수, 단위 테스트 포함
-- [ ] `CodePanel.tsx`: 선택된 노드의 `file`/`startLine`/`endLine`으로 `/api/source` 호출, Monaco Editor(읽기 전용)에 표시하고 대상 라인 강조
-- [ ] `AskPanel.tsx`: 선택된 노드의 파일/라인/심볼을 표시, 질문 입력창, "클립보드 복사" 모드만 1단계에서 동작하도록 구현(포맷은 목업의 `파일/라인/심볼/질문` 텍스트 블록과 동일하게 유지)
-- [ ] breadcrumb 컴포넌트: 현재 레벨/포커스 경로 표시, 클릭으로 이전 레벨 복귀
+- [x] `App.tsx`: 솔루션 경로 입력 → `/api/analyze` 호출 → 진입점 목록 표시 → 진입점 선택 시 그래프 로드
+- [x] `GraphView.tsx`: Cytoscape.js로 노드/엣지 렌더링, `breadthfirst` 또는 `dagre` 레이아웃으로 위→아래 흐름 표현, 0.6의 윈도잉 로직 적용, 노드 클릭 이벤트로 선택 상태 갱신, 분기 지점 노드에는 드릴다운 아이콘 표시
+- [x] `client/src/graph/windowing.ts`: 포커스 노드 + 레벨에 따라 보여줄 노드/엣지 서브셋을 계산하는 순수 함수, 단위 테스트 포함
+- [x] `CodePanel.tsx`: 선택된 노드의 `file`/`startLine`/`endLine`으로 `/api/source` 호출, Monaco Editor(읽기 전용)에 표시하고 대상 라인 강조
+- [x] `AskPanel.tsx`: 선택된 노드의 파일/라인/심볼을 표시, 질문 입력창, "클립보드 복사" 모드만 1단계에서 동작하도록 구현(포맷은 목업의 `파일/라인/심볼/질문` 텍스트 블록과 동일하게 유지)
+- [x] breadcrumb 컴포넌트: 현재 레벨/포커스 경로 표시, 클릭으로 이전 레벨 복귀
 
 ### 1.4 완료 기준
 
-- [ ] 컨트롤러 3~4개 정도의 실제(또는 샘플) ASP.NET Core 솔루션 경로를 입력하면 분석이 끝나고 진입점 목록이 뜬다
-- [ ] 진입점을 고르면 Level 1 그래프가 그려지고, 분기 지점에 드릴다운 아이콘이 보인다
-- [ ] 노드를 클릭하면 오른쪽에 실제 소스 코드가 해당 라인 강조와 함께 뜬다
-- [ ] 드릴다운 클릭 시 하위 흐름으로 이동하고 breadcrumb으로 되돌아갈 수 있다
-- [ ] "클립보드 복사"를 누르면 파일/라인/심볼/질문이 포함된 텍스트가 실제로 클립보드에 담긴다
+- [x] 컨트롤러 3~4개 정도의 실제(또는 샘플) ASP.NET Core 솔루션 경로를 입력하면 분석이 끝나고 진입점 목록이 뜬다
+- [x] 진입점을 고르면 Level 1 그래프가 그려지고, 분기 지점에 드릴다운 아이콘이 보인다
+- [x] 노드를 클릭하면 오른쪽에 실제 소스 코드가 해당 라인 강조와 함께 뜬다
+- [x] 드릴다운 클릭 시 하위 흐름으로 이동하고 breadcrumb으로 되돌아갈 수 있다
+- [x] "클립보드 복사"를 누르면 파일/라인/심볼/질문이 포함된 텍스트가 실제로 클립보드에 담긴다
 
 ---
 

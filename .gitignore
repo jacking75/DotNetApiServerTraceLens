@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/client/node_modules/
 /.pnp
 .pnp.js
 
@@ -14,6 +15,15 @@
 
 # production
 /build
+/src/TraceLens.Server/wwwroot/
+
+# .NET
+**/bin/
+**/obj/
+.vs/
+.idea/
+*.user
+/tests/TraceLens.Analyzer.Tests/Fixtures/**/.tracelens/
 
 # misc
 .DS_Store
