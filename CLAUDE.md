@@ -18,6 +18,7 @@ ASP.NET Core Web API 코드베이스의 호출 흐름을 진입점 기준 그래
 ```
 tracelens/
 ├── CLAUDE.md
+├── run.ps1                       # 빌드 + 실행을 한 번에 하는 스크립트
 ├── README.md
 ├── task.md
 ├── TraceLens.sln
@@ -40,6 +41,7 @@ tracelens/
 │   │   ├── Program.cs
 │   │   ├── Endpoints/
 │   │   │   ├── AnalyzeEndpoints.cs
+│   │   │   ├── BrowseEndpoints.cs         # 분석 대상(.sln/.csproj) 선택용 로컬 디렉터리 탐색
 │   │   │   ├── GraphEndpoints.cs
 │   │   │   ├── SourceEndpoints.cs
 │   │   │   └── AskEndpoints.cs           # 3단계에서 추가
@@ -54,6 +56,7 @@ tracelens/
         │   ├── GraphView.tsx             # Cytoscape.js 래퍼
         │   ├── CodePanel.tsx             # Monaco Editor 래퍼
         │   ├── AskPanel.tsx
+        │   ├── PathPicker.tsx             # 분석 대상 선택 대화상자
         │   └── FreshnessBadge.tsx
         ├── api/client.ts
         └── types/graph.ts
@@ -62,6 +65,9 @@ tracelens/
 ## 빌드 및 실행
 
 ```
+# 한 번에 빌드하고 실행 (클라이언트 빌드 결과를 Server의 wwwroot에 넣고 서버 실행)
+.\run.ps1
+
 # 백엔드
 dotnet build
 dotnet run --project src/TraceLens.Server

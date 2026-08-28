@@ -2,6 +2,7 @@ import type {
   AnalyzeSummary,
   AskEvent,
   AskRequest,
+  BrowseResponse,
   EditorResponse,
   EntryPoint,
   FreshnessResponse,
@@ -20,12 +21,19 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
-export function analyzeSolution(solutionPath: string): Promise<AnalyzeSummary> {
+/** 분석 대상 경로(.sln 또는 .csproj)로 분석을 실행한다. */
+export function analyzeTarget(targetPath: string): Promise<AnalyzeSummary> {
   return request('/api/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ solutionPath }),
+    body: JSON.stringify({ solutionPath: targetPath }),
   })
+}
+
+/** 분석 대상을 고르기 위해 로컬 디렉터리 목록을 읽는다. path를 비우면 드라이브 목록을 돌려준다. */
+export function browsePath(path?: string): Promise<BrowseResponse> {
+  const query = path ? `?${new URLSearchParams({ path }).toString()}` : ''
+  return request(`/api/browse${query}`)
 }
 
 export function getEntryPoints(): Promise<EntryPoint[]> {

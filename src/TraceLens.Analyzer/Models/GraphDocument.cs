@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace TraceLens.Analyzer.Models;
 
+/// <param name="SolutionPath">분석 대상으로 고른 파일의 전체 경로(.sln 또는 .csproj).</param>
 public sealed record GraphDocument(
     int SchemaVersion,
     string SolutionPath,
@@ -13,15 +14,27 @@ public sealed record GraphDocument(
     IReadOnlyList<GraphEdge> Edges,
     IReadOnlyDictionary<string, string> FileHashes)
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     private readonly IReadOnlyList<GraphClass> classes = Classes ?? [];
+    private readonly string? rootDirectory;
 
     /// <summary>스키마 v1으로 저장된 그래프에는 classes가 없으므로 null 대신 빈 목록으로 읽는다.</summary>
     public IReadOnlyList<GraphClass> Classes
     {
         get => classes;
         init => classes = value ?? [];
+    }
+
+    /// <summary>
+    /// 노드/클래스의 상대 경로, 신선도 확인, <c>.tracelens</c> 출력의 기준 디렉터리.
+    /// .sln을 분석하면 솔루션 디렉터리이고, .csproj를 분석하면 그 프로젝트와 참조 프로젝트를 모두 담는 상위 디렉터리다.
+    /// 스키마 v2 이하로 저장된 그래프에는 이 값이 없으므로 <see cref="SolutionPath"/>의 디렉터리로 되돌린다.
+    /// </summary>
+    public string RootDirectory
+    {
+        get => string.IsNullOrEmpty(rootDirectory) ? Path.GetDirectoryName(SolutionPath) ?? string.Empty : rootDirectory;
+        init => rootDirectory = value;
     }
 
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)

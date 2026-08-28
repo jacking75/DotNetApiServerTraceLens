@@ -85,7 +85,7 @@ public static class AskEndpoints
         try
         {
             var configPath = await mcpConfigWriter.WriteAsync(graph, cancellationToken);
-            var solutionDirectory = Path.GetDirectoryName(graph.SolutionPath)!;
+            var solutionDirectory = graph.RootDirectory;
             var prompt = FormatPrompt(node, question);
             var processRequest = new ProcessRequest(
                 "claude",
@@ -138,7 +138,7 @@ public static class AskEndpoints
         IProcessRunner processRunner,
         CancellationToken cancellationToken)
     {
-        var solutionDirectory = Path.GetDirectoryName(graph.SolutionPath)!;
+        var solutionDirectory = graph.RootDirectory;
         var fullPath = Path.GetFullPath(Path.Combine(solutionDirectory, node.File));
         var relativePath = Path.GetRelativePath(solutionDirectory, fullPath);
         if (relativePath == ".." || relativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))

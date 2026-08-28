@@ -1,3 +1,10 @@
+## 2026-08-28 16:20 KST — 분석 대상 선택 UI와 프로젝트 파일 분석 지원
+
+- `GET /api/browse`로 로컬 디렉터리를 탐색하는 엔드포인트를 추가하고, 헤더의 `찾아보기…` 버튼에서 여는 `PathPicker` 대화상자로 .sln/.csproj를 골라 경로를 채우도록 구현했다.
+- `SolutionLoader`가 .csproj도 열도록 하고(참조 프로젝트까지 로드), 상대 경로·신선도·`.tracelens` 출력의 기준이 되는 `rootDirectory`를 그래프 스키마 v3에 추가해 Server/Mcp 소비자를 모두 옮겼다.
+- 빌드부터 실행까지 한 번에 하는 `run.ps1`(기본: 서버 하나로 실행, `-Dev`: API + Vite 동시 실행)을 만들고 README/CLAUDE.md/task.md 문서를 갱신했다.
+- .NET 19개 테스트(브라우즈 4개 신규)와 클라이언트 5개 테스트·프로덕션 빌드, 실제 브라우저에서 대화상자 탐색·선택 흐름과 .csproj 분석 결과를 검증했다.
+
 ## 2026-08-28 15:20 KST — 4단계 클래스 기준 보기 구현
 
 - 솔루션 전체 클래스/메서드를 훑는 `SolutionScanner`와 호출식 해석을 공용화한 `InvocationResolver`를 추가하고, `analysisScope`(solution 기본 / entryPoints) 설정과 스키마 v2(`classes`, `classId`)를 구현했다.

@@ -22,6 +22,7 @@ app.UseStaticFiles();
 
 var api = app.MapGroup("/api");
 api.MapAnalyzeEndpoints();
+api.MapBrowseEndpoints();
 api.MapGraphEndpoints();
 api.MapSourceEndpoints();
 api.MapFreshnessEndpoints();

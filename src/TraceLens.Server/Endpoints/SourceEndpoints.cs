@@ -26,7 +26,7 @@ public static class SourceEndpoints
             return Results.BadRequest(new { error = "file, start, end 값을 확인해야 한다." });
         }
 
-        var solutionDirectory = Path.GetDirectoryName(graph.SolutionPath)!;
+        var solutionDirectory = graph.RootDirectory;
         var fullPath = Path.GetFullPath(Path.Combine(solutionDirectory, file));
         var relativePath = Path.GetRelativePath(solutionDirectory, fullPath);
         if (Path.IsPathRooted(file) || relativePath == ".." ||

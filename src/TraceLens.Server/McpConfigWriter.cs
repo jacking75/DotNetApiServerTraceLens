@@ -20,8 +20,12 @@ public sealed class McpConfigWriter : IMcpConfigWriter
             throw new FileNotFoundException("TraceLens MCP 서버 실행 파일을 찾을 수 없다.", mcpAssemblyPath);
         }
 
-        var solutionDirectory = Path.GetDirectoryName(graph.SolutionPath)
-            ?? throw new InvalidDataException("그래프의 solutionPath가 올바르지 않다.");
+        var solutionDirectory = graph.RootDirectory;
+        if (string.IsNullOrEmpty(solutionDirectory))
+        {
+            throw new InvalidDataException("그래프의 solutionPath가 올바르지 않다.");
+        }
+
         var traceLensDirectory = Path.Combine(solutionDirectory, ".tracelens");
         Directory.CreateDirectory(traceLensDirectory);
         var graphPath = Path.Combine(traceLensDirectory, "graph.json");

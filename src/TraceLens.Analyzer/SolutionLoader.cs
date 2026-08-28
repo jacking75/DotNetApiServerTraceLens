@@ -9,18 +9,25 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
 {
     private static readonly object RegistrationLock = new();
 
-    public async Task<LoadedSolution> LoadAsync(string solutionPath, CancellationToken cancellationToken = default)
+    /// <summary>분석 대상 경로(.sln 또는 .csproj)를 열어 Roslyn 워크스페이스를 만든다.</summary>
+    /// <remarks>.csproj를 열면 그 프로젝트가 참조하는 프로젝트까지 함께 로드된다.</remarks>
+    public async Task<LoadedSolution> LoadAsync(string targetPath, CancellationToken cancellationToken = default)
     {
-        var fullPath = Path.GetFullPath(solutionPath);
-        if (!File.Exists(fullPath) || !string.Equals(Path.GetExtension(fullPath), ".sln", StringComparison.OrdinalIgnoreCase))
+        var fullPath = Path.GetFullPath(targetPath);
+        var extension = Path.GetExtension(fullPath);
+        var isProject = string.Equals(extension, ".csproj", StringComparison.OrdinalIgnoreCase);
+        var isSolution = string.Equals(extension, ".sln", StringComparison.OrdinalIgnoreCase);
+        if (!File.Exists(fullPath) || (!isSolution && !isProject))
         {
-            throw new FileNotFoundException("분석할 .sln 파일을 찾을 수 없다.", fullPath);
+            throw new FileNotFoundException("분석할 .sln 또는 .csproj 파일을 찾을 수 없다.", fullPath);
         }
 
         EnsureMsBuildRegistered();
         var workspace = MSBuildWorkspace.Create();
         workspace.WorkspaceFailed += (_, args) => logger.LogWarning("MSBuildWorkspace: {Message}", args.Diagnostic.Message);
-        var solution = await workspace.OpenSolutionAsync(fullPath, cancellationToken: cancellationToken);
+        var solution = isProject
+            ? (await workspace.OpenProjectAsync(fullPath, cancellationToken: cancellationToken)).Solution
+            : await workspace.OpenSolutionAsync(fullPath, cancellationToken: cancellationToken);
 
         var successfulProjects = new HashSet<ProjectId>();
         foreach (var project in solution.Projects.Where(project => project.SupportsCompilation))

@@ -1,8 +1,9 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
-import { analyzeSolution, getClasses, getEntryPoints, getGraph } from './api/client'
+import { analyzeTarget, getClasses, getEntryPoints, getGraph } from './api/client'
 import { AskPanel } from './components/AskPanel'
 import { Breadcrumb, type BreadcrumbItem } from './components/Breadcrumb'
 import { FreshnessBadge } from './components/FreshnessBadge'
+import { PathPicker } from './components/PathPicker'
 import {
   findClassMemberNodes,
   findNode,
@@ -40,6 +41,7 @@ const formatTime = (value: string) => new Intl.DateTimeFormat('ko-KR', {
 
 export default function App() {
   const [solutionPath, setSolutionPath] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [summary, setSummary] = useState<AnalyzeSummary | null>(null)
   const [entryPoints, setEntryPoints] = useState<EntryPoint[]>([])
   const [classes, setClasses] = useState<GraphClassSummary[]>([])
@@ -121,7 +123,7 @@ export default function App() {
       clearSelection()
     }
     try {
-      const nextSummary = await analyzeSolution(solutionPath.trim())
+      const nextSummary = await analyzeTarget(solutionPath.trim())
       const nextEntryPoints = await getEntryPoints()
       const nextClasses = await getClasses()
       setSummary(nextSummary)
@@ -205,14 +207,25 @@ export default function App() {
           <input
             value={solutionPath}
             onChange={(event) => setSolutionPath(event.target.value)}
-            placeholder="C:\\repos\\MyApp\\MyApp.sln"
-            aria-label="솔루션 경로"
+            placeholder="C:\repos\MyApp\MyApp.sln 또는 MyApp.Api.csproj"
+            aria-label="솔루션 또는 프로젝트 경로"
           />
+          <button type="button" className="browse" onClick={() => setPickerOpen(true)} disabled={busy}>
+            찾아보기…
+          </button>
           <button type="submit" className="primary" disabled={busy || !solutionPath.trim()}>
             {busy ? '처리 중…' : '분석'}
           </button>
         </form>
       </header>
+
+      {pickerOpen && (
+        <PathPicker
+          initialPath={solutionPath}
+          onSelect={(path) => { setSolutionPath(path); setPickerOpen(false) }}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
 
       {error && <div className="global-error">{error}</div>}
       {summary && (

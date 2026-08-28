@@ -18,8 +18,12 @@ public sealed class GraphFreshnessService : IGraphFreshnessService
         GraphDocument graph,
         CancellationToken cancellationToken = default)
     {
-        var solutionDirectory = Path.GetDirectoryName(graph.SolutionPath)
-            ?? throw new InvalidOperationException("솔루션 디렉터리를 확인할 수 없다.");
+        var solutionDirectory = graph.RootDirectory;
+        if (string.IsNullOrEmpty(solutionDirectory))
+        {
+            throw new InvalidOperationException("분석 루트 디렉터리를 확인할 수 없다.");
+        }
+
         var changedFiles = new ConcurrentBag<string>();
 
         await Parallel.ForEachAsync(

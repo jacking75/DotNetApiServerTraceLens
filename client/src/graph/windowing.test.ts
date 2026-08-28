@@ -25,8 +25,9 @@ const graphClass = (id: string, name: string, methodIds: string[]): GraphClass =
 })
 
 const graph: GraphDocument = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   solutionPath: 'test.sln',
+  rootDirectory: '.',
   analyzedAt: '2026-01-01T00:00:00Z',
   entryPoints: [{ nodeId: 'A', httpMethod: 'GET', route: '/test' }],
   classes: [

@@ -16,8 +16,9 @@
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "solutionPath": "C:\\repos\\MyApp\\MyApp.sln",
+  "rootDirectory": "C:\\repos\\MyApp",
   "analyzedAt": "2026-08-08T14:20:00+09:00",
   "entryPoints": [
     {
@@ -67,6 +68,9 @@
 
 `kind`는 `Controller | Service | Repository | Validator | Infra | Db | Method`(분류 규칙에 안 걸리는 기본값) 중 하나다. 분류 규칙은 0.4의 `tracelens.config.json`을 따르고, 클래스와 그 클래스의 메서드 노드는 같은 `kind`를 갖는다.
 
+`solutionPath`는 사용자가 고른 분석 대상 파일이다. `.sln`뿐 아니라 `.csproj`도 올 수 있다.
+`rootDirectory`는 노드/클래스의 상대 경로, 신선도 확인, `.tracelens` 출력의 기준 디렉터리다. `.sln`을 고르면 솔루션 디렉터리이고, `.csproj`를 고르면 그 프로젝트와 참조 프로젝트를 모두 담는 공통 상위 디렉터리다(드라이브 루트까지 올라가야 하면 프로젝트 디렉터리를 그대로 쓴다). 스키마 v2 이하로 저장된 그래프에는 이 값이 없으므로 읽을 때 `solutionPath`의 디렉터리로 되돌린다.
+
 `classes`는 솔루션 안에 선언된 **모든** 클래스/레코드/구조체다(인터페이스는 제외, `obj`·`bin` 아래 자동 생성 소스도 제외). 진입점에서 도달하지 못하는 클래스도 포함하므로 `classes`의 `methodIds`에 있는 메서드가 `nodes`에 없을 수 있다(`analysisScope`가 `entryPoints`일 때). `classId`는 노드가 속한 클래스의 `id`와 같은 문자열이고, 클래스 ID는 제네릭 인자를 포함한 전체 타입 이름이다(예: `MyApp.Common.Cache<TKey,TValue>`).
 
 ### 0.3 SnapshotHash 계산
@@ -109,11 +113,12 @@
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| POST | `/api/analyze` | body `{ "solutionPath": string }`. 분석을 동기 실행하고 결과 요약(`{ entryPointCount, classCount, nodeCount, edgeCount, elapsedMs, analyzedAt, previousAnalyzedAt }`)을 반환. 첫 분석의 `previousAnalyzedAt`은 `null`이다. 서버는 마지막으로 분석한 `solutionPath`를 프로세스 메모리에 상태로 유지한다(로컬 단일 사용자 도구이므로 세션 관리 불필요). |
+| POST | `/api/analyze` | body `{ "solutionPath": string }`. `.sln`과 `.csproj`를 모두 받는다. 분석을 동기 실행하고 결과 요약(`{ entryPointCount, classCount, nodeCount, edgeCount, elapsedMs, analyzedAt, previousAnalyzedAt }`)을 반환. 첫 분석의 `previousAnalyzedAt`은 `null`이다. 서버는 마지막으로 분석한 `solutionPath`를 프로세스 메모리에 상태로 유지한다(로컬 단일 사용자 도구이므로 세션 관리 불필요). |
+| GET | `/api/browse?path=` | 분석 대상을 고르기 위한 로컬 디렉터리 목록. `{ path, parentPath, entries: { name, path, kind }[] }`를 반환하고 `kind`는 `Directory`/`Solution`/`Project`다. `path`가 비면 드라이브 목록을, 파일 경로면 그 파일이 있는 디렉터리를, 없는 경로면 가장 가까운 상위 디렉터리를 돌려준다. `bin`·`obj`·`node_modules` 등 탐색 의미가 없는 디렉터리와 숨김 디렉터리는 제외한다. |
 | GET | `/api/graph/entrypoints` | 현재 로드된 그래프의 진입점 목록(`entryPoints`)을 반환. 초기 화면에서 "어떤 엔드포인트부터 볼지" 선택에 사용. |
 | GET | `/api/graph/classes` | 클래스 메뉴용 요약 목록(`{ id, name, namespace, kind, file, startLine, endLine, methodCount }[]`). 네임스페이스 → 이름 순으로 정렬되어 있다. |
 | GET | `/api/graph` | 현재 로드된 `GraphDocument` 전체(`classes`, `nodes`, `edges`)를 반환. 레벨 단위로 어떻게 보여줄지는 프론트엔드가 결정한다(0.6 참고). |
-| GET | `/api/source?file=&start=&end=` | 지정한 파일의 `start`~`end` 라인을 반환. `file`이 `solutionPath` 하위 경로가 아니면 400을 반환한다(경로 탈출 방지). |
+| GET | `/api/source?file=&start=&end=` | 지정한 파일의 `start`~`end` 라인을 반환. `file`이 `rootDirectory` 하위 경로가 아니면 400을 반환한다(경로 탈출 방지). |
 | GET | `/api/freshness` | `{ status: "fresh" \| "stale", analyzedAt, changedFiles: string[] }`. `fileHashes`를 다시 계산해서 비교한 결과. |
 | POST | `/api/ask` | (3단계) body `{ nodeId, question, mode }`. `mode`가 `"mcp"`일 때만 서버가 실제 작업을 수행하고 SSE로 응답을 스트리밍한다. `"clipboard"`는 프론트엔드에서만 처리하고 이 API를 호출하지 않는다. `"editor"`는 프론트엔드가 `vscode://file/...` URI를 직접 열거나, 서버가 로컬 프로세스로 에디터를 실행한다. |
 

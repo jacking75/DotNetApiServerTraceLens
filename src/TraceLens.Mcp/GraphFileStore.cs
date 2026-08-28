@@ -34,8 +34,12 @@ public sealed class GraphFileStore(string graphPath)
             throw new ArgumentException("file, startLine, endLine 값을 확인해야 한다.");
         }
 
-        var solutionDirectory = Path.GetDirectoryName(graph.SolutionPath)
-            ?? throw new InvalidDataException("그래프의 solutionPath가 올바르지 않다.");
+        var solutionDirectory = graph.RootDirectory;
+        if (string.IsNullOrEmpty(solutionDirectory))
+        {
+            throw new InvalidDataException("그래프의 solutionPath가 올바르지 않다.");
+        }
+
         var fullPath = Path.GetFullPath(Path.Combine(solutionDirectory, file));
         var relativePath = Path.GetRelativePath(solutionDirectory, fullPath);
         if (Path.IsPathRooted(file) || relativePath == ".." ||

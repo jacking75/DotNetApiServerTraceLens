@@ -47,7 +47,10 @@ export interface EntryPoint {
 
 export interface GraphDocument {
   schemaVersion: number
+  /** 분석 대상으로 고른 파일 경로(.sln 또는 .csproj). */
   solutionPath: string
+  /** 노드/클래스 상대 경로의 기준 디렉터리. */
+  rootDirectory: string
   analyzedAt: string
   entryPoints: EntryPoint[]
   classes: GraphClass[]
@@ -80,6 +83,22 @@ export interface FreshnessResponse {
   status: 'fresh' | 'stale'
   analyzedAt: string
   changedFiles: string[]
+}
+
+/** 분석 대상 선택 대화상자가 다루는 파일 시스템 항목. */
+export type BrowseEntryKind = 'Directory' | 'Solution' | 'Project'
+
+export interface BrowseEntry {
+  name: string
+  path: string
+  kind: BrowseEntryKind
+}
+
+export interface BrowseResponse {
+  /** 지금 보고 있는 디렉터리. 드라이브 목록일 때는 null이다. */
+  path: string | null
+  parentPath: string | null
+  entries: BrowseEntry[]
 }
 
 export interface SourceResponse {
