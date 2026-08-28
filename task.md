@@ -169,7 +169,7 @@
 - [x] `Program.cs`: Minimal API 부트스트랩, `.tracelens` 폴더 관리, 마지막 분석 결과를 메모리에 캐시하는 `IGraphStore` 싱글톤
 - [x] `POST /api/analyze`, `GET /api/graph/entrypoints`, `GET /api/graph`, `GET /api/source` 구현 (0.5 계약대로)
 - [x] `/api/source`의 경로 검증 로직: `Path.GetFullPath`로 정규화 후 `solutionPath` 하위인지 확인, 아니면 400
-- [x] 개발 중에는 Vite dev server(`localhost:5173`)에서 오는 요청을 CORS로 허용(로컬 전용이므로 `localhost`만 허용 목록에 추가)
+- [x] 개발 중에는 Vite dev server(`localhost:25012`)에서 오는 요청을 CORS로 허용(로컬 전용이므로 `localhost`만 허용 목록에 추가)
 
 ### 1.3 Client
 

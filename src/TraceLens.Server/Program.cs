@@ -4,9 +4,9 @@ using TraceLens.Server.Endpoints;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://127.0.0.1:5080");
+builder.WebHost.UseUrls("http://127.0.0.1:25011");
 builder.Services.AddCors(options => options.AddPolicy("ViteLocal", policy =>
-    policy.WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod()));
+    policy.WithOrigins("http://localhost:25012").AllowAnyHeader().AllowAnyMethod()));
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSingleton<IGraphStore, GraphStore>();

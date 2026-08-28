@@ -5,9 +5,9 @@
 
 .DESCRIPTION
     기본 모드는 클라이언트를 프로덕션 빌드해서 서버의 wwwroot에 넣고 서버 하나만 띄운다.
-    브라우저에서 http://127.0.0.1:5080 하나로 UI와 API를 모두 쓴다.
+    브라우저에서 http://127.0.0.1:25011 하나로 UI와 API를 모두 쓴다.
 
-    -Dev를 주면 API 서버(5080)와 Vite 개발 서버(5173)를 함께 띄운다.
+    -Dev를 주면 API 서버(25011)와 Vite 개발 서버(25012)를 함께 띄운다.
     클라이언트 코드를 고치면서 HMR로 확인할 때 쓴다.
 
 .EXAMPLE
@@ -32,8 +32,8 @@ $repositoryRoot = $PSScriptRoot
 $clientPath = Join-Path $repositoryRoot 'client'
 $serverProject = Join-Path $repositoryRoot 'src\TraceLens.Server'
 $solutionPath = Join-Path $repositoryRoot 'TraceLens.sln'
-$apiUrl = 'http://127.0.0.1:5080'
-$devUrl = 'http://localhost:5173'
+$apiUrl = 'http://127.0.0.1:25011'
+$devUrl = 'http://localhost:25012'
 
 function Assert-Command {
     param([string]$Name, [string]$Hint)
