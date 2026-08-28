@@ -77,3 +77,26 @@ main { padding: 22px; min-height: 100vh; }
 .ask-response details { color: #75859a; font-size: 10px; }
 .ask-response summary { cursor: pointer; }
 .ask-response pre { max-height: 90px; overflow: auto; white-space: pre-wrap; }
+
+/* 좌측 패널: 진입점 / 클래스 탭 */
+.entrypoints { display: flex; flex-direction: column; min-height: 0; }
+.entrypoint-list { flex: 1; overflow-y: auto; }
+.entrypoint-list button.selected { background: #1b2942; border-color: #3f5a80; }
+.panel-tabs { display: flex; gap: 4px; }
+.panel-tabs button { color: #8190a5; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px 9px; font-size: 12px; font-weight: 700; }
+.panel-tabs button:hover { color: #dce5f2; }
+.panel-tabs button.active { color: #e7edf7; background: #1c2738; border-color: #31415a; }
+.class-filter { width: calc(100% - 16px); margin: 8px 8px 0; box-sizing: border-box; color: #e7edf7; background: #0c1320; border: 1px solid #2c3b52; border-radius: 7px; padding: 7px 9px; font-size: 12px; }
+.class-list button { flex-direction: column; align-items: stretch; gap: 3px; }
+.class-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.class-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.class-methods { color: #75859a; font-size: 11px; }
+.class-namespace { color: #75859a; font-size: 11px; white-space: nowrap; }
+.class-kind { min-width: 60px; font-size: 10px; font-weight: 800; color: #8ea3bd; }
+.class-kind.controller { color: #a99bff; }
+.class-kind.service { color: #6fd3c3; }
+.class-kind.repository { color: #efbc72; }
+.class-kind.validator { color: #f0a2c8; }
+.class-kind.infra { color: #93b5df; }
+.class-kind.db { color: #c9a6f5; }
+.graph-shell > .panel-message { position: absolute; z-index: 2; top: 38%; left: 0; right: 0; text-align: center; }

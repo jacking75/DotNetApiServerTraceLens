@@ -1,6 +1,6 @@
 # task.md — 구현 상세 및 단계별 작업 목록
 
-이 문서는 TraceLens의 구현 상세를 담는다. 데이터 계약(스키마)을 먼저 정의하고, 그 뒤에 단계별(1~4단계) 작업 목록과 완료 기준을 정리한다. 다섯 가지 설계 제약은 CLAUDE.md에 있고, 여기서는 그 제약을 실제로 어떻게 구현하는지를 다룬다.
+이 문서는 TraceLens의 구현 상세를 담는다. 데이터 계약(스키마)을 먼저 정의하고, 그 뒤에 단계별(1~5단계) 작업 목록과 완료 기준을 정리한다. 다섯 가지 설계 제약은 CLAUDE.md에 있고, 여기서는 그 제약을 실제로 어떻게 구현하는지를 다룬다.
 
 ---
 
@@ -16,7 +16,7 @@
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "solutionPath": "C:\\repos\\MyApp\\MyApp.sln",
   "analyzedAt": "2026-08-08T14:20:00+09:00",
   "entryPoints": [
@@ -26,12 +26,27 @@
       "route": "/api/orders"
     }
   ],
+  "classes": [
+    {
+      "id": "MyApp.Controllers.OrdersController",
+      "name": "OrdersController",
+      "namespace": "MyApp.Controllers",
+      "kind": "Controller",
+      "file": "Controllers/OrdersController.cs",
+      "startLine": 18,
+      "endLine": 60,
+      "methodIds": [
+        "MyApp.Controllers.OrdersController.CreateOrder(MyApp.Contracts.CreateOrderRequest)"
+      ]
+    }
+  ],
   "nodes": [
     {
       "id": "MyApp.Controllers.OrdersController.CreateOrder(MyApp.Contracts.CreateOrderRequest)",
       "kind": "Controller",
       "displayName": "OrdersController.CreateOrder",
       "namespace": "MyApp.Controllers",
+      "classId": "MyApp.Controllers.OrdersController",
       "file": "Controllers/OrdersController.cs",
       "startLine": 24,
       "endLine": 41
@@ -50,11 +65,13 @@
 }
 ```
 
-`kind`는 `Controller | Service | Repository | Validator | Infra | Db | Method`(분류 규칙에 안 걸리는 기본값) 중 하나다. 분류 규칙은 0.4의 `tracelens.config.json`을 따른다.
+`kind`는 `Controller | Service | Repository | Validator | Infra | Db | Method`(분류 규칙에 안 걸리는 기본값) 중 하나다. 분류 규칙은 0.4의 `tracelens.config.json`을 따르고, 클래스와 그 클래스의 메서드 노드는 같은 `kind`를 갖는다.
+
+`classes`는 솔루션 안에 선언된 **모든** 클래스/레코드/구조체다(인터페이스는 제외, `obj`·`bin` 아래 자동 생성 소스도 제외). 진입점에서 도달하지 못하는 클래스도 포함하므로 `classes`의 `methodIds`에 있는 메서드가 `nodes`에 없을 수 있다(`analysisScope`가 `entryPoints`일 때). `classId`는 노드가 속한 클래스의 `id`와 같은 문자열이고, 클래스 ID는 제네릭 인자를 포함한 전체 타입 이름이다(예: `MyApp.Common.Cache<TKey,TValue>`).
 
 ### 0.3 SnapshotHash 계산
 
-`fileHashes`는 그래프에 등장하는 모든 노드가 속한 파일 각각에 대해 SHA-256을 계산해서 저장한다. 신선도 비교 시 같은 파일 목록에 대해 다시 해시를 계산해서 하나라도 다르면 `stale`로 판정한다. 그래프에 등장하지 않는 파일의 변경은 신선도 판정에 영향을 주지 않는다(예: 테스트 코드만 수정한 경우).
+`fileHashes`는 그래프에 등장하는 모든 노드가 속한 파일과 `classes`에 등장하는 파일 각각에 대해 SHA-256을 계산해서 저장한다. 신선도 비교 시 같은 파일 목록에 대해 다시 해시를 계산해서 하나라도 다르면 `stale`로 판정한다. 그래프에 등장하지 않는 파일의 변경은 신선도 판정에 영향을 주지 않는다(예: 테스트 코드만 수정한 경우).
 
 ### 0.4 tracelens.config.json (분석 대상 솔루션에 선택적으로 둘 수 있는 설정)
 
@@ -72,19 +89,30 @@
     { "kind": "Db", "matchBaseType": "DbContext" }
   ],
   "maxCallDepth": 8,
-  "excludeNamespacePrefixes": ["System", "Microsoft", "Swashbuckle"]
+  "excludeNamespacePrefixes": ["System", "Microsoft", "Swashbuckle"],
+  "analysisScope": "solution"
 }
 ```
 
 규칙은 배열 순서대로 평가하고 처음 매치되는 규칙을 적용한다. 어느 규칙에도 안 걸리면 `kind: "Method"`로 분류한다.
 
+`analysisScope`는 호출 그래프를 어디까지 만들지 결정한다.
+
+| 값 | 노드/엣지 범위 | `maxCallDepth` | 비고 |
+|---|---|---|---|
+| `solution`(기본) | 솔루션 안의 모든 메서드와 그 호출 관계 | 사용하지 않음 | 클래스 메뉴에서 아무 클래스나 골라도 호출 관계가 보인다. 분석 시간과 `graph.json` 크기가 커진다. |
+| `entryPoints` | 진입점에서 `maxCallDepth`까지 도달 가능한 범위만 | 적용 | 분석이 가볍다. 도달 못 하는 클래스는 메뉴에는 뜨지만 그래프가 비어 있다. |
+
+`classes` 목록은 두 값 모두에서 솔루션 전체를 담는다.
+
 ### 0.5 API 계약 (TraceLens.Server)
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| POST | `/api/analyze` | body `{ "solutionPath": string }`. 분석을 동기 실행하고 결과 요약(`{ entryPointCount, nodeCount, edgeCount, elapsedMs, analyzedAt, previousAnalyzedAt }`)을 반환. 첫 분석의 `previousAnalyzedAt`은 `null`이다. 서버는 마지막으로 분석한 `solutionPath`를 프로세스 메모리에 상태로 유지한다(로컬 단일 사용자 도구이므로 세션 관리 불필요). |
+| POST | `/api/analyze` | body `{ "solutionPath": string }`. 분석을 동기 실행하고 결과 요약(`{ entryPointCount, classCount, nodeCount, edgeCount, elapsedMs, analyzedAt, previousAnalyzedAt }`)을 반환. 첫 분석의 `previousAnalyzedAt`은 `null`이다. 서버는 마지막으로 분석한 `solutionPath`를 프로세스 메모리에 상태로 유지한다(로컬 단일 사용자 도구이므로 세션 관리 불필요). |
 | GET | `/api/graph/entrypoints` | 현재 로드된 그래프의 진입점 목록(`entryPoints`)을 반환. 초기 화면에서 "어떤 엔드포인트부터 볼지" 선택에 사용. |
-| GET | `/api/graph` | 현재 로드된 `GraphDocument` 전체(`nodes`, `edges`)를 반환. 레벨 단위로 어떻게 보여줄지는 프론트엔드가 결정한다(0.6 참고). |
+| GET | `/api/graph/classes` | 클래스 메뉴용 요약 목록(`{ id, name, namespace, kind, file, startLine, endLine, methodCount }[]`). 네임스페이스 → 이름 순으로 정렬되어 있다. |
+| GET | `/api/graph` | 현재 로드된 `GraphDocument` 전체(`classes`, `nodes`, `edges`)를 반환. 레벨 단위로 어떻게 보여줄지는 프론트엔드가 결정한다(0.6 참고). |
 | GET | `/api/source?file=&start=&end=` | 지정한 파일의 `start`~`end` 라인을 반환. `file`이 `solutionPath` 하위 경로가 아니면 400을 반환한다(경로 탈출 방지). |
 | GET | `/api/freshness` | `{ status: "fresh" \| "stale", analyzedAt, changedFiles: string[] }`. `fileHashes`를 다시 계산해서 비교한 결과. |
 | POST | `/api/ask` | (3단계) body `{ nodeId, question, mode }`. `mode`가 `"mcp"`일 때만 서버가 실제 작업을 수행하고 SSE로 응답을 스트리밍한다. `"clipboard"`는 프론트엔드에서만 처리하고 이 API를 호출하지 않는다. `"editor"`는 프론트엔드가 `vscode://file/...` URI를 직접 열거나, 서버가 로컬 프로세스로 에디터를 실행한다. |
@@ -97,7 +125,9 @@
 - 특정 노드에서 여러 갈래로 호출이 갈라지는 지점(예: 서비스 메서드 내부에서 검증기·리포지토리·이벤트 발행 등 여러 곳을 호출)은 드릴다운 대상으로 표시하고, 클릭하기 전까지는 펼치지 않는다.
 - 드릴다운하면 그 노드로부터 1~2홉 이내의 하위 호출만 "Level 2"로 새로 렌더링하고, breadcrumb으로 이전 레벨로 돌아갈 수 있게 한다.
 
-이 로직은 순수하게 클라이언트 상태(`client/src/graph/windowing.ts`)로 구현하고, 서버는 이미 계산된 전체 그래프(진입점 도달 범위 내)를 넘겨주기만 한다. 코드베이스가 커서 진입점 도달 범위 자체가 지나치게 크면(수천 노드) 그때 가서 서버 쪽 지연 계산(노드별 온디맨드 확장 API)으로 전환한다 — 4단계 백로그 항목으로 남겨둔다.
+클래스 메뉴에서 클래스를 고르면 **클래스 중심 창**을 쓴다(`getClassWindow`). 그 클래스에 속한 메서드 노드 전부와, 각 메서드의 직접 호출자/피호출자 1홉까지만 보여주고, 선택한 클래스의 메서드는 하나의 박스(Cytoscape compound node)로 묶는다. 이 창의 포커스 ID는 노드 ID와 겹치지 않는 클래스 ID이고, 박스 안의 분기 노드를 클릭하면 기존 드릴다운 창으로 이어진다.
+
+이 로직은 순수하게 클라이언트 상태(`client/src/graph/windowing.ts`)로 구현하고, 서버는 이미 계산된 전체 그래프를 넘겨주기만 한다. 코드베이스가 커서 그래프가 지나치게 크면(수천 노드) `analysisScope`를 `entryPoints`로 낮추고, 그래도 부족하면 서버 쪽 지연 계산(노드별 온디맨드 확장 API)으로 전환한다 — 5단계 백로그 항목으로 남겨둔다.
 
 ---
 
@@ -193,7 +223,40 @@
 
 ---
 
-## 4단계 — 필요해지면 그때 확장 (백로그, 지금 설계하지 않음)
+## 4단계 — 클래스 기준 보기
+
+목표: 진입점 목록 외에 두 번째 탐색 축으로 클래스 메뉴를 두고, 클래스를 고르면 그 클래스 중심의 호출 그래프를 볼 수 있는 상태. 파일 트리 탐색이 아니라 좌측 패널 탭 + 검색 메뉴로 고르는 방식이다.
+
+### 4.1 Analyzer
+
+- [x] `SolutionScanner`: 분석 가능한 모든 프로젝트의 문서를 한 번씩 훑어 클래스/레코드/구조체 선언과 그 메서드를 수집(인터페이스, `obj`·`bin` 아래 자동 생성 소스 제외). partial 클래스는 첫 선언 위치 기준으로 병합한다
+- [x] `InvocationResolver`: 호출식 → 심볼 해석 + DI 인터페이스 해석 로직을 `CallGraphWalker`에서 분리해서 솔루션 전체 스캔과 진입점 BFS가 함께 쓰도록 함
+- [x] `AnalysisScope` 설정(`solution` 기본 / `entryPoints`) 추가. `solution`이면 스캔 순회에서 노드·엣지까지 만들고, `entryPoints`면 기존 진입점 BFS 결과를 쓴다
+- [x] 스키마 v2: `GraphDocument.classes` 추가, `GraphNode.classId` 추가. v1로 저장된 그래프를 읽으면 `classes`는 빈 목록으로 처리
+- [x] 단위 테스트: 진입점에서 도달하지 못하는 클래스(`Fixtures/FixtureApp/Jobs/CleanupJob.cs`)가 클래스 목록과 엣지에 나오는지, `entryPoints` 범위에서는 그래프에서 빠지지만 클래스 목록에는 남는지 검증
+
+### 4.2 Server
+
+- [x] `GET /api/graph/classes`: 클래스 요약 목록 반환(`methodIds` 대신 `methodCount`)
+- [x] `POST /api/analyze` 응답에 `classCount` 추가
+- [x] `GraphFreshnessService` 해시 계산을 제한 병렬(8)로 변경 — 솔루션 전체 분석으로 대상 파일 수가 늘어난 것에 대응
+
+### 4.3 Client
+
+- [x] 좌측 패널에 `진입점 | 클래스` 탭 추가, 클래스 탭에는 이름/네임스페이스 검색 입력과 목록(한 번에 200개까지 렌더링)
+- [x] `getClassWindow`: 클래스의 메서드 노드 + 직접 호출자/피호출자 1홉 창 계산(순수 함수 + 단위 테스트)
+- [x] `GraphView`: 선택한 클래스의 메서드를 compound node 박스로 묶어 표시, 메서드가 없는 클래스는 안내 문구 표시
+- [x] 재분석 시 선택 상태(진입점/클래스) 복원, breadcrumb 최상위가 클래스면 클래스 창으로 복귀
+
+### 4.4 완료 기준
+
+- [x] 클래스 탭에서 클래스를 고르면 그 클래스의 메서드와 호출자/피호출자가 한 화면에 뜬다
+- [x] 진입점에서 도달하지 못하는 클래스도 목록에 뜨고, `solution` 범위에서는 호출 관계까지 보인다
+- [x] 클래스 창에서 노드를 클릭하면 기존 코드 패널/질문 패널이 그대로 동작한다
+
+---
+
+## 5단계 — 필요해지면 그때 확장 (백로그, 지금 설계하지 않음)
 
 아래 항목은 실제로 도구를 써보면서 필요성이 확인되면 그때 별도로 설계한다. 지금 단계에서 코드에 미리 훅을 만들어두지 않는다.
 

@@ -41,14 +41,15 @@ public sealed class TraceLensToolsTests
             await File.WriteAllTextAsync(sourcePath, "void Entry()\n{\n}\n");
 
             var controller = new GraphNode(
-                "Fixture.Controller.Entry()", NodeKind.Controller, "Controller.Entry", "Fixture", "Controller.cs", 1, 3);
+                "Fixture.Controller.Entry()", NodeKind.Controller, "Controller.Entry", "Fixture", "Fixture.Controller", "Controller.cs", 1, 3);
             var service = new GraphNode(
-                "Fixture.Service.Run()", NodeKind.Service, "Service.Run", "Fixture", "Service.cs", 1, 1);
+                "Fixture.Service.Run()", NodeKind.Service, "Service.Run", "Fixture", "Fixture.Service", "Service.cs", 1, 1);
             var graph = new GraphDocument(
                 1,
                 Path.Combine(directory, "Fixture.sln"),
                 DateTimeOffset.Parse("2026-08-11T00:00:00+09:00"),
                 [new EntryPoint(controller.Id, "GET", "/fixture")],
+                [],
                 [controller, service],
                 [new GraphEdge(controller.Id, service.Id)],
                 new Dictionary<string, string>());

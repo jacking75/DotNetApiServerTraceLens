@@ -91,6 +91,7 @@ public sealed class AskEndpointsTests
             NodeKind.Controller,
             "Controller.Entry",
             "Fixture",
+            "Fixture.Controller",
             "Controller.cs",
             3,
             8);
@@ -99,6 +100,7 @@ public sealed class AskEndpointsTests
             "C:\\Fixture\\Fixture.sln",
             DateTimeOffset.Parse("2026-08-11T00:00:00+09:00"),
             [new EntryPoint(node.Id, "GET", "/fixture")],
+            [],
             [node],
             [],
             new Dictionary<string, string>());

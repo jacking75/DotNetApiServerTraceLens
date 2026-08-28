@@ -21,6 +21,7 @@ public sealed class McpConfigWriterTests
             [],
             [],
             [],
+            [],
             new Dictionary<string, string>());
 
         try

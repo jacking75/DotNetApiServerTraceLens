@@ -39,6 +39,7 @@ public sealed class AnalyzeEndpointsTests
         [],
         [],
         [],
+        [],
         new Dictionary<string, string>());
 
     private sealed class StubAnalyzer(AnalysisResult result) : ITraceLensAnalyzer

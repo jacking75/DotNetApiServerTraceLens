@@ -63,6 +63,7 @@ public sealed class GraphFreshnessServiceTests
                 [],
                 [],
                 [],
+                [],
                 new Dictionary<string, string> { [relativePath] = "sha256:" + Convert.ToHexString(hash).ToLowerInvariant() });
             return new FreshnessFixture(directory, sourcePath, relativePath, graph);
         }

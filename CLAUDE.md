@@ -7,7 +7,7 @@ ASP.NET Core Web API 코드베이스의 호출 흐름을 진입점 기준 그래
 ## 반드시 지켜야 할 설계 제약
 아래 다섯 가지는 이미 논의를 거쳐 확정된 방향이다. 별도 지시가 없는 한 이 범위를 벗어나는 기능을 임의로 추가하지 않는다.
 
-1. **그래프 규모.** 그래프는 항상 진입점(HTTP 엔드포인트) 기준으로 단계식으로 보여준다. 전체 그래프를 한 화면에 다 그리는 UI를 만들지 않는다. 자세한 방식은 task.md의 "포커스 기반 윈도잉"을 따른다.
+1. **그래프 규모.** 그래프는 항상 하나의 포커스(HTTP 진입점 또는 메뉴에서 고른 클래스) 기준으로 단계식으로 보여준다. 전체 그래프를 한 화면에 다 그리는 UI를 만들지 않는다. 탐색 축은 이 두 가지(진입점 목록, 클래스 목록)뿐이고 파일 트리 탐색기는 만들지 않는다. 자세한 방식은 task.md의 "포커스 기반 윈도잉"을 따른다.
 2. **엣지 범위.** 그래프의 엣지는 메서드 호출 관계로만 구성한다. DI 의존 관계나 이벤트/메시지 발행-구독 흐름을 엣지로 표현하는 기능을 넣지 않는다. DI 등록 정보(`AddScoped` 등)는 인터페이스 호출을 실제 구현체 메서드로 정확히 연결하는 내부 해석 로직에만 사용한다.
 3. **최신 상태 유지.** 파일 저장을 감지해서 자동으로 재분석하는 기능을 넣지 않는다. 재분석은 항상 사용자가 명시적으로 실행한다(버튼 클릭 또는 API 호출). 대신 마지막 분석 시점과 현재 코드가 같은지 항상 확인할 수 있는 신선도 표시를 유지한다.
 4. **로컬 전용.** 그래프 서버와 (3단계의) MCP 연동은 `localhost`에서만 동작한다. 원격에서 접근 가능하게 만드는 옵션, 인증 없이 외부 바인딩을 허용하는 설정을 추가하지 않는다.
@@ -25,13 +25,16 @@ tracelens/
 │   ├── TraceLens.Analyzer/       # Roslyn 기반 분석 라이브러리 (UI/서버에 대한 의존성 없음)
 │   │   ├── SolutionLoader.cs
 │   │   ├── EntryPointScanner.cs
-│   │   ├── CallGraphWalker.cs
+│   │   ├── SolutionScanner.cs            # 솔루션 전체 클래스/메서드 스캔 (4단계)
+│   │   ├── InvocationResolver.cs         # 호출식 → 심볼 해석 (스캔/BFS 공용)
+│   │   ├── CallGraphWalker.cs            # 진입점 BFS (analysisScope=entryPoints)
 │   │   ├── DiResolver.cs
 │   │   ├── NodeClassifier.cs
 │   │   ├── SnapshotHasher.cs
 │   │   └── Models/
 │   │       ├── GraphNode.cs
 │   │       ├── GraphEdge.cs
+│   │       ├── GraphClass.cs
 │   │       └── GraphDocument.cs
 │   ├── TraceLens.Server/         # ASP.NET Core Minimal API + React 빌드 결과물 정적 호스팅
 │   │   ├── Program.cs

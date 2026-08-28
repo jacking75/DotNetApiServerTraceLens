@@ -1,3 +1,10 @@
+## 2026-08-28 15:20 KST — 4단계 클래스 기준 보기 구현
+
+- 솔루션 전체 클래스/메서드를 훑는 `SolutionScanner`와 호출식 해석을 공용화한 `InvocationResolver`를 추가하고, `analysisScope`(solution 기본 / entryPoints) 설정과 스키마 v2(`classes`, `classId`)를 구현했다.
+- `GET /api/graph/classes`와 분석 응답의 `classCount`를 추가하고, 대상 파일이 늘어난 신선도 해시 계산을 제한 병렬(8)로 바꿨다.
+- 좌측 패널에 `진입점 | 클래스` 탭과 검색 메뉴를 넣고, 클래스를 고르면 메서드 전부와 호출자/피호출자 1홉을 compound 박스로 묶어 보여주는 `getClassWindow`를 구현했다.
+- 전체 .NET 빌드와 15개 테스트, 클라이언트 5개 테스트·프로덕션 빌드, 브라우저에서 진입점 도달 불가 클래스(CleanupJob) 포함 실제 화면 동작을 검증했다.
+
 ## 2026-08-11 21:40 KST — 3단계 에이전트 연동 구현
 
 - 공식 MCP C# SDK 기반 stdio 서버와 노드·소스·호출 관계·진입점·심볼 검색 도구 6개를 구현했다.

@@ -14,6 +14,7 @@ public sealed class TraceLensAnalyzer(
     SolutionLoader solutionLoader,
     EntryPointScanner entryPointScanner,
     DiResolver diResolver,
+    SolutionScanner solutionScanner,
     CallGraphWalker callGraphWalker,
     SnapshotHasher snapshotHasher,
     ILogger<TraceLensAnalyzer> logger) : ITraceLensAnalyzer
@@ -30,24 +31,36 @@ public sealed class TraceLensAnalyzer(
         await diResolver.BuildAsync(loaded, cancellationToken);
         var entryPoints = await entryPointScanner.ScanAsync(loaded, config, cancellationToken);
         logger.LogInformation("진입점 {Count}개를 찾았다.", entryPoints.Count);
-        var graph = await callGraphWalker.WalkAsync(
+
+        var isSolutionScope = config.AnalysisScope == AnalysisScope.Solution;
+        var scan = await solutionScanner.ScanAsync(
             loaded,
-            entryPoints,
             config,
             solutionDirectory,
+            isSolutionScope,
             cancellationToken);
+        var (nodes, edges) = isSolutionScope
+            ? (scan.Nodes, scan.Edges)
+            : await WalkFromEntryPointsAsync(loaded, entryPoints, config, solutionDirectory, cancellationToken);
+
+        var nodeIds = nodes.Select(node => node.Id).ToHashSet(StringComparer.Ordinal);
+        var reachableEntryPoints = entryPoints
+            .Select(item => item.EntryPoint)
+            .Where(entryPoint => nodeIds.Contains(entryPoint.NodeId))
+            .ToArray();
         var fileHashes = await snapshotHasher.ComputeAsync(
             solutionDirectory,
-            graph.Nodes.Select(node => node.File),
+            nodes.Select(node => node.File).Concat(scan.Classes.Select(item => item.File)),
             cancellationToken);
 
         var document = new GraphDocument(
-            1,
+            GraphDocument.CurrentSchemaVersion,
             fullSolutionPath,
             DateTimeOffset.Now,
-            entryPoints.Select(item => item.EntryPoint).ToArray(),
-            graph.Nodes,
-            graph.Edges,
+            reachableEntryPoints,
+            scan.Classes,
+            nodes,
+            edges,
             fileHashes);
         var outputDirectory = Path.Combine(solutionDirectory, ".tracelens");
         Directory.CreateDirectory(outputDirectory);
@@ -59,6 +72,17 @@ public sealed class TraceLensAnalyzer(
 
         stopwatch.Stop();
         return new AnalysisResult(document, stopwatch.ElapsedMilliseconds, outputPath);
+    }
+
+    private async Task<(IReadOnlyList<GraphNode> Nodes, IReadOnlyList<GraphEdge> Edges)> WalkFromEntryPointsAsync(
+        LoadedSolution loaded,
+        IReadOnlyList<ScannedEntryPoint> entryPoints,
+        TraceLensConfig config,
+        string solutionDirectory,
+        CancellationToken cancellationToken)
+    {
+        var graph = await callGraphWalker.WalkAsync(loaded, entryPoints, config, solutionDirectory, cancellationToken);
+        return (graph.Nodes, graph.Edges);
     }
 }
 

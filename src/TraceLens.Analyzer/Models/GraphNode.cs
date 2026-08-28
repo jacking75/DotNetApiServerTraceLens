@@ -5,6 +5,7 @@ public sealed record GraphNode(
     NodeKind Kind,
     string DisplayName,
     string Namespace,
+    string ClassId,
     string File,
     int StartLine,
     int EndLine);

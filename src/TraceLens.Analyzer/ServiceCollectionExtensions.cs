@@ -9,6 +9,8 @@ public static class ServiceCollectionExtensions
         .AddScoped<EntryPointScanner>()
         .AddScoped<DiResolver>()
         .AddScoped<NodeClassifier>()
+        .AddScoped<InvocationResolver>()
+        .AddScoped<SolutionScanner>()
         .AddScoped<CallGraphWalker>()
         .AddScoped<SnapshotHasher>()
         .AddScoped<ITraceLensAnalyzer, TraceLensAnalyzer>();

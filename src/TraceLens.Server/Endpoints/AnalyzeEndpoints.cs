@@ -28,6 +28,7 @@ public static class AnalyzeEndpoints
             graphStore.Set(result.Graph);
             return Results.Ok(new AnalyzeResponse(
                 result.Graph.EntryPoints.Count,
+                result.Graph.Classes.Count,
                 result.Graph.Nodes.Count,
                 result.Graph.Edges.Count,
                 result.ElapsedMs,
@@ -45,6 +46,7 @@ public sealed record AnalyzeRequest(string SolutionPath);
 
 public sealed record AnalyzeResponse(
     int EntryPointCount,
+    int ClassCount,
     int NodeCount,
     int EdgeCount,
     long ElapsedMs,

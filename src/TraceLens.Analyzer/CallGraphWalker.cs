@@ -1,13 +1,13 @@
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
 using TraceLens.Analyzer.Models;
 
 namespace TraceLens.Analyzer;
 
+/// <summary>진입점에서 시작해 <see cref="TraceLensConfig.MaxCallDepth"/>까지 호출 그래프를 넓힌다.</summary>
 public sealed class CallGraphWalker(
-    DiResolver diResolver,
     NodeClassifier nodeClassifier,
+    InvocationResolver invocationResolver,
     ILogger<CallGraphWalker> logger)
 {
     public async Task<CallGraphResult> WalkAsync(
@@ -47,21 +47,19 @@ public sealed class CallGraphWalker(
             nodes[methodId] = node;
             if (depth >= config.MaxCallDepth)
             {
+                logger.LogDebug("maxCallDepth에 도달해 더 내려가지 않는다: {Method}", methodId);
                 continue;
             }
 
-            foreach (var calledMethod in await GetCalledMethodsAsync(loaded.Solution, method, cancellationToken))
+            foreach (var calledMethod in await GetCalledMethodsAsync(
+                         loaded.Solution,
+                         method,
+                         solutionDirectory,
+                         config,
+                         cancellationToken))
             {
-                var resolvedMethod = calledMethod.ContainingType.TypeKind == TypeKind.Interface
-                    ? diResolver.Resolve(calledMethod)
-                    : calledMethod;
-                if (resolvedMethod is null || !IsSolutionMethod(resolvedMethod, solutionDirectory, config))
-                {
-                    continue;
-                }
-
-                var calledId = SymbolNames.GetNodeId(resolvedMethod);
-                var calledNode = await CreateNodeAsync(resolvedMethod, solutionDirectory, config, cancellationToken);
+                var calledId = SymbolNames.GetNodeId(calledMethod);
+                var calledNode = await CreateNodeAsync(calledMethod, solutionDirectory, config, cancellationToken);
                 if (calledNode is null)
                 {
                     continue;
@@ -69,7 +67,7 @@ public sealed class CallGraphWalker(
 
                 nodes[calledId] = calledNode;
                 edges.Add(new GraphEdge(methodId, calledId));
-                queue.Enqueue((resolvedMethod, depth + 1));
+                queue.Enqueue((calledMethod, depth + 1));
             }
         }
 
@@ -81,6 +79,8 @@ public sealed class CallGraphWalker(
     private async Task<IReadOnlyList<IMethodSymbol>> GetCalledMethodsAsync(
         Solution solution,
         IMethodSymbol method,
+        string solutionDirectory,
+        TraceLensConfig config,
         CancellationToken cancellationToken)
     {
         var result = new List<IMethodSymbol>();
@@ -99,20 +99,7 @@ public sealed class CallGraphWalker(
                 continue;
             }
 
-            foreach (var invocation in syntax.DescendantNodes().OfType<InvocationExpressionSyntax>())
-            {
-                var symbolInfo = model.GetSymbolInfo(invocation, cancellationToken);
-                var calledMethod = symbolInfo.Symbol as IMethodSymbol ??
-                                   symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
-                if (calledMethod is not null)
-                {
-                    result.Add(calledMethod.ReducedFrom ?? calledMethod);
-                }
-                else
-                {
-                    logger.LogDebug("호출 심볼을 해석하지 못했다: {Invocation}", invocation);
-                }
-            }
+            result.AddRange(invocationResolver.ResolveCalls(model, syntax, solutionDirectory, config, cancellationToken));
         }
 
         return result;
@@ -131,50 +118,7 @@ public sealed class CallGraphWalker(
         }
 
         var syntax = await reference.GetSyntaxAsync(cancellationToken);
-        var filePath = syntax.SyntaxTree.FilePath;
-        if (string.IsNullOrWhiteSpace(filePath))
-        {
-            return null;
-        }
-
-        var relativePath = Path.GetRelativePath(solutionDirectory, Path.GetFullPath(filePath));
-        if (relativePath == ".." || relativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        var lineSpan = syntax.GetLocation().GetLineSpan();
-        return new GraphNode(
-            SymbolNames.GetNodeId(method),
-            nodeClassifier.Classify(method, config),
-            SymbolNames.GetDisplayName(method),
-            method.ContainingNamespace.IsGlobalNamespace ? string.Empty : method.ContainingNamespace.ToDisplayString(),
-            relativePath.Replace(Path.DirectorySeparatorChar, '/'),
-            lineSpan.StartLinePosition.Line + 1,
-            lineSpan.EndLinePosition.Line + 1);
-    }
-
-    private static bool IsSolutionMethod(IMethodSymbol method, string solutionDirectory, TraceLensConfig config)
-    {
-        var namespaceName = method.ContainingNamespace?.ToDisplayString() ?? string.Empty;
-        if (config.ExcludeNamespacePrefixes.Any(prefix =>
-                namespaceName.Equals(prefix, StringComparison.Ordinal) ||
-                namespaceName.StartsWith(prefix + ".", StringComparison.Ordinal)))
-        {
-            return false;
-        }
-
-        return method.DeclaringSyntaxReferences.Any(reference =>
-        {
-            var path = reference.SyntaxTree.FilePath;
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return false;
-            }
-
-            var relativePath = Path.GetRelativePath(solutionDirectory, Path.GetFullPath(path));
-            return relativePath != ".." && !relativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
-        });
+        return GraphNodes.Create(method, syntax, solutionDirectory, nodeClassifier.Classify(method, config));
     }
 }
 

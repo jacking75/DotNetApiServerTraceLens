@@ -5,6 +5,7 @@ import type {
   EditorResponse,
   EntryPoint,
   FreshnessResponse,
+  GraphClassSummary,
   GraphDocument,
   SourceResponse,
 } from '../types/graph'
@@ -29,6 +30,10 @@ export function analyzeSolution(solutionPath: string): Promise<AnalyzeSummary> {
 
 export function getEntryPoints(): Promise<EntryPoint[]> {
   return request('/api/graph/entrypoints')
+}
+
+export function getClasses(): Promise<GraphClassSummary[]> {
+  return request('/api/graph/classes')
 }
 
 export function getGraph(): Promise<GraphDocument> {
