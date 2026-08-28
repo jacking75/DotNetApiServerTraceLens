@@ -5,9 +5,8 @@ import { Breadcrumb, type BreadcrumbItem } from './components/Breadcrumb'
 import { FreshnessBadge } from './components/FreshnessBadge'
 import { PathPicker } from './components/PathPicker'
 import {
-  findClassMemberNodes,
   findNode,
-  getClassWindow,
+  getClassRelationWindow,
   getDrilldownWindow,
   getInitialWindow,
 } from './graph/windowing'
@@ -79,11 +78,18 @@ export default function App() {
     setBreadcrumbs([{ nodeId: entryPointId, label: node?.displayName ?? fallbackLabel }])
   }
 
+  /** 클래스 관계도를 그리고, 가운데 클래스를 선택 상태로 둬서 코드 패널에 그 클래스 정의가 뜨게 한다. */
+  const focusClass = (nextGraph: GraphDocument, classId: string) => {
+    const nextWindow = getClassRelationWindow(nextGraph, classId)
+    setGraphWindow(nextWindow)
+    setSelectedNode(nextWindow.nodes.find((node) => node.id === classId) ?? null)
+    setSelectedRoot({ type: 'class', id: classId })
+    return nextWindow
+  }
+
   const showClassWindow = (nextGraph: GraphDocument, classId: string, label: string) => {
     setGraph(nextGraph)
-    setGraphWindow(getClassWindow(nextGraph, classId))
-    setSelectedNode(findClassMemberNodes(nextGraph, classId)[0] ?? null)
-    setSelectedRoot({ type: 'class', id: classId })
+    focusClass(nextGraph, classId)
     setBreadcrumbs([{ nodeId: classId, label }])
   }
 
@@ -166,27 +172,27 @@ export default function App() {
 
   const drilldown = useCallback((node: GraphNode) => {
     if (!graph || graphWindow?.focusNodeId === node.id) return
-    setGraphWindow(getDrilldownWindow(graph, node.id))
+    if (graphWindow?.kind === 'classRelations') {
+      // 관계도에서 이웃 클래스를 누르면 그 클래스를 가운데로 옮겨 다시 그린다.
+      setGraphWindow(getClassRelationWindow(graph, node.id))
+      setSelectedRoot({ type: 'class', id: node.id })
+    } else {
+      setGraphWindow(getDrilldownWindow(graph, node.id))
+    }
+
     setBreadcrumbs((current) => [...current, { nodeId: node.id, label: node.displayName }])
-  }, [graph, graphWindow?.focusNodeId])
+  }, [graph, graphWindow?.focusNodeId, graphWindow?.kind])
 
   const navigateBreadcrumb = (index: number) => {
     if (!graph) return
     const target = breadcrumbs[index]
     setBreadcrumbs((current) => current.slice(0, index + 1))
-    if (index > 0) {
-      setGraphWindow(getDrilldownWindow(graph, target.nodeId))
-      setSelectedNode(findNode(graph, target.nodeId) ?? null)
-      return
-    }
-
     if (selectedRoot?.type === 'class') {
-      setGraphWindow(getClassWindow(graph, target.nodeId))
-      setSelectedNode(findClassMemberNodes(graph, target.nodeId)[0] ?? null)
+      focusClass(graph, target.nodeId)
       return
     }
 
-    setGraphWindow(getInitialWindow(graph, target.nodeId))
+    setGraphWindow(index > 0 ? getDrilldownWindow(graph, target.nodeId) : getInitialWindow(graph, target.nodeId))
     setSelectedNode(findNode(graph, target.nodeId) ?? null)
   }
 
@@ -324,7 +330,7 @@ export default function App() {
 
         <section className="graph-area panel">
           <header>
-            <span>{selectedRoot?.type === 'class' ? 'Class calls' : 'Call flow'}</span>
+            <span>{graphWindow?.kind === 'classRelations' ? 'Class relations' : 'Call flow'}</span>
             <small>{graphWindow ? `${graphWindow.nodes.length} nodes` : '진입점이나 클래스를 선택해야 한다'}</small>
           </header>
           <Breadcrumb items={breadcrumbs} onNavigate={navigateBreadcrumb} />

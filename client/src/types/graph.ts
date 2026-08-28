@@ -59,14 +59,16 @@ export interface GraphDocument {
   fileHashes: Record<string, string>
 }
 
+/** 그래프 창의 종류. 호출 흐름은 메서드 노드를, 클래스 관계도는 클래스 노드를 담는다. */
+export type GraphWindowKind = 'callFlow' | 'classRelations'
+
 export interface GraphWindow {
+  kind: GraphWindowKind
   focusNodeId: string
   nodes: GraphNode[]
   edges: GraphEdge[]
+  /** 아직 창에 없는 관계가 남아 있어 눌러서 더 펼칠 수 있는 노드. */
   branchNodeIds: Set<string>
-  /** 클래스 중심 창일 때 하나의 박스로 묶어서 보여줄 클래스. */
-  groupClassId: string | null
-  groupLabel: string | null
 }
 
 export interface AnalyzeSummary {

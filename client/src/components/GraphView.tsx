@@ -19,8 +19,6 @@ const kindColors: Record<string, string> = {
   Method: '#566174',
 }
 
-const groupNodeId = (classId: string) => `class-group:${classId}`
-
 export function GraphView({ graphWindow, selectedNodeId, onSelectNode, onDrilldown }: GraphViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -30,20 +28,14 @@ export function GraphView({ graphWindow, selectedNodeId, onSelectNode, onDrilldo
     }
 
     const nodeMap = new Map(graphWindow.nodes.map((node) => [node.id, node]))
-    const groupClassId = graphWindow.groupClassId
-    const hasGroup = groupClassId !== null && graphWindow.nodes.some((node) => node.classId === groupClassId)
     const instance = cytoscape({
       container: containerRef.current,
       elements: [
-        ...(hasGroup && groupClassId
-          ? [{ data: { id: groupNodeId(groupClassId), label: graphWindow.groupLabel ?? groupClassId } }]
-          : []),
         ...graphWindow.nodes.map((node) => ({
           data: {
             id: node.id,
             label: `${graphWindow.branchNodeIds.has(node.id) ? '⊕  ' : ''}${node.displayName}`,
             color: kindColors[node.kind],
-            parent: hasGroup && groupClassId && node.classId === groupClassId ? groupNodeId(groupClassId) : undefined,
           },
           classes: node.id === selectedNodeId ? 'selected' : '',
         })),
@@ -74,23 +66,6 @@ export function GraphView({ graphWindow, selectedNodeId, onSelectNode, onDrilldo
           style: { 'border-width': 3, 'border-color': '#8ddcff' },
         },
         {
-          selector: ':parent',
-          style: {
-            'background-color': '#182339',
-            'background-opacity': 0.75,
-            'border-width': 1,
-            'border-color': '#3a4b66',
-            color: '#9fb0c9',
-            'font-size': 11,
-            'text-valign': 'top',
-            'text-halign': 'center',
-            'text-margin-y': -10,
-            padding: '34px',
-            width: 'label',
-            height: 'label',
-          },
-        },
-        {
           selector: 'edge',
           style: {
             width: 2,
@@ -119,12 +94,12 @@ export function GraphView({ graphWindow, selectedNodeId, onSelectNode, onDrilldo
   return (
     <div className="graph-shell">
       <div className="graph-help">
-        {graphWindow?.groupClassId
-          ? '박스 안이 선택한 클래스의 메서드다. 위쪽은 호출자, 아래쪽은 호출 대상이다.'
+        {graphWindow?.kind === 'classRelations'
+          ? '가운데가 고른 클래스다. ⊕가 붙은 클래스를 클릭하면 그 클래스를 중심으로 다시 그린다.'
           : '⊕가 붙은 노드를 클릭하면 그 아래 호출 흐름을 펼친다.'}
       </div>
       {graphWindow && graphWindow.nodes.length === 0 && (
-        <div className="panel-message">이 클래스에는 그래프에 담긴 메서드가 없다.</div>
+        <div className="panel-message">그래프에 표시할 노드가 없다.</div>
       )}
       <div className="graph-canvas" ref={containerRef} aria-label="호출 흐름 그래프" />
     </div>
