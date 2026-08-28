@@ -4,7 +4,10 @@ using Microsoft.Extensions.Logging;
 
 namespace TraceLens.Analyzer;
 
-/// <summary>메서드 본문 안의 호출식을 심볼로 해석하고, 인터페이스 호출은 DI 등록으로 구현체까지 연결한다.</summary>
+/// <summary>
+/// 메서드 본문 안의 호출식을 심볼로 해석하고, 인터페이스 호출은 DI 등록으로 구현체까지 연결한다.
+/// <c>new X()</c>도 생성자(.ctor) 호출이므로 <see cref="TraceLensConfig.IncludeObjectCreation"/>이 켜져 있으면 함께 모은다.
+/// </summary>
 public sealed class InvocationResolver(DiResolver diResolver, ILogger<InvocationResolver> logger)
 {
     public IReadOnlyList<IMethodSymbol> ResolveCalls(
@@ -15,19 +18,21 @@ public sealed class InvocationResolver(DiResolver diResolver, ILogger<Invocation
         CancellationToken cancellationToken = default)
     {
         var result = new List<IMethodSymbol>();
-        foreach (var invocation in methodSyntax.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        foreach (var syntax in methodSyntax.DescendantNodes())
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var symbolInfo = model.GetSymbolInfo(invocation, cancellationToken);
-            var calledMethod = symbolInfo.Symbol as IMethodSymbol ??
-                               symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
+            var calledMethod = syntax switch
+            {
+                InvocationExpressionSyntax invocation => GetCalledMethod(model, invocation, cancellationToken),
+                BaseObjectCreationExpressionSyntax creation when config.IncludeObjectCreation =>
+                    GetCalledMethod(model, creation, cancellationToken),
+                _ => null
+            };
             if (calledMethod is null)
             {
-                logger.LogDebug("호출 심볼을 해석하지 못했다: {Invocation}", invocation);
                 continue;
             }
 
-            calledMethod = calledMethod.ReducedFrom ?? calledMethod;
             var resolvedMethod = calledMethod.ContainingType.TypeKind == TypeKind.Interface
                 ? diResolver.Resolve(calledMethod)
                 : calledMethod;
@@ -40,6 +45,20 @@ public sealed class InvocationResolver(DiResolver diResolver, ILogger<Invocation
         return result;
     }
 
+    private IMethodSymbol? GetCalledMethod(SemanticModel model, SyntaxNode syntax, CancellationToken cancellationToken)
+    {
+        var symbolInfo = model.GetSymbolInfo(syntax, cancellationToken);
+        var calledMethod = symbolInfo.Symbol as IMethodSymbol ??
+                           symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
+        if (calledMethod is null)
+        {
+            logger.LogDebug("호출 심볼을 해석하지 못했다: {Syntax}", syntax);
+            return null;
+        }
+
+        return calledMethod.ReducedFrom ?? calledMethod;
+    }
+
     public static bool IsSolutionMethod(IMethodSymbol method, string solutionDirectory, TraceLensConfig config)
     {
         var namespaceName = method.ContainingNamespace?.ToDisplayString() ?? string.Empty;
@@ -50,10 +69,20 @@ public sealed class InvocationResolver(DiResolver diResolver, ILogger<Invocation
             return false;
         }
 
-        return method.DeclaringSyntaxReferences.Any(reference =>
+        return GetDeclarations(method).Any(reference =>
         {
             var relativePath = SourcePaths.ToSolutionRelative(solutionDirectory, reference.SyntaxTree.FilePath);
             return relativePath is not null && !SourcePaths.IsBuildOutput(relativePath);
         });
     }
+
+    /// <summary>
+    /// 선언 위치를 돌려준다. 컴파일러가 만들어 주는 기본 생성자에는 선언 구문이 없으므로 그 타입의 선언 위치로 대신한다.
+    /// </summary>
+    internal static IEnumerable<SyntaxReference> GetDeclarations(IMethodSymbol method) =>
+        method.DeclaringSyntaxReferences.Length > 0
+            ? method.DeclaringSyntaxReferences
+            : method.MethodKind == MethodKind.Constructor
+                ? method.ContainingType.DeclaringSyntaxReferences
+                : [];
 }

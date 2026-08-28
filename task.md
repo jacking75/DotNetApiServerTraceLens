@@ -10,6 +10,16 @@
 
 `{fullyQualifiedTypeName}.{methodName}({parameterTypes})` 형태의 문자열을 그대로 노드 ID로 쓴다. Roslyn의 `IMethodSymbol.ToDisplayString(SymbolDisplayFormat)`으로 안정적으로 생성할 수 있다. 예: `MyApp.Services.OrderService.CreateOrderAsync(MyApp.Contracts.CreateOrderRequest)`.
 
+노드가 되는 멤버는 메서드, 생성자, 본문이 있는 프로퍼티다(자동 프로퍼티는 실행할 코드가 없어 제외).
+
+| 멤버 | 노드 ID 예 | displayName |
+|---|---|---|
+| 메서드 | `MyApp.Services.OrderService.CreateAsync(int)` | `OrderService.CreateAsync` |
+| 생성자 | `MyApp.Contracts.OrderDraft..ctor()` | `new OrderDraft` |
+| 프로퍼티 | `MyApp.Repositories.OrderRepository.get_PendingCount()` | `OrderRepository.PendingCount` |
+
+컴파일러가 만들어 주는 기본 생성자에는 선언 구문이 없으므로, 노드의 `file`/`startLine`/`endLine`은 그 타입 선언 위치를 가리킨다.
+
 ### 0.2 GraphDocument JSON 스키마
 
 `.tracelens/graph.json`에 저장되는 형식이다.
@@ -94,7 +104,8 @@
   ],
   "maxCallDepth": 8,
   "excludeNamespacePrefixes": ["System", "Microsoft", "Swashbuckle"],
-  "analysisScope": "solution"
+  "analysisScope": "solution",
+  "includeObjectCreation": true
 }
 ```
 
@@ -108,6 +119,8 @@
 | `entryPoints` | 진입점에서 `maxCallDepth`까지 도달 가능한 범위만 | 적용 | 분석이 가볍다. 도달 못 하는 클래스는 메뉴에는 뜨지만 그래프가 비어 있다. |
 
 `classes` 목록은 두 값 모두에서 솔루션 전체를 담는다.
+
+`includeObjectCreation`은 `new X()`(생성자 호출)도 엣지로 넣을지 결정한다. 기본값 `true`에서는 솔루션 안 타입을 `new`로 만들면 그 생성자 노드로 엣지가 이어지고, DTO가 많아 그래프가 커지면 `false`로 꺼서 일반 메서드 호출만 남길 수 있다(직접 선언한 생성자 노드 자체는 끄더라도 남는다).
 
 ### 0.5 API 계약 (TraceLens.Server)
 

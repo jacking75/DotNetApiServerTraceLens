@@ -25,6 +25,7 @@ public sealed class SolutionScanner(
         var classes = new Dictionary<string, ClassBuilder>(StringComparer.Ordinal);
         var nodes = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
         var edges = new HashSet<GraphEdge>();
+        var pendingConstructors = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
 
         foreach (var project in loaded.Solution.Projects.Where(project => loaded.AnalyzableProjectIds.Contains(project.Id)))
         {
@@ -76,14 +77,9 @@ public sealed class SolutionScanner(
                         classes.Add(classId, builder);
                     }
 
-                    foreach (var methodSyntax in typeSyntax.Members.OfType<MethodDeclarationSyntax>())
+                    foreach (var (memberSyntax, method) in EnumerateMembers(typeSyntax, model, cancellationToken))
                     {
-                        if (model.GetDeclaredSymbol(methodSyntax, cancellationToken) is not IMethodSymbol method)
-                        {
-                            continue;
-                        }
-
-                        var node = GraphNodes.Create(method, methodSyntax, solutionDirectory, builder.Kind);
+                        var node = GraphNodes.Create(method, memberSyntax, solutionDirectory, builder.Kind);
                         if (node is null)
                         {
                             continue;
@@ -98,16 +94,29 @@ public sealed class SolutionScanner(
                         nodes[node.Id] = node;
                         foreach (var called in invocationResolver.ResolveCalls(
                                      model,
-                                     methodSyntax,
+                                     memberSyntax,
                                      solutionDirectory,
                                      config,
                                      cancellationToken))
                         {
                             edges.Add(new GraphEdge(node.Id, SymbolNames.GetNodeId(called)));
+                            QueueConstructorNode(called, solutionDirectory, config, nodes, pendingConstructors, cancellationToken);
                         }
                     }
                 }
             }
+        }
+
+        // 기본 생성자로 만든 노드는 클래스 목록이 다 채워진 뒤에 붙인다.
+        foreach (var (id, node) in pendingConstructors)
+        {
+            if (nodes.ContainsKey(id) || !classes.TryGetValue(node.ClassId, out var builder))
+            {
+                continue;
+            }
+
+            nodes[id] = node;
+            builder.AddMethod(id);
         }
 
         logger.LogInformation("클래스 {ClassCount}개를 찾았다.", classes.Count);
@@ -123,6 +132,79 @@ public sealed class SolutionScanner(
                 .OrderBy(edge => edge.From, StringComparer.Ordinal)
                 .ThenBy(edge => edge.To, StringComparer.Ordinal)
                 .ToArray());
+    }
+
+    /// <summary>노드로 만들 멤버를 돌려준다. 메서드와 명시적 생성자, 그리고 본문이 있는 프로퍼티를 대상으로 한다.</summary>
+    private static IEnumerable<(SyntaxNode Syntax, IMethodSymbol Method)> EnumerateMembers(
+        TypeDeclarationSyntax typeSyntax,
+        SemanticModel model,
+        CancellationToken cancellationToken)
+    {
+        foreach (var member in typeSyntax.Members)
+        {
+            switch (member)
+            {
+                case MethodDeclarationSyntax methodSyntax
+                    when model.GetDeclaredSymbol(methodSyntax, cancellationToken) is IMethodSymbol method:
+                    yield return (methodSyntax, method);
+                    break;
+
+                case ConstructorDeclarationSyntax constructorSyntax
+                    when model.GetDeclaredSymbol(constructorSyntax, cancellationToken) is IMethodSymbol constructor:
+                    yield return (constructorSyntax, constructor);
+                    break;
+
+                // 자동 프로퍼티는 실행할 코드가 없으므로 본문이 있는 프로퍼티만 노드로 만든다.
+                case PropertyDeclarationSyntax propertySyntax when HasBody(propertySyntax):
+                    var property = model.GetDeclaredSymbol(propertySyntax, cancellationToken) as IPropertySymbol;
+                    var accessor = property?.GetMethod ?? property?.SetMethod;
+                    if (accessor is not null)
+                    {
+                        yield return (propertySyntax, accessor);
+                    }
+
+                    break;
+            }
+        }
+    }
+
+    private static bool HasBody(PropertyDeclarationSyntax property) =>
+        property.ExpressionBody is not null ||
+        (property.AccessorList?.Accessors.Any(accessor =>
+            accessor.Body is not null || accessor.ExpressionBody is not null) ?? false);
+
+    /// <summary>
+    /// <c>new X()</c>가 가리키는 생성자는 선언을 훑는 단계에서 노드가 안 만들어질 수 있어서(컴파일러가 만드는 기본 생성자)
+    /// 따로 모아 뒀다가 클래스 목록이 완성된 뒤에 붙인다.
+    /// </summary>
+    private void QueueConstructorNode(
+        IMethodSymbol called,
+        string solutionDirectory,
+        TraceLensConfig config,
+        Dictionary<string, GraphNode> nodes,
+        Dictionary<string, GraphNode> pendingConstructors,
+        CancellationToken cancellationToken)
+    {
+        if (called.MethodKind != MethodKind.Constructor)
+        {
+            return;
+        }
+
+        var id = SymbolNames.GetNodeId(called);
+        if (nodes.ContainsKey(id) || pendingConstructors.ContainsKey(id))
+        {
+            return;
+        }
+
+        var node = GraphNodes.CreateFromSymbol(
+            called,
+            solutionDirectory,
+            nodeClassifier.Classify(called.ContainingType, config),
+            cancellationToken);
+        if (node is not null)
+        {
+            pendingConstructors[id] = node;
+        }
     }
 
     private static bool IsExcludedNamespace(INamedTypeSymbol type, TraceLensConfig config)

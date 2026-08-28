@@ -1,4 +1,5 @@
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
 using TraceLens.Analyzer.Models;
 
@@ -87,6 +88,13 @@ public sealed class CallGraphWalker(
         foreach (var syntaxReference in method.DeclaringSyntaxReferences)
         {
             var syntax = await syntaxReference.GetSyntaxAsync(cancellationToken);
+
+            // 주 생성자는 선언 위치가 타입 자체라서, 그대로 훑으면 클래스 안 모든 호출이 이 생성자의 호출로 잡힌다.
+            if (syntax is TypeDeclarationSyntax)
+            {
+                continue;
+            }
+
             var document = solution.GetDocument(syntax.SyntaxTree);
             if (document is null)
             {
@@ -111,7 +119,8 @@ public sealed class CallGraphWalker(
         TraceLensConfig config,
         CancellationToken cancellationToken)
     {
-        var reference = method.DeclaringSyntaxReferences.FirstOrDefault();
+        // 기본 생성자는 선언 구문이 없으므로 그 타입 선언 위치를 쓴다.
+        var reference = InvocationResolver.GetDeclarations(method).FirstOrDefault();
         if (reference is null)
         {
             return null;

@@ -11,12 +11,16 @@ public enum AnalysisScope
     EntryPoints
 }
 
+/// <param name="IncludeObjectCreation">
+/// <c>new X()</c>로 만드는 솔루션 타입도 생성자 노드로 그래프에 넣을지 여부. DTO가 많은 코드베이스에서 그래프를 줄이려면 끈다.
+/// </param>
 public sealed record TraceLensConfig(
     IReadOnlyList<string> EntryPointAttributes,
     IReadOnlyList<KindRule> KindRules,
     int MaxCallDepth,
     IReadOnlyList<string> ExcludeNamespacePrefixes,
-    AnalysisScope AnalysisScope)
+    AnalysisScope AnalysisScope,
+    bool IncludeObjectCreation)
 {
     public static TraceLensConfig Default { get; } = new(
         ["HttpGet", "HttpPost", "HttpPut", "HttpDelete", "HttpPatch"],
@@ -30,7 +34,8 @@ public sealed record TraceLensConfig(
         ],
         8,
         ["System", "Microsoft", "Swashbuckle"],
-        AnalysisScope.Solution);
+        AnalysisScope.Solution,
+        true);
 
     public static async Task<TraceLensConfig> LoadAsync(
         string solutionDirectory,
@@ -51,7 +56,10 @@ public sealed record TraceLensConfig(
             ReadKindRules(root) ?? Default.KindRules,
             root.TryGetProperty("maxCallDepth", out var depth) ? depth.GetInt32() : Default.MaxCallDepth,
             ReadStringArray(root, "excludeNamespacePrefixes") ?? Default.ExcludeNamespacePrefixes,
-            ReadAnalysisScope(root) ?? Default.AnalysisScope);
+            ReadAnalysisScope(root) ?? Default.AnalysisScope,
+            root.TryGetProperty("includeObjectCreation", out var includeObjectCreation)
+                ? includeObjectCreation.GetBoolean()
+                : Default.IncludeObjectCreation);
     }
 
     private static AnalysisScope? ReadAnalysisScope(JsonElement root) =>

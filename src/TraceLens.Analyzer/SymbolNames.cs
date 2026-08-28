@@ -17,7 +17,14 @@ internal static class SymbolNames
         return $"{containingType}.{method.Name}({parameters})";
     }
 
-    public static string GetDisplayName(IMethodSymbol method) => $"{method.ContainingType.Name}.{method.Name}";
+    public static string GetDisplayName(IMethodSymbol method) => method.MethodKind switch
+    {
+        // 생성자와 프로퍼티 접근자는 심볼 이름(.ctor/get_X)을 그대로 쓰면 읽기 어려우므로 소스에 보이는 모양으로 바꾼다.
+        MethodKind.Constructor => $"new {method.ContainingType.Name}",
+        MethodKind.PropertyGet or MethodKind.PropertySet =>
+            $"{method.ContainingType.Name}.{method.AssociatedSymbol?.Name ?? method.Name}",
+        _ => $"{method.ContainingType.Name}.{method.Name}"
+    };
 
     public static string GetClassId(INamedTypeSymbol type) => type.ToDisplayString(TypeFormat);
 
