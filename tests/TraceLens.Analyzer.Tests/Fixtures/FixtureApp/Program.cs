@@ -1,3 +1,4 @@
+using FixtureApp;
 using FixtureApp.Repositories;
 using FixtureApp.Services;
 
@@ -5,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
+builder.Services.AddFixtureServices();
 
 var app = builder.Build();
 app.MapControllers();

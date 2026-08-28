@@ -19,8 +19,11 @@ function buildWindow(
   const nodes = graph.nodes.filter((node) => visibleIds.has(node.id))
   const edges = graph.edges.filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to))
   const outgoing = outgoingByNode(graph.edges)
+  // 아직 창에 없는 하위 호출이 남은 노드에만 펼침 표시를 붙인다.
   const branchNodeIds = new Set(
-    nodes.filter((node) => (outgoing.get(node.id)?.length ?? 0) > 1).map((node) => node.id),
+    nodes
+      .filter((node) => (outgoing.get(node.id) ?? []).some((edge) => !visibleIds.has(edge.to)))
+      .map((node) => node.id),
   )
   return {
     focusNodeId,
@@ -32,6 +35,11 @@ function buildWindow(
   }
 }
 
+/**
+ * Level 1 창: 진입점에서 분기 없이 이어지는 직선 호출 체인을 따라가고,
+ * 갈래가 나뉘는 첫 지점에서는 그 지점이 직접 호출하는 대상까지만 펼친다.
+ * 그 아래 단계는 드릴다운으로 이어간다.
+ */
 export function getInitialWindow(graph: GraphDocument, entryPointId: string): GraphWindow {
   const outgoing = outgoingByNode(graph.edges)
   const visibleIds = new Set<string>([entryPointId])
@@ -39,7 +47,15 @@ export function getInitialWindow(graph: GraphDocument, entryPointId: string): Gr
 
   while (true) {
     const nextEdges = outgoing.get(current) ?? []
-    if (nextEdges.length !== 1) {
+    if (nextEdges.length === 0) {
+      break
+    }
+
+    if (nextEdges.length > 1) {
+      for (const edge of nextEdges) {
+        visibleIds.add(edge.to)
+      }
+
       break
     }
 

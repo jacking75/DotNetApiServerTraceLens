@@ -18,14 +18,37 @@ public sealed class AnalyzerIntegrationTests
 
         Assert.Equal(3, result.Graph.EntryPoints.Count);
         Assert.True(
-            result.Graph.Nodes.Count == 6,
-            $"예상 노드 수는 6개지만 {result.Graph.Nodes.Count}개다.{Environment.NewLine}{string.Join(Environment.NewLine, logs)}");
-        Assert.Equal(5, result.Graph.Edges.Count);
+            result.Graph.Nodes.Count == 10,
+            $"예상 노드 수는 10개지만 {result.Graph.Nodes.Count}개다.{Environment.NewLine}{string.Join(Environment.NewLine, logs)}");
+        Assert.Equal(7, result.Graph.Edges.Count);
         Assert.Equal(3, result.Graph.Nodes.Count(node => node.Kind == NodeKind.Controller));
         Assert.Contains(result.Graph.Nodes, node => node.Kind == NodeKind.Service);
         Assert.Contains(result.Graph.Nodes, node => node.Kind == NodeKind.Repository);
         Assert.All(result.Graph.FileHashes.Values, hash => Assert.StartsWith("sha256:", hash));
         Assert.True(File.Exists(result.OutputPath));
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_ResolvesInterfaceCallsByRegistrationAndSingleImplementation()
+    {
+        var logs = new ConcurrentQueue<string>();
+        await using var provider = CreateProvider(logs);
+
+        var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
+
+        var callee = (string nodeId) => result.Graph.Edges.Any(edge =>
+            edge.From == "FixtureApp.Controllers.OrdersController.Create(int)" && edge.To == nodeId);
+
+        // Program.cs가 아닌 파일에서 AddSingleton으로 등록한 구현체로 이어져야 한다.
+        Assert.True(
+            callee("FixtureApp.Services.NotificationService.NotifyAsync(int)"),
+            string.Join(Environment.NewLine, logs));
+        Assert.False(callee("FixtureApp.Services.NullNotificationService.NotifyAsync(int)"));
+
+        // DI 등록이 없어도 구현체가 하나뿐이면 그 구현체로 이어져야 한다.
+        Assert.True(
+            callee("FixtureApp.Services.AuditService.RecordAsync(int)"),
+            string.Join(Environment.NewLine, logs));
     }
 
     [Fact]
@@ -36,8 +59,8 @@ public sealed class AnalyzerIntegrationTests
 
         var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
 
-        // 인터페이스는 제외하므로 컨트롤러 3개 + 서비스 + 리포지토리 + 잡 1개다.
-        Assert.Equal(6, result.Graph.Classes.Count);
+        // 인터페이스는 제외하므로 컨트롤러 3개 + 서비스 4개 + 리포지토리 + 잡 + DI 등록 확장 클래스다.
+        Assert.Equal(10, result.Graph.Classes.Count);
         var job = Assert.Single(result.Graph.Classes, item => item.Name == "CleanupJob");
         Assert.Equal("FixtureApp.Jobs", job.Namespace);
         Assert.Equal("FixtureApp/Jobs/CleanupJob.cs", job.File);
@@ -68,8 +91,8 @@ public sealed class AnalyzerIntegrationTests
             var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
 
             Assert.DoesNotContain(result.Graph.Nodes, node => node.DisplayName == "CleanupJob.RunAsync");
-            Assert.Equal(5, result.Graph.Nodes.Count);
-            Assert.Equal(6, result.Graph.Classes.Count);
+            Assert.Equal(7, result.Graph.Nodes.Count);
+            Assert.Equal(10, result.Graph.Classes.Count);
         }
         finally
         {

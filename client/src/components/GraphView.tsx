@@ -121,7 +121,7 @@ export function GraphView({ graphWindow, selectedNodeId, onSelectNode, onDrilldo
       <div className="graph-help">
         {graphWindow?.groupClassId
           ? '박스 안이 선택한 클래스의 메서드다. 위쪽은 호출자, 아래쪽은 호출 대상이다.'
-          : '⊕가 붙은 분기 노드를 클릭하면 하위 흐름을 펼친다.'}
+          : '⊕가 붙은 노드를 클릭하면 그 아래 호출 흐름을 펼친다.'}
       </div>
       {graphWindow && graphWindow.nodes.length === 0 && (
         <div className="panel-message">이 클래스에는 그래프에 담긴 메서드가 없다.</div>

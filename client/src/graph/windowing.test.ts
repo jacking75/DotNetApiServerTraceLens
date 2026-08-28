@@ -68,12 +68,28 @@ const classGraph: GraphDocument = {
 }
 
 describe('포커스 기반 윈도잉', () => {
-  it('Level 1은 첫 분기 노드까지 직선 체인만 반환한다', () => {
+  it('Level 1은 직선 체인과 첫 분기 지점의 직접 호출 대상까지 반환한다', () => {
     const result = getInitialWindow(graph, 'A')
 
-    expect(result.nodes.map((item) => item.id)).toEqual(['A', 'B', 'C'])
-    expect(result.branchNodeIds.has('C')).toBe(true)
+    expect(result.nodes.map((item) => item.id)).toEqual(['A', 'B', 'C', 'D', 'E'])
+    // 펼쳐진 분기 노드에는 표시가 남지 않고, 아직 못 펼친 하위 호출이 있는 노드에만 붙는다.
+    expect(result.branchNodeIds.has('C')).toBe(false)
+    expect(result.branchNodeIds.has('D')).toBe(true)
     expect(result.groupClassId).toBeNull()
+  })
+
+  it('진입점이 바로 여러 곳을 호출해도 그 호출 대상을 보여준다', () => {
+    const result = getInitialWindow(graph, 'C')
+
+    expect(result.nodes.map((item) => item.id)).toEqual(['C', 'D', 'E'])
+    expect(result.edges).toHaveLength(2)
+  })
+
+  it('호출 대상이 없는 진입점은 자기 노드만 반환한다', () => {
+    const result = getInitialWindow(graph, 'F')
+
+    expect(result.nodes.map((item) => item.id)).toEqual(['F'])
+    expect(result.branchNodeIds.size).toBe(0)
   })
 
   it('드릴다운은 포커스에서 지정한 홉까지 모든 하위 호출을 반환한다', () => {
