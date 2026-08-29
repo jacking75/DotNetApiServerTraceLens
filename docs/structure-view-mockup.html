@@ -286,14 +286,14 @@ body.resizing{cursor:col-resize;user-select:none}
   <div class="note-grid">
     <div class="note-card">
       <h3>1. 클래스 다이어그램</h3>
-      <p>모든 클래스를 UML 박스(이름 / 필드 / 메서드 3단)로 한 캔버스에 그리고, 네임스페이스를 점선 패키지 박스로 묶는다. 관계는 네 종류를 선으로 구분한다.</p>
+      <p>모든 클래스를 UML 박스(이름 / 필드 / 메서드 3단)로 한 캔버스에 그린다. 기본 배치는 <b>트리(계층)</b>다 — 관계 방향으로 층을 나누고(상속·구현은 상위 타입이 위/왼쪽), 층을 건너뛰는 선에는 중간 경유점을 끼워 넣은 뒤 층마다 순서를 바꿔가며 교차를 줄인다. 진행 방향은 <b>→</b> / <b>↓</b>로 바꾸고, 네임스페이스로 묶어 보고 싶으면 <b>패키지</b> 배치로 전환한다. 관계는 네 종류를 선으로 구분한다.</p>
       <ul>
         <li><b>상속</b> — 실선 + 빈 삼각형</li>
         <li><b>구현</b> — 점선 + 빈 삼각형</li>
         <li><b>연관</b> — 실선 화살표(필드로 들고 있는 타입, 곧 DI 주입)</li>
         <li><b>의존</b> — 점선 화살표(메서드 호출·파라미터, 지금 그래프의 호출 엣지)</li>
       </ul>
-      <p>왼쪽 네임스페이스 목록은 체크박스로 <b>패키지 단위 표시/숨김</b>, 이름 클릭은 그 패키지로 <b>스크롤 + 선택</b>이다.</p>
+      <p>왼쪽 네임스페이스 목록은 체크박스로 <b>표시/숨김</b>, 이름 클릭은 그 네임스페이스로 <b>스크롤 + 선택</b>이다. 트리 배치에서는 패키지 박스가 없는 대신 클래스 이름 아래에 네임스페이스를 적는다.</p>
     </div>
     <div class="note-card">
       <h3>2. 전체를 그리되 커지면 줄이는 장치</h3>
@@ -301,7 +301,7 @@ body.resizing{cursor:col-resize;user-select:none}
       <ul>
         <li>멤버 표시: 필드 / 메서드 각각 끄기(이름만 남기면 박스가 확 작아진다)</li>
         <li>관계 종류 끄기: 의존(호출)만 꺼도 선이 절반으로 준다</li>
-        <li>줌 50 / 75 / 100 / 맞춤</li>
+        <li>줌 50 / 75 / 100 / 맞춤(전체가 화면에 들어오는 배율)</li>
         <li>네임스페이스 체크박스, <b>선택 1홉만</b> 토글</li>
       </ul>
       <p>패널 사이 경계선을 <b>드래그하면 3분할 폭이 바뀌고</b>(더블클릭하면 기본값 복귀), 창을 키우면 그만큼 다이어그램 영역이 넓어진다. 높이도 창 높이를 따라간다.</p>
@@ -552,6 +552,8 @@ const state = {
   sel: { type: 'class', key: 'MyApp.Application.Services.OrderService' },
   search: '',
   // 클래스 다이어그램 전용
+  layout: 'tree',            // tree = 계층(트리) 배치, package = 네임스페이스 격자 배치
+  treeDir: 'LR',             // 트리 진행 방향. LR = 왼→오른, TB = 위→아래
   hiddenNs: new Set(),
   showFields: true,
   showMethods: true,
@@ -739,22 +741,31 @@ function isActiveEdge(e) {
 }
 
 /* ------------------------------------------------------------------ 클래스 다이어그램 */
-const VIS = { '+':'+', '-':'\u2212', '#':'#' }
+const VIS = { '+':'+', '-':'−', '#':'#' }
 const memberText = m => m.name + (m.sig && m.sig !== m.name ? m.sig.slice(m.sig.indexOf('(')) : '') + (m.ret ? ' : ' + m.ret : '')
 const fieldText = f => f.name + ' : ' + f.type
 
+/** 이름 아래 작은 캡션. 트리 배치에는 패키지 박스가 없으니 네임스페이스를 여기에 적는다. */
+function captionOf(c) {
+  const parts = []
+  if (c.stereotype) parts.push('«' + c.stereotype + '»')
+  if (state.layout === 'tree') parts.push(shortNs(c.ns))
+  return parts.join(' · ')
+}
+
 function umlSize(c) {
-  const texts = [c.name]
+  const texts = [c.name, captionOf(c)]
   if (state.showFields) c.fields.forEach(f => texts.push(fieldText(f)))
   if (state.showMethods) c.methods.forEach(m => texts.push(memberText(m)))
   const w = Math.max(184, Math.min(336, Math.max(...texts.map(t => t.length)) * 6.05 + 30))
-  let h = c.stereotype ? 44 : 30
+  let h = captionOf(c) ? 44 : 30
   if (state.showFields) h += 6 + Math.max(1, c.fields.length) * 16
   if (state.showMethods) h += 6 + Math.max(1, c.methods.length) * 16
   return { w, h }
 }
 
-function buildClassDiagram() {
+/** 지금 켜 둔 필터로 그릴 클래스와 관계를 고른다. */
+function diagramScope() {
   let visible = CLASSES.filter(c => !state.hiddenNs.has(c.ns))
   if (state.focusOnly && state.sel && (state.sel.type === 'class' || state.sel.type === 'method')) {
     const center = state.sel.type === 'class' ? state.sel.key : classOf(state.sel.key)
@@ -766,25 +777,196 @@ function buildClassDiagram() {
     })
     visible = CLASSES.filter(c => near.has(c.id))
   }
-  const visibleIds = new Set(visible.map(c => c.id))
-  const relations = RELATIONS.filter(r => state.rel[r.type] && visibleIds.has(r.from) && visibleIds.has(r.to))
+  const ids = new Set(visible.map(c => c.id))
+  const relations = RELATIONS.filter(r => state.rel[r.type] && ids.has(r.from) && ids.has(r.to))
+  return { visible, relations }
+}
 
-  // 1) 클래스 박스를 네임스페이스(패키지)별 격자에 배치한다.
+function bezierBetween(a, b) {
+  const [p1, p2, axis] = sideAnchors(a, b)
+  const off = 40
+  return axis === 'h'
+    ? 'M ' + p1.x + ' ' + p1.y + ' C ' + (p1.x + (p2.x > p1.x ? off : -off)) + ' ' + p1.y + ', '
+      + (p2.x + (p2.x > p1.x ? -off : off)) + ' ' + p2.y + ', ' + p2.x + ' ' + p2.y
+    : 'M ' + p1.x + ' ' + p1.y + ' C ' + p1.x + ' ' + (p1.y + (p2.y > p1.y ? off : -off)) + ', '
+      + p2.x + ' ' + (p2.y + (p2.y > p1.y ? -off : off)) + ', ' + p2.x + ' ' + p2.y
+}
+
+/** 점 목록을 진행축(세로 또는 가로) 방향으로 부드럽게 잇는다. */
+function smoothPath(pts, horizontal) {
+  let d = 'M ' + pts[0].x + ' ' + pts[0].y
+  for (let i = 1; i < pts.length; i++) {
+    const p0 = pts[i - 1], p1 = pts[i]
+    if (horizontal) {
+      const k = Math.max(16, Math.abs(p1.x - p0.x) / 2) * (p1.x > p0.x ? 1 : -1)
+      d += ' C ' + (p0.x + k) + ' ' + p0.y + ', ' + (p1.x - k) + ' ' + p1.y + ', ' + p1.x + ' ' + p1.y
+    } else {
+      const k = Math.max(16, Math.abs(p1.y - p0.y) / 2) * (p1.y > p0.y ? 1 : -1)
+      d += ' C ' + p0.x + ' ' + (p0.y + k) + ', ' + p1.x + ' ' + (p1.y - k) + ', ' + p1.x + ' ' + p1.y
+    }
+  }
+  return d
+}
+
+/**
+ * 트리(계층) 배치. 상속·구현은 상위 타입이 위로 오게 방향을 뒤집어 층을 잡고,
+ * 층을 건너뛰는 선에는 중간 더미를 끼워 넣은 뒤 바리센터 정렬로 교차를 줄인다.
+ */
+function layoutTree(visible, relations) {
+  const tb = state.treeDir === 'TB'
+  const boxes = new Map(visible.map(c => {
+    const s = umlSize(c)
+    return [c.id, { c, w: s.w, h: s.h, x: 0, y: 0 }]
+  }))
+  const dir = relations.map(r => (r.type === 'inherit' || r.type === 'implement')
+    ? { r, a: r.to, b: r.from, flip: true }
+    : { r, a: r.from, b: r.to, flip: false })
+
+  const linked = new Set()
+  dir.forEach(e => { linked.add(e.a); linked.add(e.b) })
+  const connected = visible.map(c => c.id).filter(id => linked.has(id))
+  const isolated = visible.map(c => c.id).filter(id => !linked.has(id))
+
+  const layerOf = assignLayers(connected, dir.map(e => [e.a, e.b]))
+  const depth = connected.length ? Math.max(...layerOf.values()) : -1
+  const rows = Array.from({ length: depth + (isolated.length ? 2 : 1) }, () => [])
+  connected.forEach(id => rows[layerOf.get(id)].push({ key: id, layer: layerOf.get(id), box: boxes.get(id) }))
+  isolated.forEach(id => rows[depth + 1].push({ key: id, layer: depth + 1, box: boxes.get(id) }))
+
+  // 층을 건너뛰는 선은 중간 층에 더미를 두고 지나가게 한다.
+  const DUMMY_W = 22
+  const chains = []
+  dir.forEach((e, i) => {
+    const la = layerOf.get(e.a), lb = layerOf.get(e.b)
+    const chain = [e.a]
+    const forward = lb != null && la != null && lb > la
+    if (forward && lb - la > 1) {
+      for (let l = la + 1; l < lb; l++) {
+        const key = '#d' + i + '_' + l
+        rows[l].push({ key, layer: l, box: null, dummy: true })
+        chain.push(key)
+      }
+    }
+    chain.push(e.b)
+    chains.push({ e, chain, forward })
+  })
+
+  const nodeByKey = new Map()
+  rows.forEach(row => row.forEach(n => nodeByKey.set(n.key, n)))
+  const nodeW = n => n.dummy ? (tb ? DUMMY_W : 2) : n.box.w
+  const nodeH = n => n.dummy ? (tb ? 2 : DUMMY_W) : n.box.h
+
+  const up = new Map(), down = new Map()
+  chains.forEach(ch => {
+    if (!ch.forward) return
+    for (let i = 0; i + 1 < ch.chain.length; i++) {
+      push(down, ch.chain[i], ch.chain[i + 1])
+      push(up, ch.chain[i + 1], ch.chain[i])
+    }
+  })
+
+  // 1) 순서 정하기 — 바리센터 정렬을 위/아래로 번갈아 4회
+  const index = new Map()
+  rows.forEach(row => row.forEach((n, i) => index.set(n.key, i)))
+  const bary = (n, neighbors) => {
+    const list = (neighbors.get(n.key) || []).filter(k => index.has(k))
+    return list.length ? list.reduce((s, k) => s + index.get(k), 0) / list.length : index.get(n.key)
+  }
+  for (let it = 0; it < 4; it++) {
+    const downward = it % 2 === 0
+    const seq = rows.map((_, i) => i)
+    ;(downward ? seq.slice(1) : seq.slice(0, -1).reverse()).forEach(li => {
+      const neighbors = downward ? up : down
+      rows[li].sort((p, q) => bary(p, neighbors) - bary(q, neighbors))
+      rows[li].forEach((n, i) => index.set(n.key, i))
+    })
+  }
+
+  // 2) 좌표 — 층은 진행축으로 쌓고, 같은 층 안에서는 이웃 중심으로 당기되 최소 간격을 지킨다.
+  //    세로(TB)는 층이 행, 가로(LR)는 층이 열이다. 박스가 옆으로 넓어서 기본값은 가로다.
+  const mainSize = n => tb ? nodeH(n) : nodeW(n)
+  const crossSize = n => tb ? nodeW(n) : nodeH(n)
+  const gapMain = tb ? 58 : 74, gapCross = tb ? 30 : 20
+
+  const layerMain = []
+  let mainCursor = 0
+  rows.forEach(row => {
+    layerMain.push(mainCursor)
+    mainCursor += (row.length ? Math.max(...row.map(mainSize)) : 0) + gapMain
+  })
+  rows.forEach(row => { let c = 0; row.forEach(n => { n.cross = c; c += crossSize(n) + gapCross }) })
+  const centerOf = k => { const n = nodeByKey.get(k); return n ? n.cross + crossSize(n) / 2 : null }
+
+  for (let it = 0; it < 6; it++) {
+    const downward = it % 2 === 0
+    const seq = rows.map((_, i) => i)
+    ;(downward ? seq.slice(1) : seq.slice(0, -1).reverse()).forEach(li => {
+      const row = rows[li]
+      const neighbors = downward ? up : down
+      const want = row.map(n => {
+        const list = (neighbors.get(n.key) || []).map(centerOf).filter(v => v != null)
+        return list.length ? list.reduce((s, v) => s + v, 0) / list.length - crossSize(n) / 2 : n.cross
+      })
+      let cursor = -Infinity
+      row.forEach((n, i) => { n.cross = Math.max(want[i], cursor); cursor = n.cross + crossSize(n) + gapCross })
+      let limit = Infinity
+      for (let i = row.length - 1; i >= 0; i--) {
+        const n = row[i]
+        if (want[i] > n.cross) n.cross = Math.min(want[i], limit - crossSize(n))
+        limit = n.cross - gapCross
+      }
+    })
+  }
+
+  const all = rows.flat()
+  const minCross = all.length ? Math.min(...all.map(n => n.cross)) : 0
+  all.forEach(n => {
+    n.cross -= minCross
+    n.x = tb ? n.cross : layerMain[n.layer]
+    n.y = tb ? layerMain[n.layer] : n.cross
+    if (n.box) { n.box.x = n.x; n.box.y = n.y }
+  })
+
+  // 3) 선 — 아래로 흐르는 선은 더미를 지나는 곡선, 되돌아가는 선은 옆면끼리 잇는다.
+  const paths = chains.map(ch => {
+    const r = ch.e.r
+    const meta = { type: r.type, from: r.from, to: r.to }
+    if (!ch.forward) {
+      const a = boxes.get(r.from), b = boxes.get(r.to)
+      return Object.assign(meta, { d: bezierBetween(a, b) })
+    }
+    const start = boxes.get(ch.e.a), end = boxes.get(ch.e.b)
+    const pts = tb
+      ? [{ x: start.x + start.w / 2, y: start.y + start.h }]
+      : [{ x: start.x + start.w, y: start.y + start.h / 2 }]
+    ch.chain.slice(1, -1).forEach(k => {
+      const n = nodeByKey.get(k)
+      pts.push({ x: n.x + nodeW(n) / 2, y: n.y + nodeH(n) / 2 })
+    })
+    pts.push(tb ? { x: end.x + end.w / 2, y: end.y } : { x: end.x, y: end.y + end.h / 2 })
+    if (ch.e.flip) pts.reverse()   // 화살표가 상위 타입 쪽에 붙어야 한다
+    return Object.assign(meta, { d: smoothPath(pts, !tb) })
+  })
+
+  const width = all.length ? Math.max(...all.map(n => n.x + nodeW(n))) : 0
+  const height = all.length ? Math.max(...all.map(n => n.y + nodeH(n))) : 0
+  return { packages: [], boxes, paths, size: { width, height } }
+}
+
+/** 패키지 배치. 네임스페이스별 격자 + 패널 폭에 맞춘 줄바꿈. */
+function layoutPackages(visible, relations) {
   const boxes = new Map()
   const packages = []
   uniq(visible.map(c => c.ns)).forEach(ns => {
     const items = visible.filter(c => c.ns === ns).map(c => Object.assign({ c }, umlSize(c)))
     const cols = Math.min(3, Math.ceil(Math.sqrt(items.length)))
-    const rows = Math.ceil(items.length / cols)
     const cellW = Math.max(...items.map(i => i.w))
     const gap = 16, padX = 12, padY = 30
     const rowH = []
     items.forEach((it, i) => { const r = Math.floor(i / cols); rowH[r] = Math.max(rowH[r] || 0, it.h) })
     items.forEach((it, i) => {
-      it.col = i % cols
-      it.row = Math.floor(i / cols)
-      it.ox = padX + it.col * (cellW + gap)
-      it.oy = padY + rowH.slice(0, it.row).reduce((s, h) => s + h + gap, 0)
+      it.ox = padX + (i % cols) * (cellW + gap)
+      it.oy = padY + rowH.slice(0, Math.floor(i / cols)).reduce((s, h) => s + h + gap, 0)
     })
     packages.push({
       key: ns, ns, items,
@@ -794,14 +976,12 @@ function buildClassDiagram() {
     items.forEach(it => boxes.set(it.c.id, it))
   })
 
-  // 2) 패키지끼리의 관계로 층을 잡아 패키지를 배치한다.
   const pkgPairs = uniq(relations
     .filter(r => NS_OF.get(r.from) !== NS_OF.get(r.to))
-    .map(r => NS_OF.get(r.from) + '\u0001' + NS_OF.get(r.to)))
-    .map(k => k.split('\u0001'))
+    .map(r => NS_OF.get(r.from) + '::' + NS_OF.get(r.to)))
+    .map(k => k.split('::'))
   const layerOf = assignLayers(packages.map(p => p.key), pkgPairs)
   // 의존 층 순서로 정렬한 뒤 지금 패널 폭에 맞춰 줄바꿈하며 흘린다.
-  // 패널을 넓히거나 창을 키우면 같은 배치가 다시 계산돼 가로가 넓어진 만큼 더 담긴다.
   packages.sort((a, b) => (layerOf.get(a.key) - layerOf.get(b.key)) || a.ns.localeCompare(b.ns))
   const avail = Math.max(760, (($('graphShell').clientWidth || 900) - 40) / state.zoom)
   const gap = 26
@@ -813,22 +993,30 @@ function buildClassDiagram() {
     rowH = Math.max(rowH, p.h)
     width = Math.max(width, p.x + p.w)
   })
-  const size = { width, height: py + rowH }
-
-  // 3) 클래스 박스의 절대 좌표를 확정한다.
   packages.forEach(p => p.items.forEach(it => { it.x = p.x + it.ox; it.y = p.y + it.oy }))
+
+  const paths = relations.map(r => ({
+    type: r.type, from: r.from, to: r.to, d: bezierBetween(boxes.get(r.from), boxes.get(r.to)),
+  }))
+  return { packages, boxes, paths, size: { width, height: py + rowH } }
+}
+
+function buildClassDiagram() {
+  const { visible, relations } = diagramScope()
+  const layout = visible.length
+    ? (state.layout === 'tree' ? layoutTree(visible, relations) : layoutPackages(visible, relations))
+    : { packages: [], boxes: new Map(), paths: [], size: { width: 0, height: 0 } }
 
   const counts = { inherit:0, implement:0, assoc:0, depend:0 }
   relations.forEach(r => counts[r.type]++)
-  const meta = '클래스 ' + visible.length + '개 · 관계 ' + relations.length + '개'
+  layout.meta = '클래스 ' + visible.length + '개 · 관계 ' + relations.length + '개'
     + ' (상속 ' + counts.inherit + ' · 구현 ' + counts.implement + ' · 연관 ' + counts.assoc + ' · 의존 ' + counts.depend + ')'
-
-  return { packages, boxes, relations, size, meta, visibleCount: visible.length }
+  return layout
 }
 
 function drawClassDiagram(shell, view) {
   shell.innerHTML = ''
-  if (!view.packages.length) { shell.appendChild(el('div', 'panel-message', '표시할 클래스가 없다. 왼쪽에서 네임스페이스를 켜야 한다.')); return }
+  if (!view.boxes.size) { shell.appendChild(el('div', 'panel-message', '표시할 클래스가 없다. 왼쪽에서 네임스페이스를 켜야 한다.')); return }
 
   const scale = el('div', 'dg-scale')
   scale.style.transform = 'scale(' + state.zoom + ')'
@@ -851,24 +1039,15 @@ function drawClassDiagram(shell, view) {
   })
   root.appendChild(svg)
 
-  view.relations.forEach(r => {
-    const a = view.boxes.get(r.from), b = view.boxes.get(r.to)
-    if (!a || !b) return
-    const active = selKey === r.from || selKey === r.to
-    const [p1, p2, axis] = sideAnchors(a, b)
-    const off = 40
-    const d = axis === 'h'
-      ? 'M ' + p1.x + ' ' + p1.y + ' C ' + (p1.x + (p2.x > p1.x ? off : -off)) + ' ' + p1.y + ', '
-        + (p2.x + (p2.x > p1.x ? -off : off)) + ' ' + p2.y + ', ' + p2.x + ' ' + p2.y
-      : 'M ' + p1.x + ' ' + p1.y + ' C ' + p1.x + ' ' + (p1.y + (p2.y > p1.y ? off : -off)) + ', '
-        + p2.x + ' ' + (p2.y + (p2.y > p1.y ? -off : off)) + ', ' + p2.x + ' ' + p2.y
+  view.paths.forEach(p => {
+    const active = selKey === p.from || selKey === p.to
     const path = document.createElementNS(SVGNS, 'path')
-    path.setAttribute('d', d)
-    path.setAttribute('class', 'rel rel-' + r.type + (active ? ' active' : ''))
+    path.setAttribute('d', p.d)
+    path.setAttribute('class', 'rel rel-' + p.type + (active ? ' active' : ''))
     path.setAttribute('fill', 'none')
-    const marker = r.type === 'inherit' || r.type === 'implement'
+    const marker = p.type === 'inherit' || p.type === 'implement'
       ? (active ? 'triA' : 'tri')
-      : r.type === 'assoc' ? (active ? 'openA' : 'open') : (active ? 'openA' : 'dep')
+      : p.type === 'assoc' ? (active ? 'openA' : 'open') : (active ? 'openA' : 'dep')
     path.setAttribute('marker-end', 'url(#' + marker + ')')
     svg.appendChild(path)
   })
@@ -880,11 +1059,11 @@ function drawClassDiagram(shell, view) {
     box.style.width = it.w + 'px'; box.style.height = it.h + 'px'
     box.style.borderTop = '2px solid ' + (KIND_COLOR[c.kind] || '#566174')
 
-    const nameBox = el('div', 'uml-name' + (c.stereotype ? ' with-stereo' : ''))
-    if (c.stereotype) nameBox.appendChild(el('div', 'uml-stereo', '\u00AB' + c.stereotype + '\u00BB'))
+    const caption = captionOf(c)
+    const nameBox = el('div', 'uml-name' + (caption ? ' with-stereo' : ''))
+    if (caption) nameBox.appendChild(el('div', 'uml-stereo', caption))
     const title = el('div', 'uml-title')
-    const b = el('b', c.abstract ? 'abs' : null, c.name)
-    title.appendChild(b)
+    title.appendChild(el('b', c.abstract ? 'abs' : null, c.name))
     nameBox.appendChild(title)
     box.appendChild(nameBox)
 
@@ -923,7 +1102,12 @@ function drawClassDiagram(shell, view) {
 
   if (state.scrollToNs) {
     const pkg = view.packages.find(p => p.ns === state.scrollToNs)
-    if (pkg) { shell.scrollLeft = Math.max(0, pkg.x * state.zoom - 24); shell.scrollTop = Math.max(0, pkg.y * state.zoom - 24) }
+    const target = pkg || [...view.boxes.values()].filter(b => b.c.ns === state.scrollToNs)
+      .sort((a, b) => (a.y - b.y) || (a.x - b.x))[0]
+    if (target) {
+      shell.scrollLeft = Math.max(0, target.x * state.zoom - 24)
+      shell.scrollTop = Math.max(0, target.y * state.zoom - 24)
+    }
     state.scrollToNs = null
   }
 }
@@ -1354,7 +1538,17 @@ function renderToolbar() {
   if (state.mode === 'classmap') {
     $('modeHint').textContent = state.focusOnly
       ? '선택한 클래스와 직접 이어진 클래스만 그린다.'
-      : '솔루션 전체 클래스를 UML 박스로 그리고 네임스페이스를 패키지로 묶는다.'
+      : state.layout === 'tree'
+        ? '솔루션 전체 클래스를 관계 방향에 따라 위에서 아래로 층을 나눠 그린다.'
+        : '솔루션 전체 클래스를 네임스페이스 패키지로 묶어 그린다.'
+    text('배치')
+    chip('트리', state.layout === 'tree', () => { state.layout = 'tree'; render() }, '관계 방향으로 층을 나눠 트리처럼 배치한다')
+    chip('패키지', state.layout === 'package', () => { state.layout = 'package'; render() }, '네임스페이스별 격자로 묶어 배치한다')
+    if (state.layout === 'tree') {
+      chip('→', state.treeDir === 'LR', () => { state.treeDir = 'LR'; render() }, '왼쪽에서 오른쪽으로 뻗는 트리')
+      chip('↓', state.treeDir === 'TB', () => { state.treeDir = 'TB'; render() }, '위에서 아래로 뻗는 트리')
+    }
+    sep()
     text('멤버')
     chip('필드', state.showFields, () => { state.showFields = !state.showFields; render() })
     chip('메서드', state.showMethods, () => { state.showMethods = !state.showMethods; render() })
@@ -1366,13 +1560,17 @@ function renderToolbar() {
     sep()
     text('줌')
     ;[0.5, 0.75, 1].forEach(z => chip(Math.round(z * 100) + '%', state.zoom === z, () => { state.zoom = z; render() }))
-    // 가장 넓은 패키지가 가로로 다 들어오는 배율로 맞춘다(가로 스크롤 없음).
+    // 트리는 전체가 화면에 들어오게, 패키지 배치는 가장 넓은 패키지가 들어오게 맞춘다.
     chip('맞춤', false, () => {
       const shell = $('graphShell')
-      const widest = Math.max(...buildClassDiagram().packages.map(p => p.w), 400)
-      state.zoom = Math.max(0.35, Math.min(1, (shell.clientWidth - 40) / widest))
+      const view = buildClassDiagram()
+      const fit = state.layout === 'tree'
+        ? Math.min((shell.clientWidth - 40) / Math.max(1, view.size.width),
+                   (shell.clientHeight - 40) / Math.max(1, view.size.height))
+        : (shell.clientWidth - 40) / Math.max(...view.packages.map(p => p.w), 400)
+      state.zoom = Math.max(0.25, Math.min(1, fit))
       render()
-    }, '가장 넓은 패키지가 가로로 다 들어오게 맞춘다')
+    }, '전체가 화면에 들어오는 배율로 맞춘다')
     return
   }
 
