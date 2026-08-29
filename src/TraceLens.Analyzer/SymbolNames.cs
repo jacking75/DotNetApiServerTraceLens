@@ -13,9 +13,12 @@ internal static class SymbolNames
     public static string GetNodeId(IMethodSymbol method)
     {
         var containingType = GetClassId(method.ContainingType);
-        var parameters = string.Join(",", method.Parameters.Select(parameter => parameter.Type.ToDisplayString(TypeFormat)));
-        return $"{containingType}.{method.Name}({parameters})";
+        return $"{containingType}.{method.Name}({string.Join(",", GetParameterTypeNames(method))})";
     }
+
+    /// <summary>노드 id에 쓰는 것과 같은 규칙(전체 타입 이름)으로 파라미터 타입을 돌려준다.</summary>
+    public static IReadOnlyList<string> GetParameterTypeNames(IMethodSymbol method) =>
+        method.Parameters.Select(parameter => parameter.Type.ToDisplayString(TypeFormat)).ToArray();
 
     public static string GetDisplayName(IMethodSymbol method) => method.MethodKind switch
     {

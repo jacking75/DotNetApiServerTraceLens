@@ -75,14 +75,34 @@ public sealed class TraceLensAnalyzer(
         var outputDirectory = Path.Combine(solutionDirectory, ".tracelens");
         Directory.CreateDirectory(outputDirectory);
         var outputPath = Path.Combine(outputDirectory, "graph.json");
-        await File.WriteAllTextAsync(
-            outputPath,
-            JsonSerializer.Serialize(document, GraphDocument.JsonOptions),
-            cancellationToken);
+        var json = JsonSerializer.Serialize(document, GraphDocument.JsonOptions);
+        await File.WriteAllTextAsync(outputPath, json, cancellationToken);
+
+        // members가 들어가면서 커진 만큼, 언제 includeMembers를 꺼야 할지 판단할 수 있게 크기를 남긴다.
+        var sizeKb = json.Length / 1024;
+        if (sizeKb > GraphSizeWarningKb)
+        {
+            logger.LogWarning(
+                "graph.json이 {SizeKb}KB다. 화면이 느리면 tracelens.config.json의 includeMembers를 false로 두면 줄어든다.",
+                sizeKb);
+        }
+        else
+        {
+            logger.LogInformation("graph.json {SizeKb}KB · 멤버 {MemberCount}개(수집 {MemberElapsedMs}ms).", sizeKb, scan.MemberCount, scan.MemberElapsedMs);
+        }
 
         stopwatch.Stop();
-        return new AnalysisResult(document, stopwatch.ElapsedMilliseconds, outputPath);
+        return new AnalysisResult(
+            document,
+            stopwatch.ElapsedMilliseconds,
+            outputPath,
+            scan.MemberCount,
+            scan.MemberElapsedMs,
+            json.Length);
     }
+
+    /// <summary>이 크기를 넘으면 <c>includeMembers</c>를 끄라고 안내한다.</summary>
+    private const int GraphSizeWarningKb = 500;
 
     /// <summary>
     /// 상대 경로와 출력의 기준이 될 디렉터리를 정한다.
@@ -143,4 +163,13 @@ public sealed class TraceLensAnalyzer(
     }
 }
 
-public sealed record AnalysisResult(GraphDocument Graph, long ElapsedMs, string OutputPath);
+/// <param name="MemberCount">클래스 다이어그램용으로 모은 멤버 수.</param>
+/// <param name="MemberElapsedMs">멤버 수집에만 쓴 시간(ms). 전체 <paramref name="ElapsedMs"/> 안에 포함된다.</param>
+/// <param name="GraphSizeBytes">저장한 <c>graph.json</c>의 크기.</param>
+public sealed record AnalysisResult(
+    GraphDocument Graph,
+    long ElapsedMs,
+    string OutputPath,
+    int MemberCount,
+    long MemberElapsedMs,
+    int GraphSizeBytes);

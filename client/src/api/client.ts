@@ -6,8 +6,11 @@ import type {
   EditorResponse,
   EntryPoint,
   FreshnessResponse,
+  GraphClass,
   GraphClassSummary,
   GraphDocument,
+  GraphNamespaceSummary,
+  GraphNode,
   SourceResponse,
 } from '../types/graph'
 
@@ -44,8 +47,40 @@ export function getClasses(): Promise<GraphClassSummary[]> {
   return request('/api/graph/classes')
 }
 
-export function getGraph(): Promise<GraphDocument> {
-  return request('/api/graph')
+export function getNamespaces(): Promise<GraphNamespaceSummary[]> {
+  return request('/api/graph/namespaces')
+}
+
+export async function getGraph(): Promise<GraphDocument> {
+  return normalizeGraph(await request<GraphDocument>('/api/graph'))
+}
+
+/**
+ * 스키마 v3 이하로 저장된 그래프를 읽었을 때 v4에서 추가된 필드를 기본값으로 채운다.
+ * 화면 코드가 `members`/`interfaceIds`의 존재를 매번 확인하지 않아도 되게 하는 것이 목적이다.
+ */
+export function normalizeGraph(graph: GraphDocument): GraphDocument {
+  if (graph.schemaVersion >= 4) return graph
+  return {
+    ...graph,
+    classes: (graph.classes ?? []).map((item): GraphClass => ({
+      ...item,
+      typeKind: item.typeKind ?? 'Class',
+      isAbstract: item.isAbstract ?? false,
+      isStatic: item.isStatic ?? false,
+      baseTypeId: item.baseTypeId ?? null,
+      baseTypeName: item.baseTypeName ?? null,
+      interfaceIds: item.interfaceIds ?? [],
+      interfaceNames: item.interfaceNames ?? [],
+      members: item.members ?? [],
+    })),
+    nodes: (graph.nodes ?? []).map((item): GraphNode => ({
+      ...item,
+      accessibility: item.accessibility ?? 'Public',
+      returnType: item.returnType ?? '',
+      parameterTypes: item.parameterTypes ?? [],
+    })),
+  }
 }
 
 export function getFreshness(): Promise<FreshnessResponse> {

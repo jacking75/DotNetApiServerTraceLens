@@ -18,8 +18,8 @@ public sealed class AnalyzerIntegrationTests
 
         Assert.Equal(3, result.Graph.EntryPoints.Count);
         Assert.True(
-            result.Graph.Nodes.Count == 15,
-            $"예상 노드 수는 15개지만 {result.Graph.Nodes.Count}개다.{Environment.NewLine}{string.Join(Environment.NewLine, logs)}");
+            result.Graph.Nodes.Count == 17,
+            $"예상 노드 수는 17개지만 {result.Graph.Nodes.Count}개다.{Environment.NewLine}{string.Join(Environment.NewLine, logs)}");
         Assert.Equal(11, result.Graph.Edges.Count);
         Assert.Equal(3, result.Graph.Nodes.Count(node => node.Kind == NodeKind.Controller));
         Assert.Contains(result.Graph.Nodes, node => node.Kind == NodeKind.Service);
@@ -119,13 +119,15 @@ public sealed class AnalyzerIntegrationTests
 
         var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
 
-        // 인터페이스는 제외하므로 컨트롤러 3개 + 서비스 4개 + 리포지토리 + 잡 + DI 등록 확장 클래스 + DTO다.
-        Assert.Equal(11, result.Graph.Classes.Count);
+        // 컨트롤러 3 + 서비스 5 + 리포지토리 + 잡 + DI 등록 확장 클래스 + DTO + 도메인 3 + 계약 record + 인터페이스 4다.
+        Assert.Equal(20, result.Graph.Classes.Count);
         var job = Assert.Single(result.Graph.Classes, item => item.Name == "CleanupJob");
         Assert.Equal("FixtureApp.Jobs", job.Namespace);
         Assert.Equal("FixtureApp/Jobs/CleanupJob.cs", job.File);
         Assert.Equal(["FixtureApp.Jobs.CleanupJob.RunAsync(int)"], job.MethodIds);
-        Assert.DoesNotContain(result.Graph.Classes, item => item.Name.StartsWith('I') && item.Name.EndsWith("Service"));
+        // 스키마 v4부터 인터페이스도 목록에 들어간다(노드는 여전히 본문이 있는 멤버만이다).
+        Assert.Equal(4, result.Graph.Classes.Count(item => item.TypeKind == ClassTypeKind.Interface));
+        Assert.DoesNotContain(result.Graph.Nodes, node => node.ClassId == "FixtureApp.Services.IOrderService");
 
         // 진입점에서 도달하지 못하는 클래스도 호출 엣지를 가진다.
         Assert.Contains(
@@ -152,7 +154,134 @@ public sealed class AnalyzerIntegrationTests
 
             Assert.DoesNotContain(result.Graph.Nodes, node => node.DisplayName == "CleanupJob.RunAsync");
             Assert.Equal(8, result.Graph.Nodes.Count);
-            Assert.Equal(11, result.Graph.Classes.Count);
+            Assert.Equal(20, result.Graph.Classes.Count);
+        }
+        finally
+        {
+            File.Delete(configPath);
+        }
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_CollectsTypeMetadataInheritanceAndMembers()
+    {
+        var logs = new ConcurrentQueue<string>();
+        await using var provider = CreateProvider(logs);
+
+        var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
+        var byId = result.Graph.Classes.ToDictionary(item => item.Id, StringComparer.Ordinal);
+
+        // 인터페이스 선언과 그 구현 — interfaceIds는 직접 구현만 담는다.
+        var repositoryInterface = byId["FixtureApp.Repositories.IOrderRepository"];
+        Assert.Equal(ClassTypeKind.Interface, repositoryInterface.TypeKind);
+        Assert.False(repositoryInterface.IsAbstract);
+        Assert.Equal(
+            ["FixtureApp.Repositories.IOrderRepository"],
+            byId["FixtureApp.Repositories.OrderRepository"].InterfaceIds);
+
+        // 추상 기반 클래스와 파생 둘.
+        var entityBase = byId["FixtureApp.Domain.EntityBase"];
+        Assert.True(entityBase.IsAbstract);
+        Assert.Equal(ClassTypeKind.Class, entityBase.TypeKind);
+        Assert.Equal(entityBase.Id, byId["FixtureApp.Domain.Order"].BaseTypeId);
+        Assert.Equal(entityBase.Id, byId["FixtureApp.Domain.Payment"].BaseTypeId);
+        Assert.Equal("EntityBase", byId["FixtureApp.Domain.Order"].BaseTypeName);
+
+        // 솔루션 밖 상위 타입은 id 없이 이름만 남는다.
+        var controller = byId["FixtureApp.Controllers.OrdersController"];
+        Assert.Null(controller.BaseTypeId);
+        Assert.Equal("ControllerBase", controller.BaseTypeName);
+
+        // 필드로 인터페이스를 주입받으면 멤버 typeIds가 그 인터페이스를 가리킨다.
+        var injected = Assert.Single(
+            byId["FixtureApp.Services.ReportService"].Members,
+            member => member.MemberKind == MemberKind.Field);
+        Assert.Equal("repository", injected.Name);
+        Assert.Equal(MemberAccessibility.Private, injected.Accessibility);
+        Assert.Equal("IOrderRepository", injected.Type);
+        Assert.Equal(["FixtureApp.Repositories.IOrderRepository"], injected.TypeIds);
+        Assert.Null(injected.NodeId);
+
+        // 제네릭 인자 안의 솔루션 타입도 재귀로 뽑는다.
+        var find = Assert.Single(
+            byId["FixtureApp.Services.ReportService"].Members,
+            member => member.Name == "FindAsync");
+        Assert.Equal(["FixtureApp.Domain.Order"], find.TypeIds);
+        Assert.Equal("FixtureApp.Services.ReportService.FindAsync(int)", find.NodeId);
+
+        // 자동 프로퍼티만 있는 record는 members에는 뜨고 nodes에는 안 뜬다.
+        var request = byId["FixtureApp.Contracts.CreateOrderRequest"];
+        Assert.Equal(ClassTypeKind.Record, request.TypeKind);
+        Assert.Equal(
+            ["CustomerId", "Note"],
+            request.Members.Where(member => member.MemberKind == MemberKind.Property).Select(member => member.Name));
+        Assert.All(request.Members, member => Assert.Null(member.NodeId));
+        Assert.DoesNotContain(result.Graph.Nodes, node => node.ClassId == request.Id);
+
+        // 인터페이스 메서드는 members에만 있고 노드가 되지 않는다.
+        var interfaceMethod = Assert.Single(repositoryInterface.Members);
+        Assert.Equal("SaveAsync(int)", interfaceMethod.Signature);
+        Assert.Null(interfaceMethod.NodeId);
+
+        // 노드에도 접근제한자·반환타입·파라미터 타입이 붙는다.
+        var save = Assert.Single(
+            result.Graph.Nodes,
+            node => node.Id == "FixtureApp.Repositories.OrderRepository.SaveAsync(int)");
+        Assert.Equal(MemberAccessibility.Public, save.Accessibility);
+        Assert.Equal("Task", save.ReturnType);
+        Assert.Equal(["int"], save.ParameterTypes);
+
+        var privateMethod = Assert.Single(
+            result.Graph.Nodes,
+            node => node.Id == "FixtureApp.Repositories.OrderRepository.CountPending()");
+        Assert.Equal(MemberAccessibility.Private, privateMethod.Accessibility);
+        Assert.Empty(privateMethod.ParameterTypes);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_WithMembersDisabled_KeepsClassesButEmptiesMembers()
+    {
+        var logs = new ConcurrentQueue<string>();
+        await using var provider = CreateProvider(logs);
+        var configPath = Path.Combine(Path.GetDirectoryName(GetFixtureSolutionPath())!, "tracelens.config.json");
+        await File.WriteAllTextAsync(configPath, """{ "includeMembers": false }""");
+
+        try
+        {
+            var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
+
+            Assert.Equal(20, result.Graph.Classes.Count);
+            Assert.All(result.Graph.Classes, item => Assert.Empty(item.Members));
+            Assert.Equal(0, result.MemberCount);
+            // 멤버를 꺼도 상속·구현 정보는 남아 관계도는 그릴 수 있다.
+            Assert.Contains(
+                result.Graph.Classes,
+                item => item.Id == "FixtureApp.Domain.Order" && item.BaseTypeId == "FixtureApp.Domain.EntityBase");
+        }
+        finally
+        {
+            File.Delete(configPath);
+        }
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_WithInterfacesDisabled_FallsBackToSchemaV3Behavior()
+    {
+        var logs = new ConcurrentQueue<string>();
+        await using var provider = CreateProvider(logs);
+        var configPath = Path.Combine(Path.GetDirectoryName(GetFixtureSolutionPath())!, "tracelens.config.json");
+        await File.WriteAllTextAsync(configPath, """{ "includeInterfaces": false }""");
+
+        try
+        {
+            var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
+
+            Assert.Equal(16, result.Graph.Classes.Count);
+            Assert.DoesNotContain(result.Graph.Classes, item => item.TypeKind == ClassTypeKind.Interface);
+            // 목록에서 빠진 인터페이스는 그릴 대상이 없으므로 구현 관계에서도 빠진다.
+            Assert.Empty(Assert.Single(
+                result.Graph.Classes,
+                item => item.Id == "FixtureApp.Repositories.OrderRepository").InterfaceIds);
         }
         finally
         {

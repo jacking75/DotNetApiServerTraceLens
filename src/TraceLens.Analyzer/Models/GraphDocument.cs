@@ -14,7 +14,11 @@ public sealed record GraphDocument(
     IReadOnlyList<GraphEdge> Edges,
     IReadOnlyDictionary<string, string> FileHashes)
 {
-    public const int CurrentSchemaVersion = 3;
+    /// <summary>
+    /// v4에서 <c>classes</c>에 타입 메타·상속·구현·멤버가, <c>nodes</c>에 접근제한자·반환타입·파라미터 타입이 들어갔다.
+    /// v3 이하로 저장된 문서를 읽으면 새 필드는 각 모델의 기본값(빈 목록·null·Class)으로 채워진다.
+    /// </summary>
+    public const int CurrentSchemaVersion = 4;
 
     private readonly IReadOnlyList<GraphClass> classes = Classes ?? [];
     private readonly string? rootDirectory;

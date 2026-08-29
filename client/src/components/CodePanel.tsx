@@ -1,24 +1,33 @@
 import Editor, { type OnMount } from '@monaco-editor/react'
 import { useEffect, useState } from 'react'
 import { getSource } from '../api/client'
-import type { GraphNode, SourceResponse } from '../types/graph'
+import type { SourceResponse } from '../types/graph'
 
-interface CodePanelProps {
-  node: GraphNode | null
+export interface SourceTarget {
+  file: string
+  startLine: number
+  endLine: number
 }
 
-export function CodePanel({ node }: CodePanelProps) {
+interface SourceViewProps {
+  target: SourceTarget | null
+  height: number | string
+  emptyMessage: string
+}
+
+/** 지정한 파일 구간을 읽어 Monaco로 보여준다. 상세 패널의 "소스" 절에 끼워 넣어 쓴다. */
+export function SourceView({ target, height, emptyMessage }: SourceViewProps) {
   const [source, setSource] = useState<SourceResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     setSource(null)
     setError(null)
-    if (!node) return
-    void getSource(node.file, node.startLine, node.endLine)
+    if (!target) return
+    void getSource(target.file, target.startLine, target.endLine)
       .then(setSource)
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : '소스를 불러오지 못했다.'))
-  }, [node])
+  }, [target?.file, target?.startLine, target?.endLine]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMount: OnMount = (editor) => {
     if (!source) return
@@ -31,32 +40,27 @@ export function CodePanel({ node }: CodePanelProps) {
     ])
   }
 
+  if (error) return <div className="panel-message error">{error}</div>
+  if (!source) return <div className="panel-message">{emptyMessage}</div>
+
   return (
-    <section className="panel code-panel">
-      <header>
-        <span>Source</span>
-        <small>{node ? `${node.file}:${node.startLine}-${node.endLine}` : '노드를 선택해야 한다'}</small>
-      </header>
-      {error && <div className="panel-message error">{error}</div>}
-      {!error && !source && <div className="panel-message">그래프의 노드를 선택하면 실제 코드가 표시된다.</div>}
-      {source && (
-        <Editor
-          height="100%"
-          language="csharp"
-          theme="vs-dark"
-          value={source.content}
-          onMount={handleMount}
-          options={{
-            readOnly: true,
-            minimap: { enabled: false },
-            lineNumbers: (line) => String(source.startLine + line - 1),
-            scrollBeyondLastLine: false,
-            fontSize: 13,
-            padding: { top: 16 },
-            automaticLayout: true,
-          }}
-        />
-      )}
-    </section>
+    <div className="source-view" style={{ height }}>
+      <Editor
+        height="100%"
+        language="csharp"
+        theme="vs-dark"
+        value={source.content}
+        onMount={handleMount}
+        options={{
+          readOnly: true,
+          minimap: { enabled: false },
+          lineNumbers: (line) => String(source.startLine + line - 1),
+          scrollBeyondLastLine: false,
+          fontSize: 12,
+          padding: { top: 10 },
+          automaticLayout: true,
+        }}
+      />
+    </div>
   )
 }

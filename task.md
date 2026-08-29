@@ -10,7 +10,7 @@
 
 `{fullyQualifiedTypeName}.{methodName}({parameterTypes})` 형태의 문자열을 그대로 노드 ID로 쓴다. Roslyn의 `IMethodSymbol.ToDisplayString(SymbolDisplayFormat)`으로 안정적으로 생성할 수 있다. 예: `MyApp.Services.OrderService.CreateOrderAsync(MyApp.Contracts.CreateOrderRequest)`.
 
-노드가 되는 멤버는 메서드, 생성자, 본문이 있는 프로퍼티다(자동 프로퍼티는 실행할 코드가 없어 제외).
+노드가 되는 멤버는 메서드, 생성자, 본문이 있는 프로퍼티다(자동 프로퍼티는 실행할 코드가 없어 제외). 인터페이스 메서드는 본문이 없으므로 노드가 아니고 `classes[].members`에만 들어간다.
 
 | 멤버 | 노드 ID 예 | displayName |
 |---|---|---|
@@ -26,7 +26,7 @@
 
 ```json
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "solutionPath": "C:\\repos\\MyApp\\MyApp.sln",
   "rootDirectory": "C:\\repos\\MyApp",
   "analyzedAt": "2026-08-08T14:20:00+09:00",
@@ -43,11 +43,44 @@
       "name": "OrdersController",
       "namespace": "MyApp.Controllers",
       "kind": "Controller",
+      "typeKind": "Class",
+      "isAbstract": false,
+      "isStatic": false,
+      "baseTypeId": null,
+      "baseTypeName": "ControllerBase",
+      "interfaceIds": [],
+      "interfaceNames": [],
       "file": "Controllers/OrdersController.cs",
       "startLine": 18,
       "endLine": 60,
       "methodIds": [
         "MyApp.Controllers.OrdersController.CreateOrder(MyApp.Contracts.CreateOrderRequest)"
+      ],
+      "members": [
+        {
+          "memberKind": "Field",
+          "name": "_orders",
+          "signature": null,
+          "type": "IOrderService",
+          "typeIds": ["MyApp.Application.Abstractions.IOrderService"],
+          "accessibility": "Private",
+          "isStatic": false,
+          "startLine": 20,
+          "endLine": 20,
+          "nodeId": null
+        },
+        {
+          "memberKind": "Method",
+          "name": "CreateOrder",
+          "signature": "CreateOrder(CreateOrderRequest)",
+          "type": "Task<IActionResult>",
+          "typeIds": [],
+          "accessibility": "Public",
+          "isStatic": false,
+          "startLine": 24,
+          "endLine": 41,
+          "nodeId": "MyApp.Controllers.OrdersController.CreateOrder(MyApp.Contracts.CreateOrderRequest)"
+        }
       ]
     }
   ],
@@ -60,7 +93,10 @@
       "classId": "MyApp.Controllers.OrdersController",
       "file": "Controllers/OrdersController.cs",
       "startLine": 24,
-      "endLine": 41
+      "endLine": 41,
+      "accessibility": "Public",
+      "returnType": "Task<IActionResult>",
+      "parameterTypes": ["MyApp.Contracts.CreateOrderRequest"]
     }
   ],
   "edges": [
@@ -76,12 +112,24 @@
 }
 ```
 
-`kind`는 `Controller | Service | Repository | Validator | Infra | Db | Method`(분류 규칙에 안 걸리는 기본값) 중 하나다. 분류 규칙은 0.4의 `tracelens.config.json`을 따르고, 클래스와 그 클래스의 메서드 노드는 같은 `kind`를 갖는다.
+`kind`는 `Controller | Service | Repository | Validator | Infra | Db | Interface | Method` 중 하나다. 분류 규칙은 0.4의 `tracelens.config.json`을 따르고, 클래스와 그 클래스의 메서드 노드는 같은 `kind`를 갖는다. 어느 규칙에도 안 걸리면 인터페이스는 `Interface`, 나머지는 `Method`가 기본값이다.
+
+`typeKind`(`Class | Record | Struct | Interface`)는 선언 종류이고 UML 박스의 스테레오타입(«interface», «record»)에 쓴다. `kind`가 색과 분류라면 `typeKind`는 선언 형태다.
+
+**`members`와 `nodes`의 역할 분리**가 v4의 핵심이다.
+
+- `members` = **화면에 그리는 모델**. 인터페이스 메서드처럼 본문이 없어 노드가 아닌 멤버도 들어간다. `memberKind`는 `Field | Property | Constructor | Method`이고, 정렬은 그 순서 → 소스 줄 번호 순이다.
+- `nodes` = **실행 그래프**. 기존 정의 그대로(본문이 있는 멤버만).
+- 둘을 잇는 것이 `member.nodeId`다. 멤버 줄을 클릭했을 때 `nodeId`가 있으면 호출 그래프·코드 패널로 이어지고, 없으면 선언 위치만 보여준다.
+
+`member.typeIds`와 `baseTypeId`/`interfaceIds`는 **솔루션 안에 선언된 타입만** 담는다(제네릭 인자와 배열 원소까지 재귀로 훑는다). `baseTypeName`/`interfaceNames`는 솔루션 밖 타입이어도 표시용 이름을 남긴다. `interfaceIds`는 직접 구현만 담는다 — `AllInterfaces`를 쓰면 상위 인터페이스까지 선이 중복으로 그려지기 때문이다.
+
+**하위 호환**: v3 이하로 저장된 문서를 읽으면 `members`는 빈 배열, `baseTypeId`/`baseTypeName`은 null, `interfaceIds`/`interfaceNames`/`parameterTypes`는 빈 배열, `typeKind`는 `"Class"`, `accessibility`는 `"Public"`, `returnType`은 빈 문자열로 채운다(Analyzer 모델의 기본값과 클라이언트 `normalizeGraph`가 함께 보장한다). 클라이언트는 `members`가 전부 비어 있으면 "다시 분석해야 클래스 다이어그램을 그릴 수 있다"고 안내한다.
 
 `solutionPath`는 사용자가 고른 분석 대상 파일이다. `.sln`뿐 아니라 `.csproj`도 올 수 있다.
 `rootDirectory`는 노드/클래스의 상대 경로, 신선도 확인, `.tracelens` 출력의 기준 디렉터리다. `.sln`을 고르면 솔루션 디렉터리이고, `.csproj`를 고르면 그 프로젝트와 참조 프로젝트를 모두 담는 공통 상위 디렉터리다(드라이브 루트까지 올라가야 하면 프로젝트 디렉터리를 그대로 쓴다). 스키마 v2 이하로 저장된 그래프에는 이 값이 없으므로 읽을 때 `solutionPath`의 디렉터리로 되돌린다.
 
-`classes`는 솔루션 안에 선언된 **모든** 클래스/레코드/구조체다(인터페이스는 제외, `obj`·`bin` 아래 자동 생성 소스도 제외). 진입점에서 도달하지 못하는 클래스도 포함하므로 `classes`의 `methodIds`에 있는 메서드가 `nodes`에 없을 수 있다(`analysisScope`가 `entryPoints`일 때). `classId`는 노드가 속한 클래스의 `id`와 같은 문자열이고, 클래스 ID는 제네릭 인자를 포함한 전체 타입 이름이다(예: `MyApp.Common.Cache<TKey,TValue>`).
+`classes`는 솔루션 안에 선언된 **모든** 클래스/레코드/구조체/인터페이스다(`obj`·`bin` 아래 자동 생성 소스는 제외). 인터페이스는 스키마 v4부터 포함하고, `includeInterfaces: false`로 끄면 v3까지의 동작(제외)으로 돌아간다. 진입점에서 도달하지 못하는 클래스도 포함하므로 `classes`의 `methodIds`에 있는 메서드가 `nodes`에 없을 수 있다(`analysisScope`가 `entryPoints`일 때). `classId`는 노드가 속한 클래스의 `id`와 같은 문자열이고, 클래스 ID는 제네릭 인자를 포함한 전체 타입 이름이다(예: `MyApp.Common.Cache<TKey,TValue>`).
 
 ### 0.3 SnapshotHash 계산
 
@@ -105,7 +153,9 @@
   "maxCallDepth": 8,
   "excludeNamespacePrefixes": ["System", "Microsoft", "Swashbuckle"],
   "analysisScope": "solution",
-  "includeObjectCreation": true
+  "includeObjectCreation": true,
+  "includeMembers": true,
+  "includeInterfaces": true
 }
 ```
 
@@ -122,15 +172,20 @@
 
 `includeObjectCreation`은 `new X()`(생성자 호출)도 엣지로 넣을지 결정한다. 기본값 `true`에서는 솔루션 안 타입을 `new`로 만들면 그 생성자 노드로 엣지가 이어지고, DTO가 많아 그래프가 커지면 `false`로 꺼서 일반 메서드 호출만 남길 수 있다(직접 선언한 생성자 노드 자체는 끄더라도 남는다).
 
+`includeMembers`(기본 `true`)는 클래스 다이어그램용 멤버 수집 여부다. 끄면 `classes[].members`가 빈 배열이 되어 `graph.json`이 줄어드는 대신 UML 박스가 이름만 남는다(상속·구현 정보는 그대로 남아 관계도는 계속 그려진다). 이 저장소 자체를 분석한 실측으로는 클래스 83개·멤버 397개에서 수집 자체는 5~18ms이고 `graph.json`이 283KB → 450KB로 커진다.
+
+`includeInterfaces`(기본 `true`)는 인터페이스 선언을 `classes`에 넣을지다. 끄면 인터페이스가 목록에서 빠지고, 그에 따라 구현 관계(`interfaceIds`)도 함께 빈다.
+
 ### 0.5 API 계약 (TraceLens.Server)
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| POST | `/api/analyze` | body `{ "solutionPath": string }`. `.sln`과 `.csproj`를 모두 받는다. 분석을 동기 실행하고 결과 요약(`{ entryPointCount, classCount, nodeCount, edgeCount, elapsedMs, analyzedAt, previousAnalyzedAt }`)을 반환. 첫 분석의 `previousAnalyzedAt`은 `null`이다. 서버는 마지막으로 분석한 `solutionPath`를 프로세스 메모리에 상태로 유지한다(로컬 단일 사용자 도구이므로 세션 관리 불필요). |
+| POST | `/api/analyze` | body `{ "solutionPath": string }`. `.sln`과 `.csproj`를 모두 받는다. 분석을 동기 실행하고 결과 요약(`{ entryPointCount, classCount, interfaceCount, nodeCount, edgeCount, memberCount, graphSizeBytes, elapsedMs, analyzedAt, previousAnalyzedAt }`)을 반환. 첫 분석의 `previousAnalyzedAt`은 `null`이다. 서버는 마지막으로 분석한 `solutionPath`를 프로세스 메모리에 상태로 유지한다(로컬 단일 사용자 도구이므로 세션 관리 불필요). |
 | GET | `/api/browse?path=` | 분석 대상을 고르기 위한 로컬 디렉터리 목록. `{ path, parentPath, entries: { name, path, kind }[] }`를 반환하고 `kind`는 `Directory`/`Solution`/`Project`다. `path`가 비면 드라이브 목록을, 파일 경로면 그 파일이 있는 디렉터리를, 없는 경로면 가장 가까운 상위 디렉터리를 돌려준다. `bin`·`obj`·`node_modules` 등 탐색 의미가 없는 디렉터리와 숨김 디렉터리는 제외한다. |
 | GET | `/api/graph/entrypoints` | 현재 로드된 그래프의 진입점 목록(`entryPoints`)을 반환. 초기 화면에서 "어떤 엔드포인트부터 볼지" 선택에 사용. |
-| GET | `/api/graph/classes` | 클래스 메뉴용 요약 목록(`{ id, name, namespace, kind, file, startLine, endLine, methodCount }[]`). 네임스페이스 → 이름 순으로 정렬되어 있다. |
-| GET | `/api/graph` | 현재 로드된 `GraphDocument` 전체(`classes`, `nodes`, `edges`)를 반환. 레벨 단위로 어떻게 보여줄지는 프론트엔드가 결정한다(0.6 참고). |
+| GET | `/api/graph/classes` | 클래스 메뉴용 요약 목록(`{ id, name, namespace, kind, typeKind, file, startLine, endLine, methodCount, memberCount }[]`). 네임스페이스 → 이름 순으로 정렬되어 있다. |
+| GET | `/api/graph/namespaces` | 좌측 네임스페이스 패널용 요약(`{ namespace, classCount, methodCount, kinds }[]`). 전체 그래프를 받기 전에도 목록을 그리려고 둔다. |
+| GET | `/api/graph` | 현재 로드된 `GraphDocument` 전체(`classes`, `nodes`, `edges`)를 반환. 레벨 단위로 어떻게 보여줄지는 프론트엔드가 결정한다(0.6 참고). `members`가 들어가면서 커진 만큼 응답은 gzip으로 압축한다(450KB → 40KB). |
 | GET | `/api/source?file=&start=&end=` | 지정한 파일의 `start`~`end` 라인을 반환. `file`이 `rootDirectory` 하위 경로가 아니면 400을 반환한다(경로 탈출 방지). |
 | GET | `/api/freshness` | `{ status: "fresh" \| "stale", analyzedAt, changedFiles: string[] }`. `fileHashes`를 다시 계산해서 비교한 결과. |
 | POST | `/api/ask` | (3단계) body `{ nodeId, question, mode }`. `mode`가 `"mcp"`일 때만 서버가 실제 작업을 수행하고 SSE로 응답을 스트리밍한다. `"clipboard"`는 프론트엔드에서만 처리하고 이 API를 호출하지 않는다. `"editor"`는 프론트엔드가 `vscode://file/...` URI를 직접 열거나, 서버가 로컬 프로세스로 에디터를 실행한다. |
@@ -143,11 +198,9 @@
 - 그보다 아래 단계(직접 호출 대상이 다시 호출하는 곳)는 펼치지 않고, 아직 펼치지 않은 하위 호출이 남은 노드에만 `⊕` 표시를 붙여 드릴다운 대상으로 둔다.
 - 드릴다운하면 그 노드로부터 1~2홉 이내의 하위 호출만 "Level 2"로 새로 렌더링하고, breadcrumb으로 이전 레벨로 돌아갈 수 있게 한다.
 
-클래스 메뉴에서 클래스를 고르면 **클래스 관계도**를 쓴다(`getClassRelationWindow`). 메서드 호출 엣지를 클래스 단위로 접은 뒤(같은 클래스 안의 호출은 제외), 고른 클래스와 그 클래스를 호출하거나 그 클래스가 호출하는 클래스만 1홉으로 보여준다. 이 창의 노드는 메서드가 아니라 **클래스**이고, `file`/`startLine`/`endLine`이 클래스 선언을 가리키므로 노드를 클릭하면 코드 패널에 그 클래스 정의가 뜬다. 메서드가 하나도 없는 클래스(상수 모음 등)도 자기 노드는 항상 보인다.
+클래스 하나를 중심으로 보고 싶을 때는 **클래스 다이어그램의 "선택 1홉만" 토글**을 쓴다(5단계). 고른 클래스와, 켜 둔 관계 종류로 직접 이어진 클래스만 남기고 나머지를 화면에서 뺀다. 4단계까지 있던 `getClassRelationWindow`(호출 엣지를 클래스 단위로 접은 1홉 창)는 이 토글이 그대로 흡수해서 제거했다 — 관계 종류를 골라서 볼 수 있고 UML 박스로 멤버까지 보인다는 점만 다르다.
 
-관계도에서 아직 안 보이는 관계가 남은 클래스에는 `⊕`를 붙이고, 클릭하면 그 클래스를 가운데로 옮겨 다시 그린다(breadcrumb으로 되돌아간다). 이렇게 한 화면에는 항상 한 클래스 주변만 두고 타고 다니는 방식이라 설계 제약 1번(전체 그래프를 한 화면에 그리지 않는다)을 지킨다.
-
-이 로직은 순수하게 클라이언트 상태(`client/src/graph/windowing.ts`)로 구현하고, 서버는 이미 계산된 전체 그래프를 넘겨주기만 한다. 코드베이스가 커서 그래프가 지나치게 크면(수천 노드) `analysisScope`를 `entryPoints`로 낮추고, 그래도 부족하면 서버 쪽 지연 계산(노드별 온디맨드 확장 API)으로 전환한다 — 5단계 백로그 항목으로 남겨둔다.
+이 로직은 순수하게 클라이언트 상태(`client/src/graph/windowing.ts`, `client/src/graph/classDiagram.ts`)로 구현하고, 서버는 이미 계산된 전체 그래프를 넘겨주기만 한다. 코드베이스가 커서 그래프가 지나치게 크면(수천 노드) `analysisScope`를 `entryPoints`로 낮추고, 그래도 부족하면 서버 쪽 지연 계산(노드별 온디맨드 확장 API)으로 전환한다 — 5단계 백로그 항목으로 남겨둔다.
 
 ---
 
@@ -278,7 +331,17 @@
 
 ## 5단계 — 클래스 다이어그램 · 전체 흐름도
 
-이 단계의 태스크 목록과 구현 상세는 **`task2.md`**에 있다(스키마 v4, 트리 배치 엔진, 3분할 리사이즈). 화면 형태는 `docs/structure-view-mockup.html` 목업으로 합의했다.
+목표: 진입점 단위 탐색에 더해 **솔루션 전체가 어떻게 생겼는지** 한 화면에서 보는 상태. 상단 툴바에서 `호출 흐름 | 클래스 다이어그램 | 전체 흐름도`를 전환하고, 보기별로 좌측 패널·캔버스·breadcrumb이 한 세트로 바뀐다.
+
+이 단계의 태스크 목록과 구현 상세는 **`task2.md`**에 있다(스키마 v4, 트리 배치 엔진, 3분할 리사이즈). 화면 형태는 `docs/structure-view-mockup.html` 목업으로 합의했고, 완성된 화면은 README의 "세 가지 보기" 절에 스크린샷으로 남겼다.
+
+이 단계에서 확정한 것 중 다른 문서에 영향을 준 것:
+
+- 스키마 v4(`typeKind`·상속/구현·`members`, 노드의 접근제한자·반환타입·파라미터 타입)와 설정 두 개(`includeMembers`, `includeInterfaces`)는 이 문서 **0장**에 반영했다.
+- 설계 제약 1번("전체 그래프를 한 화면에 그리지 않는다")은 **클래스 다이어그램과 전체 흐름도에 한해** 풀었다. 대신 밀도 조절 손잡이를 의무화했고, 그 내용은 `CLAUDE.md` 제약 1번에 적었다.
+- 클래스 탭이 하던 1홉 관계도(`getClassRelationWindow`)는 클래스 다이어그램의 "선택 1홉만" 토글로 흡수하고 제거했다. 0.6의 클래스 관계도 설명은 그 토글을 가리킨다.
+
+- [x] 5단계 완료 — 상세 체크리스트는 `task2.md`의 태스크 목록 참고
 
 ### 백로그 (필요해지면 그때 설계)
 

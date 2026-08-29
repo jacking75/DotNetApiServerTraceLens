@@ -1,4 +1,5 @@
 using TraceLens.Analyzer;
+using TraceLens.Analyzer.Models;
 
 namespace TraceLens.Server.Endpoints;
 
@@ -29,8 +30,11 @@ public static class AnalyzeEndpoints
             return Results.Ok(new AnalyzeResponse(
                 result.Graph.EntryPoints.Count,
                 result.Graph.Classes.Count,
+                result.Graph.Classes.Count(item => item.TypeKind == ClassTypeKind.Interface),
                 result.Graph.Nodes.Count,
                 result.Graph.Edges.Count,
+                result.MemberCount,
+                result.GraphSizeBytes,
                 result.ElapsedMs,
                 result.Graph.AnalyzedAt,
                 previousAnalyzedAt));
@@ -44,11 +48,17 @@ public static class AnalyzeEndpoints
 
 public sealed record AnalyzeRequest(string SolutionPath);
 
+/// <param name="ClassCount">인터페이스를 포함한 전체 타입 수.</param>
+/// <param name="MemberCount">클래스 다이어그램에 그릴 멤버 수(필드·프로퍼티·메서드·생성자).</param>
+/// <param name="GraphSizeBytes">저장한 <c>graph.json</c>의 크기.</param>
 public sealed record AnalyzeResponse(
     int EntryPointCount,
     int ClassCount,
+    int InterfaceCount,
     int NodeCount,
     int EdgeCount,
+    int MemberCount,
+    int GraphSizeBytes,
     long ElapsedMs,
     DateTimeOffset AnalyzedAt,
     DateTimeOffset? PreviousAnalyzedAt);

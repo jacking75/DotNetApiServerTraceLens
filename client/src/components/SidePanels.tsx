@@ -1,0 +1,230 @@
+import { useMemo } from 'react'
+import { shortenNamespace } from '../graph/classDiagram'
+import type { EntryPoint, GraphClass, GraphNamespaceSummary, Selection } from '../types/graph'
+import { kindColors } from './kindColors'
+
+interface EntryPointListProps {
+  entryPoints: EntryPoint[]
+  selectedNodeId: string | null
+  emptyMessage: string
+  onSelect: (entryPoint: EntryPoint) => void
+}
+
+/** 호출 흐름 보기의 좌측 패널. */
+export function EntryPointList({ entryPoints, selectedNodeId, emptyMessage, onSelect }: EntryPointListProps) {
+  return (
+    <div className="side-list">
+      {entryPoints.length === 0 && <div className="panel-message">{emptyMessage}</div>}
+      {entryPoints.map((entryPoint) => (
+        <button
+          type="button"
+          key={`${entryPoint.httpMethod} ${entryPoint.route} ${entryPoint.nodeId}`}
+          className={`side-item${selectedNodeId === entryPoint.nodeId ? ' selected' : ''}`}
+          onClick={() => onSelect(entryPoint)}
+          title={entryPoint.nodeId}
+        >
+          <span className={`http ${entryPoint.httpMethod.toLowerCase()}`}>{entryPoint.httpMethod}</span>
+          <span className="grow">{entryPoint.route}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+interface NamespacePanelProps {
+  namespaces: GraphNamespaceSummary[]
+  classes: GraphClass[]
+  hiddenNamespaces: ReadonlySet<string>
+  namespacePrefix: string
+  selection: Selection | null
+  search: string
+  onSearch: (value: string) => void
+  onToggle: (namespace: string) => void
+  onShowAll: () => void
+  onHideAll: () => void
+  onGoToNamespace: (namespace: string) => void
+  onGoToClass: (graphClass: GraphClass) => void
+}
+
+/**
+ * 클래스 다이어그램의 좌측 패널. 체크박스는 표시/숨김, 이름 클릭은 그 네임스페이스로 스크롤 + 선택이다.
+ * 검색어를 넣으면 이름이 맞는 클래스가 각 네임스페이스 아래에 함께 뜬다.
+ */
+export function NamespacePanel({
+  namespaces,
+  classes,
+  hiddenNamespaces,
+  namespacePrefix,
+  selection,
+  search,
+  onSearch,
+  onToggle,
+  onShowAll,
+  onHideAll,
+  onGoToNamespace,
+  onGoToClass,
+}: NamespacePanelProps) {
+  const keyword = search.trim().toLowerCase()
+  const classesByNamespace = useMemo(() => {
+    const grouped = new Map<string, GraphClass[]>()
+    for (const item of classes) {
+      const list = grouped.get(item.namespace)
+      if (list) list.push(item)
+      else grouped.set(item.namespace, [item])
+    }
+
+    return grouped
+  }, [classes])
+
+  const groups = useMemo(() => {
+    const result = new Map<string, GraphNamespaceSummary[]>()
+    for (const item of namespaces) {
+      const group = item.namespace.split('.').slice(0, 2).join('.')
+      const list = result.get(group)
+      if (list) list.push(item)
+      else result.set(group, [item])
+    }
+
+    return [...result.entries()]
+  }, [namespaces])
+
+  return (
+    <>
+      <input
+        className="side-search"
+        value={search}
+        onChange={(event) => onSearch(event.target.value)}
+        placeholder="클래스 검색"
+        aria-label="클래스 검색"
+      />
+      <div className="side-tools">
+        <button type="button" className="chipbtn" onClick={onShowAll}>전체 표시</button>
+        <button type="button" className="chipbtn" onClick={onHideAll}>전체 숨김</button>
+      </div>
+      <div className="side-list">
+        {namespaces.length === 0 && <div className="panel-message">솔루션을 분석하면 네임스페이스가 표시된다.</div>}
+        {groups.map(([group, items]) => {
+          const visible = items.filter((item) => !keyword ||
+            item.namespace.toLowerCase().includes(keyword) ||
+            (classesByNamespace.get(item.namespace) ?? []).some((cls) => cls.name.toLowerCase().includes(keyword)))
+          if (visible.length === 0) return null
+
+          return (
+            <div key={group}>
+              <div className="side-group">{shortenNamespace(group, namespacePrefix)}</div>
+              {visible.map((item) => {
+                const hidden = hiddenNamespaces.has(item.namespace)
+                const selected = selection?.type === 'namespace' && selection.key === item.namespace
+                const matched = keyword
+                  ? (classesByNamespace.get(item.namespace) ?? []).filter((cls) => cls.name.toLowerCase().includes(keyword))
+                  : []
+
+                return (
+                  <div key={item.namespace}>
+                    <div className={`side-row${selected ? ' selected' : ''}`}>
+                      <button
+                        type="button"
+                        className={`tick${hidden ? '' : ' on'}`}
+                        title="다이어그램에서 표시/숨김"
+                        aria-label={`${item.namespace} 표시/숨김`}
+                        aria-pressed={!hidden}
+                        onClick={() => onToggle(item.namespace)}
+                      >
+                        {hidden ? '' : '✓'}
+                      </button>
+                      <span className="ns-dot" style={{ background: kindColors[item.kinds[0] ?? 'Method'] }} />
+                      <button
+                        type="button"
+                        className="name"
+                        title={item.namespace}
+                        onClick={() => onGoToNamespace(item.namespace)}
+                      >
+                        {shortenNamespace(item.namespace, namespacePrefix)}
+                      </button>
+                      <span className="count">{item.classCount}</span>
+                    </div>
+                    {matched.map((graphClass) => (
+                      <button
+                        type="button"
+                        key={graphClass.id}
+                        className={`side-item nested${selection?.type === 'class' && selection.key === graphClass.id ? ' selected' : ''}`}
+                        onClick={() => onGoToClass(graphClass)}
+                        title={graphClass.id}
+                      >
+                        <span className="ns-dot" style={{ background: kindColors[graphClass.kind] }} />
+                        <span className="grow">{graphClass.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })}
+      </div>
+    </>
+  )
+}
+
+interface FlowSidePanelProps {
+  entryPoints: EntryPoint[]
+  classes: GraphClass[]
+  classIdOfMethod: (nodeId: string) => string | undefined
+  flowEntryId: string | null
+  onSelectMap: () => void
+  onSelectEntry: (entryPoint: EntryPoint) => void
+}
+
+/** 전체 흐름도의 좌측 패널. 맨 위가 전체 지도이고, 그 아래는 컨트롤러별 진입점 목록이다. */
+export function FlowSidePanel({
+  entryPoints,
+  classes,
+  classIdOfMethod,
+  flowEntryId,
+  onSelectMap,
+  onSelectEntry,
+}: FlowSidePanelProps) {
+  const classNameById = useMemo(() => new Map(classes.map((item) => [item.id, item.name])), [classes])
+  const byController = useMemo(() => {
+    const grouped = new Map<string, EntryPoint[]>()
+    for (const entryPoint of entryPoints) {
+      const classId = classIdOfMethod(entryPoint.nodeId) ?? '(알 수 없음)'
+      const list = grouped.get(classId)
+      if (list) list.push(entryPoint)
+      else grouped.set(classId, [entryPoint])
+    }
+
+    return [...grouped.entries()]
+  }, [entryPoints, classIdOfMethod])
+
+  return (
+    <div className="side-list">
+      <button
+        type="button"
+        className={`side-item${flowEntryId === null ? ' selected' : ''}`}
+        onClick={onSelectMap}
+      >
+        <span className="grow">▦ 전체 진입점 지도</span>
+        <span className="count">{entryPoints.length}</span>
+      </button>
+      {entryPoints.length === 0 && <div className="panel-message">솔루션을 분석하면 진입점이 표시된다.</div>}
+      {byController.map(([classId, items]) => (
+        <div key={classId}>
+          <div className="side-group">{classNameById.get(classId) ?? classId}</div>
+          {items.map((entryPoint) => (
+            <button
+              type="button"
+              key={`${entryPoint.httpMethod} ${entryPoint.route} ${entryPoint.nodeId}`}
+              className={`side-item${flowEntryId === entryPoint.nodeId ? ' selected' : ''}`}
+              onClick={() => onSelectEntry(entryPoint)}
+              title={entryPoint.nodeId}
+            >
+              <span className={`http ${entryPoint.httpMethod.toLowerCase()}`}>{entryPoint.httpMethod}</span>
+              <span className="grow">{entryPoint.route}</span>
+            </button>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}

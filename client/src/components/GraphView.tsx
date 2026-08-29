@@ -1,22 +1,13 @@
 import cytoscape from 'cytoscape'
 import { useEffect, useRef } from 'react'
 import type { GraphNode, GraphWindow } from '../types/graph'
+import { kindColors } from './kindColors'
 
 interface GraphViewProps {
   graphWindow: GraphWindow | null
   selectedNodeId: string | null
   onSelectNode: (node: GraphNode) => void
   onDrilldown: (node: GraphNode) => void
-}
-
-const kindColors: Record<string, string> = {
-  Controller: '#7c6df2',
-  Service: '#268f81',
-  Repository: '#c57b35',
-  Validator: '#b75b8d',
-  Infra: '#547aa5',
-  Db: '#9b6fca',
-  Method: '#566174',
 }
 
 export function GraphView({ graphWindow, selectedNodeId, onSelectNode, onDrilldown }: GraphViewProps) {
@@ -93,13 +84,11 @@ export function GraphView({ graphWindow, selectedNodeId, onSelectNode, onDrilldo
 
   return (
     <div className="graph-shell">
-      <div className="graph-help">
-        {graphWindow?.kind === 'classRelations'
-          ? '가운데가 고른 클래스다. ⊕가 붙은 클래스를 클릭하면 그 클래스를 중심으로 다시 그린다.'
-          : '⊕가 붙은 노드를 클릭하면 그 아래 호출 흐름을 펼친다.'}
-      </div>
-      {graphWindow && graphWindow.nodes.length === 0 && (
-        <div className="panel-message">그래프에 표시할 노드가 없다.</div>
+      <div className="graph-help">⊕가 붙은 노드를 클릭하면 그 아래 호출 흐름을 펼친다.</div>
+      {(!graphWindow || graphWindow.nodes.length === 0) && (
+        <div className="panel-message canvas-empty">
+          {graphWindow ? '그래프에 표시할 노드가 없다.' : '왼쪽에서 진입점을 선택해야 한다.'}
+        </div>
       )}
       <div className="graph-canvas" ref={containerRef} aria-label="호출 흐름 그래프" />
     </div>

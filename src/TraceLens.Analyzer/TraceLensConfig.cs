@@ -14,13 +14,21 @@ public enum AnalysisScope
 /// <param name="IncludeObjectCreation">
 /// <c>new X()</c>로 만드는 솔루션 타입도 생성자 노드로 그래프에 넣을지 여부. DTO가 많은 코드베이스에서 그래프를 줄이려면 끈다.
 /// </param>
+/// <param name="IncludeMembers">
+/// 클래스 다이어그램용 멤버(필드·프로퍼티·메서드·생성자)를 수집할지 여부. 끄면 <c>graph.json</c>이 작아지는 대신 UML 박스가 빈 채로 그려진다.
+/// </param>
+/// <param name="IncludeInterfaces">
+/// 인터페이스 선언도 <c>classes</c>에 넣을지 여부. 끄면 스키마 v3까지의 동작(인터페이스 제외)으로 돌아간다.
+/// </param>
 public sealed record TraceLensConfig(
     IReadOnlyList<string> EntryPointAttributes,
     IReadOnlyList<KindRule> KindRules,
     int MaxCallDepth,
     IReadOnlyList<string> ExcludeNamespacePrefixes,
     AnalysisScope AnalysisScope,
-    bool IncludeObjectCreation)
+    bool IncludeObjectCreation,
+    bool IncludeMembers,
+    bool IncludeInterfaces)
 {
     public static TraceLensConfig Default { get; } = new(
         ["HttpGet", "HttpPost", "HttpPut", "HttpDelete", "HttpPatch"],
@@ -35,6 +43,8 @@ public sealed record TraceLensConfig(
         8,
         ["System", "Microsoft", "Swashbuckle"],
         AnalysisScope.Solution,
+        true,
+        true,
         true);
 
     public static async Task<TraceLensConfig> LoadAsync(
@@ -59,7 +69,13 @@ public sealed record TraceLensConfig(
             ReadAnalysisScope(root) ?? Default.AnalysisScope,
             root.TryGetProperty("includeObjectCreation", out var includeObjectCreation)
                 ? includeObjectCreation.GetBoolean()
-                : Default.IncludeObjectCreation);
+                : Default.IncludeObjectCreation,
+            root.TryGetProperty("includeMembers", out var includeMembers)
+                ? includeMembers.GetBoolean()
+                : Default.IncludeMembers,
+            root.TryGetProperty("includeInterfaces", out var includeInterfaces)
+                ? includeInterfaces.GetBoolean()
+                : Default.IncludeInterfaces);
     }
 
     private static AnalysisScope? ReadAnalysisScope(JsonElement root) =>

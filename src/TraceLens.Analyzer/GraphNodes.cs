@@ -39,6 +39,14 @@ internal static class GraphNodes
             SymbolNames.GetClassId(method.ContainingType),
             relativePath,
             lineSpan.StartLinePosition.Line + 1,
-            lineSpan.EndLinePosition.Line + 1);
+            lineSpan.EndLinePosition.Line + 1)
+        {
+            Accessibility = ClassMemberCollector.ToAccessibility(method.DeclaredAccessibility),
+            // 생성자는 반환 타입이 void로 잡히지만 화면에는 아무것도 안 적는 편이 읽기 좋다.
+            ReturnType = method.MethodKind == MethodKind.Constructor
+                ? string.Empty
+                : method.ReturnType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+            ParameterTypes = SymbolNames.GetParameterTypeNames(method)
+        };
     }
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
@@ -6,7 +7,8 @@ using TraceLens.Analyzer.Models;
 namespace TraceLens.Analyzer;
 
 /// <summary>
-/// 솔루션 안에 선언된 모든 클래스(레코드/구조체 포함)와 그 메서드를 문서 단위로 한 번씩 훑는다.
+/// 솔루션 안에 선언된 모든 타입(클래스/레코드/구조체, 그리고 <see cref="TraceLensConfig.IncludeInterfaces"/>가 켜져 있으면 인터페이스)과
+/// 그 멤버를 문서 단위로 한 번씩 훑는다.
 /// 진입점에서 도달하지 못하는 클래스도 목록에 넣기 위해 항상 실행하고,
 /// <see cref="AnalysisScope.Solution"/>일 때는 같은 순회에서 호출 엣지까지 모은다.
 /// </summary>
@@ -26,6 +28,7 @@ public sealed class SolutionScanner(
         var nodes = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
         var edges = new HashSet<GraphEdge>();
         var pendingConstructors = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
+        var memberStopwatch = new Stopwatch();
 
         foreach (var project in loaded.Solution.Projects.Where(project => loaded.AnalyzableProjectIds.Contains(project.Id)))
         {
@@ -47,7 +50,8 @@ public sealed class SolutionScanner(
 
                 foreach (var typeSyntax in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
                 {
-                    if (typeSyntax is InterfaceDeclarationSyntax)
+                    var isInterface = typeSyntax is InterfaceDeclarationSyntax;
+                    if (isInterface && !config.IncludeInterfaces)
                     {
                         continue;
                     }
@@ -67,14 +71,23 @@ public sealed class SolutionScanner(
                     if (!classes.TryGetValue(classId, out var builder))
                     {
                         var typeLineSpan = typeSyntax.GetLocation().GetLineSpan();
+                        var startLine = typeLineSpan.StartLinePosition.Line + 1;
+                        var endLine = typeLineSpan.EndLinePosition.Line + 1;
                         builder = new ClassBuilder(
                             type,
                             classId,
                             nodeClassifier.Classify(type, config),
                             relativePath,
-                            typeLineSpan.StartLinePosition.Line + 1,
-                            typeLineSpan.EndLinePosition.Line + 1);
+                            startLine,
+                            endLine,
+                            CollectMembers(type, config, startLine, endLine, memberStopwatch, cancellationToken));
                         classes.Add(classId, builder);
+                    }
+
+                    // 인터페이스 멤버는 본문이 없어 실행 그래프의 노드가 되지 못한다. members에만 담는다.
+                    if (isInterface)
+                    {
+                        continue;
                     }
 
                     foreach (var (memberSyntax, method) in EnumerateMembers(typeSyntax, model, cancellationToken))
@@ -119,19 +132,57 @@ public sealed class SolutionScanner(
             builder.AddMethod(id);
         }
 
-        logger.LogInformation("클래스 {ClassCount}개를 찾았다.", classes.Count);
+        // 멤버의 typeIds·baseTypeId·interfaceIds는 솔루션 안 타입만 남겨야 해서 클래스 목록이 다 모인 뒤에 확정한다.
+        var knownClassIds = classes.Keys.ToHashSet(StringComparer.Ordinal);
+        var built = classes.Values
+            .Select(builder => builder.Build(knownClassIds))
+            .OrderBy(item => item.Namespace, StringComparer.Ordinal)
+            .ThenBy(item => item.Name, StringComparer.Ordinal)
+            .ToArray();
+
+        var memberCount = built.Sum(item => item.Members.Count);
+        logger.LogInformation(
+            "클래스 {ClassCount}개(인터페이스 {InterfaceCount}개)를 찾았고 멤버 {MemberCount}개를 {ElapsedMs}ms에 모았다.",
+            built.Length,
+            built.Count(item => item.TypeKind == ClassTypeKind.Interface),
+            memberCount,
+            memberStopwatch.ElapsedMilliseconds);
+
         return new SolutionScanResult(
-            classes.Values
-                .Select(builder => builder.Build())
-                .OrderBy(item => item.Namespace, StringComparer.Ordinal)
-                .ThenBy(item => item.Name, StringComparer.Ordinal)
-                .ToArray(),
+            built,
             nodes.Values.OrderBy(node => node.Id, StringComparer.Ordinal).ToArray(),
             edges
                 .Where(edge => nodes.ContainsKey(edge.From) && nodes.ContainsKey(edge.To))
                 .OrderBy(edge => edge.From, StringComparer.Ordinal)
                 .ThenBy(edge => edge.To, StringComparer.Ordinal)
-                .ToArray());
+                .ToArray(),
+            memberCount,
+            memberStopwatch.ElapsedMilliseconds);
+    }
+
+    /// <summary>멤버 수집이 분석 시간에서 차지하는 몫을 따로 재 둔다(설정으로 끌 수 있는 기능이라 비용을 알아야 한다).</summary>
+    private static IReadOnlyList<ClassMemberCollector.MemberDraft> CollectMembers(
+        INamedTypeSymbol type,
+        TraceLensConfig config,
+        int startLine,
+        int endLine,
+        Stopwatch stopwatch,
+        CancellationToken cancellationToken)
+    {
+        if (!config.IncludeMembers)
+        {
+            return [];
+        }
+
+        stopwatch.Start();
+        try
+        {
+            return ClassMemberCollector.Collect(type, startLine, endLine, cancellationToken);
+        }
+        finally
+        {
+            stopwatch.Stop();
+        }
     }
 
     /// <summary>노드로 만들 멤버를 돌려준다. 메서드와 명시적 생성자, 그리고 본문이 있는 프로퍼티를 대상으로 한다.</summary>
@@ -223,7 +274,8 @@ public sealed class SolutionScanner(
         NodeKind kind,
         string file,
         int startLine,
-        int endLine)
+        int endLine,
+        IReadOnlyList<ClassMemberCollector.MemberDraft> memberDrafts)
     {
         private readonly SortedSet<string> methodIds = new(StringComparer.Ordinal);
 
@@ -231,19 +283,57 @@ public sealed class SolutionScanner(
 
         public void AddMethod(string methodId) => methodIds.Add(methodId);
 
-        public GraphClass Build() => new(
-            id,
-            SymbolNames.GetClassDisplayName(symbol),
-            symbol.ContainingNamespace.IsGlobalNamespace ? string.Empty : symbol.ContainingNamespace.ToDisplayString(),
-            Kind,
-            file,
-            startLine,
-            endLine,
-            methodIds.ToArray());
+        public GraphClass Build(IReadOnlySet<string> knownClassIds)
+        {
+            var baseType = GetDeclaredBaseType(symbol);
+            var interfaces = symbol.Interfaces
+                .Select(item => (Id: SymbolNames.GetClassId(item.OriginalDefinition), Symbol: item))
+                .ToArray();
+
+            return new GraphClass(
+                id,
+                SymbolNames.GetClassDisplayName(symbol),
+                symbol.ContainingNamespace.IsGlobalNamespace ? string.Empty : symbol.ContainingNamespace.ToDisplayString(),
+                Kind,
+                file,
+                startLine,
+                endLine,
+                methodIds.ToArray())
+            {
+                TypeKind = GetTypeKind(symbol),
+                IsAbstract = symbol.IsAbstract && symbol.TypeKind != Microsoft.CodeAnalysis.TypeKind.Interface,
+                IsStatic = symbol.IsStatic,
+                BaseTypeId = baseType is not null && knownClassIds.Contains(SymbolNames.GetClassId(baseType.OriginalDefinition))
+                    ? SymbolNames.GetClassId(baseType.OriginalDefinition)
+                    : null,
+                BaseTypeName = baseType?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                InterfaceIds = interfaces.Where(item => knownClassIds.Contains(item.Id)).Select(item => item.Id).ToArray(),
+                InterfaceNames = interfaces
+                    .Select(item => item.Symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat))
+                    .ToArray(),
+                Members = memberDrafts.Select(draft => draft.ToMember(knownClassIds, methodIds)).ToArray()
+            };
+        }
+
+        /// <summary>소스에 적은 상위 타입만 돌려준다. <c>object</c>·<c>ValueType</c>처럼 컴파일러가 붙이는 것은 뺀다.</summary>
+        private static INamedTypeSymbol? GetDeclaredBaseType(INamedTypeSymbol symbol) =>
+            symbol.BaseType is { SpecialType: SpecialType.None } baseType ? baseType : null;
+
+        private static ClassTypeKind GetTypeKind(INamedTypeSymbol symbol) => symbol switch
+        {
+            { TypeKind: Microsoft.CodeAnalysis.TypeKind.Interface } => ClassTypeKind.Interface,
+            { IsRecord: true } => ClassTypeKind.Record,
+            { TypeKind: Microsoft.CodeAnalysis.TypeKind.Struct } => ClassTypeKind.Struct,
+            _ => ClassTypeKind.Class
+        };
     }
 }
 
+/// <param name="MemberCount">수집한 멤버 수. 분석 응답에서 <c>graph.json</c>이 얼마나 커졌는지 가늠하는 데 쓴다.</param>
+/// <param name="MemberElapsedMs">멤버 수집에만 쓴 시간(ms).</param>
 public sealed record SolutionScanResult(
     IReadOnlyList<GraphClass> Classes,
     IReadOnlyList<GraphNode> Nodes,
-    IReadOnlyList<GraphEdge> Edges);
+    IReadOnlyList<GraphEdge> Edges,
+    int MemberCount,
+    long MemberElapsedMs);

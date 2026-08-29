@@ -22,7 +22,8 @@ public sealed class NodeClassifier
             }
         }
 
-        return NodeKind.Method;
+        // 어느 규칙에도 안 걸리면 인터페이스는 Interface, 나머지는 Method가 기본값이다.
+        return type.TypeKind == Microsoft.CodeAnalysis.TypeKind.Interface ? NodeKind.Interface : NodeKind.Method;
     }
 
     private static IEnumerable<INamedTypeSymbol> EnumerateBaseTypes(INamedTypeSymbol type)

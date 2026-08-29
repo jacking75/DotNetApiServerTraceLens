@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { askWithMcp, openInEditor } from '../api/client'
-import type { AskMode, GraphNode } from '../types/graph'
+import type { AskMode } from '../types/graph'
+
+/** 질문 패널이 캡처하는 컨텍스트. 메서드뿐 아니라 클래스·네임스페이스 선택에도 대응한다. */
+export interface AskContext {
+  /** MCP 연동과 에디터 열기에 쓰는 노드 id. 클래스·네임스페이스 선택에는 없을 수 있다. */
+  nodeId: string | null
+  lines: Array<{ label: string; value: string }>
+  clipboardText: string
+}
 
 interface AskPanelProps {
-  node: GraphNode | null
+  context: AskContext | null
 }
 
 const modeLabels: Record<AskMode, string> = {
@@ -12,7 +20,7 @@ const modeLabels: Record<AskMode, string> = {
   editor: '에디터',
 }
 
-export function AskPanel({ node }: AskPanelProps) {
+export function AskPanel({ context }: AskPanelProps) {
   const [mode, setMode] = useState<AskMode>('clipboard')
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
@@ -20,6 +28,7 @@ export function AskPanel({ node }: AskPanelProps) {
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const abortController = useRef<AbortController | null>(null)
+  const contextKey = context?.clipboardText ?? null
 
   useEffect(() => {
     abortController.current?.abort()
@@ -27,13 +36,13 @@ export function AskPanel({ node }: AskPanelProps) {
     setLogs([])
     setMessage(null)
     setBusy(false)
-  }, [node?.id])
+  }, [contextKey])
 
   useEffect(() => () => abortController.current?.abort(), [])
 
   const copy = async () => {
-    if (!node || !question.trim()) return
-    const text = `파일: ${node.file}\n라인: ${node.startLine}-${node.endLine}\n심볼: ${node.displayName}\n\n질문: ${question.trim()}`
+    if (!context || !question.trim()) return
+    const text = `${context.clipboardText}\n\n질문: ${question.trim()}`
     try {
       await navigator.clipboard.writeText(text)
       setMessage('클립보드에 복사했다. Claude Code 터미널에 붙여넣으면 된다.')
@@ -43,7 +52,7 @@ export function AskPanel({ node }: AskPanelProps) {
   }
 
   const ask = async () => {
-    if (!node || !question.trim()) return
+    if (!context?.nodeId || !question.trim()) return
     abortController.current?.abort()
     const controller = new AbortController()
     abortController.current = controller
@@ -53,7 +62,7 @@ export function AskPanel({ node }: AskPanelProps) {
     setMessage(null)
     try {
       await askWithMcp(
-        { nodeId: node.id, question: question.trim(), mode: 'mcp' },
+        { nodeId: context.nodeId, question: question.trim(), mode: 'mcp' },
         (event) => {
           if (event.type === 'delta' && event.text) setAnswer((current) => current + event.text)
           if (event.type === 'log' && event.text) {
@@ -74,11 +83,11 @@ export function AskPanel({ node }: AskPanelProps) {
   }
 
   const openEditor = async () => {
-    if (!node) return
+    if (!context?.nodeId) return
     setBusy(true)
     setMessage(null)
     try {
-      const result = await openInEditor(node.id)
+      const result = await openInEditor(context.nodeId)
       if (result.opened) {
         setMessage('선택한 위치를 에디터에서 열었다.')
       } else {
@@ -99,10 +108,14 @@ export function AskPanel({ node }: AskPanelProps) {
   }
 
   const needsQuestion = mode !== 'editor'
+  // MCP 연동과 에디터 열기는 노드 id가 있어야 한다. 클래스·네임스페이스만 고른 상태면 클립보드만 쓸 수 있다.
+  const needsNodeId = mode !== 'clipboard'
+  const blocked = needsNodeId && !context?.nodeId
+
   return (
     <section className="panel ask-panel">
       <header>
-        <span>Ask Claude Code</span>
+        <span>Claude에게 질문</span>
         <small>{modeLabels[mode]}</small>
       </header>
       <div className="ask-mode-tabs" role="tablist" aria-label="Claude Code 연동 방식">
@@ -121,20 +134,23 @@ export function AskPanel({ node }: AskPanelProps) {
       </div>
       <div className="ask-scroll">
         <div className="captured-context">
-          {node ? (
-            <>
-              파일: <b>{node.file}</b><br />
-              라인: <b>{node.startLine}-{node.endLine}</b><br />
-              심볼: <b>{node.displayName}</b>
-            </>
-          ) : '질문할 노드를 먼저 선택해야 한다.'}
+          {context
+            ? context.lines.map((line) => (
+              <div key={line.label}>{line.label}: <b>{line.value}</b></div>
+            ))
+            : '질문할 항목을 먼저 선택해야 한다.'}
         </div>
+        {blocked && context && (
+          <div className="panel-message tight">
+            이 선택에는 실행 가능한 노드가 없어서 클립보드 복사만 쓸 수 있다.
+          </div>
+        )}
         {mode !== 'editor' && (
           <textarea
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
-            placeholder="이 코드의 역할이나 호출 흐름을 질문한다."
-            disabled={!node || busy}
+            placeholder="이 클래스가 어떤 인터페이스로 주입되는지, 이 메서드의 트랜잭션 경계가 어디인지 물어본다."
+            disabled={!context || busy}
           />
         )}
         {mode === 'mcp' && (question.trim() || answer) && (
@@ -149,7 +165,7 @@ export function AskPanel({ node }: AskPanelProps) {
             type="button"
             className="primary"
             onClick={run}
-            disabled={!node || busy || (needsQuestion && !question.trim())}
+            disabled={!context || busy || blocked || (needsQuestion && !question.trim())}
           >
             {busy ? '처리 중…' : mode === 'clipboard' ? '클립보드 복사' : mode === 'mcp' ? '질문 보내기' : '에디터에서 열기'}
           </button>

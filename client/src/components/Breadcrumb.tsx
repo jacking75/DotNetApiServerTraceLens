@@ -1,5 +1,5 @@
 export interface BreadcrumbItem {
-  nodeId: string
+  key: string
   label: string
 }
 
@@ -12,10 +12,15 @@ export function Breadcrumb({ items, onNavigate }: BreadcrumbProps) {
   return (
     <nav className="breadcrumb" aria-label="그래프 탐색 경로">
       {items.map((item, index) => (
-        <span key={`${item.nodeId}-${index}`}>
+        <span key={`${item.key}-${index}`}>
           {index > 0 && <span className="breadcrumb-separator">›</span>}
-          <button type="button" onClick={() => onNavigate(index)} disabled={index === items.length - 1}>
-            Level {index + 1} · {item.label}
+          <button
+            type="button"
+            className={index === items.length - 1 ? 'current' : ''}
+            onClick={() => onNavigate(index)}
+            disabled={index === items.length - 1}
+          >
+            {item.label}
           </button>
         </span>
       ))}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getClassRelationWindow, getDrilldownWindow, getInitialWindow } from './windowing'
+import { getDrilldownWindow, getInitialWindow } from './windowing'
 import type { GraphClass, GraphDocument, GraphNode } from '../types/graph'
 
 const node = (id: string, classId = 'Tests.Sample'): GraphNode => ({
@@ -11,6 +11,9 @@ const node = (id: string, classId = 'Tests.Sample'): GraphNode => ({
   file: `${id}.cs`,
   startLine: 1,
   endLine: 2,
+  accessibility: 'Public',
+  returnType: 'void',
+  parameterTypes: [],
 })
 
 const graphClass = (id: string, name: string, methodIds: string[]): GraphClass => ({
@@ -18,14 +21,22 @@ const graphClass = (id: string, name: string, methodIds: string[]): GraphClass =
   name,
   namespace: 'Tests',
   kind: 'Method',
+  typeKind: 'Class',
+  isAbstract: false,
+  isStatic: false,
+  baseTypeId: null,
+  baseTypeName: null,
+  interfaceIds: [],
+  interfaceNames: [],
   file: `${name}.cs`,
   startLine: 1,
   endLine: 9,
   methodIds,
+  members: [],
 })
 
 const graph: GraphDocument = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   solutionPath: 'test.sln',
   rootDirectory: '.',
   analyzedAt: '2026-01-01T00:00:00Z',
@@ -42,30 +53,6 @@ const graph: GraphDocument = {
     { from: 'D', to: 'F' },
   ],
   fileHashes: {},
-}
-
-const classGraph: GraphDocument = {
-  ...graph,
-  classes: [
-    graphClass('Tests.Caller', 'Caller', ['Caller.Run']),
-    graphClass('Tests.Target', 'Target', ['Target.First', 'Target.Second', 'Target.Unused']),
-    graphClass('Tests.Callee', 'Callee', ['Callee.Save']),
-    graphClass('Tests.Constants', 'Constants', []),
-  ],
-  nodes: [
-    node('Caller.Run', 'Tests.Caller'),
-    node('Target.First', 'Tests.Target'),
-    node('Target.Second', 'Tests.Target'),
-    node('Target.Unused', 'Tests.Target'),
-    node('Callee.Save', 'Tests.Callee'),
-    node('Other.Ignored', 'Tests.Other'),
-  ],
-  edges: [
-    { from: 'Caller.Run', to: 'Target.First' },
-    { from: 'Target.First', to: 'Target.Second' },
-    { from: 'Target.Second', to: 'Callee.Save' },
-    { from: 'Other.Ignored', to: 'Other.Ignored' },
-  ],
 }
 
 describe('포커스 기반 윈도잉', () => {
@@ -98,48 +85,5 @@ describe('포커스 기반 윈도잉', () => {
 
     expect(result.nodes.map((item) => item.id)).toEqual(['C', 'D', 'E', 'F'])
     expect(result.edges).toHaveLength(3)
-  })
-})
-
-describe('클래스 관계도 윈도잉', () => {
-  it('고른 클래스와 직접 관계된 클래스만 클래스 단위로 보여준다', () => {
-    const result = getClassRelationWindow(classGraph, 'Tests.Target')
-
-    expect(result.kind).toBe('classRelations')
-    expect(result.focusNodeId).toBe('Tests.Target')
-    expect(result.nodes.map((item) => item.id).sort()).toEqual(['Tests.Callee', 'Tests.Caller', 'Tests.Target'])
-    expect(result.edges).toEqual([
-      { from: 'Tests.Caller', to: 'Tests.Target' },
-      { from: 'Tests.Target', to: 'Tests.Callee' },
-    ])
-  })
-
-  it('클래스 노드는 그 클래스 선언 위치를 가리킨다', () => {
-    const result = getClassRelationWindow(classGraph, 'Tests.Target')
-    const focus = result.nodes.find((item) => item.id === 'Tests.Target')
-
-    expect(focus).toMatchObject({ displayName: 'Target', file: 'Target.cs', startLine: 1, endLine: 9 })
-  })
-
-  it('아직 안 보이는 관계가 남은 이웃 클래스에만 펼침 표시를 붙인다', () => {
-    const result = getClassRelationWindow(classGraph, 'Tests.Caller')
-
-    expect(result.nodes.map((item) => item.id)).toEqual(['Tests.Caller', 'Tests.Target'])
-    expect(result.branchNodeIds.has('Tests.Target')).toBe(true)
-    expect(result.branchNodeIds.has('Tests.Caller')).toBe(false)
-  })
-
-  it('메서드가 없어 호출 관계가 없는 클래스도 자기 노드는 보여준다', () => {
-    const result = getClassRelationWindow(classGraph, 'Tests.Constants')
-
-    expect(result.nodes.map((item) => item.id)).toEqual(['Tests.Constants'])
-    expect(result.edges).toHaveLength(0)
-  })
-
-  it('목록에 없는 클래스는 빈 창을 반환한다', () => {
-    const result = getClassRelationWindow(classGraph, 'Tests.Missing')
-
-    expect(result.nodes).toHaveLength(0)
-    expect(result.edges).toHaveLength(0)
   })
 })
