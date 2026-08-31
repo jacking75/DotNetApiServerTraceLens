@@ -3,7 +3,11 @@ import { analyzeTarget, getEntryPoints, getGraph, getNamespaces, importGraph, lo
 import { AskPanel, type AskContext } from './components/AskPanel'
 import { Breadcrumb, type BreadcrumbItem } from './components/Breadcrumb'
 import { ClassDiagram } from './components/ClassDiagram'
+import { DataAccessView } from './components/DataAccessView'
+import { DataDetailPanel } from './components/DataDetailPanel'
+import { DataSidePanel, MiddlewareSidePanel } from './components/DataSidePanels'
 import { DetailPanel, type DetailActions } from './components/DetailPanel'
+import { MiddlewareView } from './components/MiddlewareView'
 import { FlowDiagram } from './components/FlowDiagram'
 import { FreshnessBadge } from './components/FreshnessBadge'
 import { PathPicker } from './components/PathPicker'
@@ -19,6 +23,7 @@ import {
   shortenNamespace,
   type ClassDiagramOptions,
 } from './graph/classDiagram'
+import { countBySeverity } from './graph/dataView'
 import { buildEntryFlow, buildEntryMap } from './graph/flowMap'
 import { collapseEdgesToClasses, deriveRelations } from './graph/relations'
 import { findStartupStep } from './graph/startupFlow'
@@ -28,6 +33,8 @@ import {
   loadState,
   saveState,
   type ClassMapState,
+  type DataViewState,
+  type MiddlewareViewState,
   type PersistedState,
 } from './state/viewState'
 import type {
@@ -76,6 +83,8 @@ export default function App() {
   const [classMap, setClassMap] = useState<ClassMapState>(initial.classMap)
   const [depth, setDepth] = useState(initial.depth)
   const [selection, setSelection] = useState<Selection | null>(initial.selection)
+  const [dataView, setDataView] = useState<DataViewState>(initial.dataView)
+  const [middlewareView, setMiddlewareView] = useState<MiddlewareViewState>(initial.middlewareView)
   const [search, setSearch] = useState('')
   const [columns, setColumns] = useState(initial.columns)
 
@@ -139,6 +148,16 @@ export default function App() {
     return focusStack.length === 0 ? getInitialWindow(graph, focus) : getDrilldownWindow(graph, focus)
   }, [graph, viewMode, callFlowEntry, focusStack])
 
+  const dataAccess = graph?.dataAccess ?? null
+  const middlewarePipeline = graph?.middleware ?? null
+  const findingCounts = useMemo(
+    () => countBySeverity([...(dataAccess?.findings ?? []), ...(middlewarePipeline?.findings ?? [])]),
+    [dataAccess, middlewarePipeline])
+  /** DB·캐시와 미들웨어 보기가 다루는 선택 종류. 상세 패널을 이 기준으로 나눈다. */
+  const isDataSelection = selection !== null &&
+    (selection.type === 'finding' || selection.type === 'writePath' || selection.type === 'dataSource' ||
+      selection.type === 'storageTarget' || selection.type === 'rule' || selection.type === 'middlewareStep')
+
   const selectedClassId = selection
     ? selection.type === 'class'
       ? selection.key
@@ -150,8 +169,8 @@ export default function App() {
   /* ---------------------------------------------------------------- 상태 저장 */
 
   useEffect(() => {
-    saveState({ viewMode, classMap, depth, selection, columns, solutionPath })
-  }, [viewMode, classMap, depth, selection, columns, solutionPath])
+    saveState({ viewMode, classMap, depth, selection, columns, solutionPath, dataView, middlewareView })
+  }, [viewMode, classMap, depth, selection, columns, solutionPath, dataView, middlewareView])
 
   /* ---------------------------------------------------------------- 폭·반응형 */
 
@@ -412,6 +431,10 @@ export default function App() {
       setCallFlowEntry(entryPoints[0])
       setFocusStack([])
     }
+
+    if (mode === 'data' && !dataView.entryNodeId && entryPoints.length > 0) {
+      setDataView((current) => ({ ...current, entryNodeId: entryPoints[0].nodeId }))
+    }
   }
 
   const drilldown = useCallback((nodeId: string) => {
@@ -444,6 +467,32 @@ export default function App() {
       return [{ key: 'startup', label: '시작 흐름' }]
     }
 
+    if (viewMode === 'data') {
+      const labels: Record<DataViewState['sub'], string> = {
+        route: '실행 경로',
+        map: '접근 지도',
+        tx: '트랜잭션',
+        comp: '보상 처리',
+        check: '점검 결과',
+      }
+      const crumbs: BreadcrumbItem[] = [{ key: 'data', label: 'DB · 캐시' }, { key: dataView.sub, label: labels[dataView.sub] }]
+      if (dataView.sub === 'route' && dataView.entryNodeId) {
+        const entry = entryPoints.find((item) => item.nodeId === dataView.entryNodeId)
+        if (entry) crumbs.push({ key: entry.nodeId, label: `${entry.httpMethod} ${entry.route}` })
+      }
+
+      return crumbs
+    }
+
+    if (viewMode === 'middleware') {
+      const labels: Record<MiddlewareViewState['sub'], string> = {
+        pipe: '파이프라인',
+        sc: '단락 지점',
+        check: '점검 결과',
+      }
+      return [{ key: 'middleware', label: '미들웨어' }, { key: middlewareView.sub, label: labels[middlewareView.sub] }]
+    }
+
     const crumbs: BreadcrumbItem[] = [{ key: 'map', label: '전체 진입점 지도' }]
     if (flowEntryId) {
       const entry = entryPoints.find((item) => item.nodeId === flowEntryId)
@@ -451,7 +500,7 @@ export default function App() {
     }
 
     return crumbs
-  }, [viewMode, callFlowEntry, focusStack, nodeById, classMap.focusOnly, selectedClassId, selection, graph, namespacePrefix, flowEntryId, entryPoints])
+  }, [viewMode, callFlowEntry, focusStack, nodeById, classMap.focusOnly, selectedClassId, selection, graph, namespacePrefix, flowEntryId, entryPoints, dataView, middlewareView])
 
   const navigateBreadcrumb = (index: number) => {
     if (viewMode === 'callflow') {
@@ -464,7 +513,7 @@ export default function App() {
       return
     }
 
-    if (viewMode === 'startup') {
+    if (viewMode === 'startup' || viewMode === 'data' || viewMode === 'middleware') {
       return
     }
 
@@ -473,6 +522,59 @@ export default function App() {
 
   const askContext: AskContext | null = useMemo(() => {
     if (!graph || !selection) return null
+    if (selection.type === 'finding') {
+      const finding = [...(graph.dataAccess?.findings ?? []), ...(graph.middleware?.findings ?? [])]
+        .find((item) => item.id === selection.key)
+      if (!finding) return null
+      return {
+        nodeId: finding.nodeId,
+        lines: [
+          { label: '파일', value: finding.file },
+          { label: '라인', value: `${finding.line}` },
+          { label: '심볼', value: finding.symbol },
+          { label: '규칙', value: `${finding.ruleId} · ${finding.what}` },
+        ],
+        clipboardText: `파일: ${finding.file}\n라인: ${finding.line}\n심볼: ${finding.symbol}\n규칙: ${finding.ruleId} (${finding.what})`,
+      }
+    }
+
+    if (selection.type === 'writePath') {
+      const path = graph.dataAccess?.writePaths.find((item) => item.id === selection.key)
+      if (!path) return null
+      return {
+        nodeId: path.methodNodeId,
+        lines: [
+          { label: '파일', value: path.file },
+          { label: '라인', value: `${path.startLine}` },
+          { label: '심볼', value: path.methodDisplayName },
+          { label: '쓰기 단계', value: path.steps.map((step) => step.label).join(' → ') },
+        ],
+        clipboardText: `파일: ${path.file}\n라인: ${path.startLine}\n심볼: ${path.methodDisplayName}`,
+      }
+    }
+
+    if (selection.type === 'middlewareStep') {
+      const step = graph.middleware?.steps.find((item) => item.id === selection.key)
+      if (!step) return null
+      return {
+        nodeId: null,
+        lines: [
+          { label: '파일', value: step.implementationFile ?? step.registrationFile },
+          { label: '등록', value: `${step.registrationFile}:${step.registrationLine}` },
+          { label: '심볼', value: step.name },
+        ],
+        clipboardText: `파일: ${step.implementationFile ?? step.registrationFile}\n등록: ${step.registrationFile}:${step.registrationLine}\n심볼: ${step.name}`,
+      }
+    }
+
+    if (selection.type === 'dataSource' || selection.type === 'storageTarget' || selection.type === 'rule') {
+      return {
+        nodeId: null,
+        lines: [{ label: '대상', value: selection.key }],
+        clipboardText: `대상: ${selection.key}`,
+      }
+    }
+
     if (selection.type === 'namespace') {
       const count = graph.classes.filter((item) => item.namespace === selection.key).length
       return {
@@ -555,6 +657,14 @@ export default function App() {
       : '솔루션을 분석해야 한다'
     : viewMode === 'flowmap'
       ? flowView?.meta ?? '솔루션을 분석해야 한다'
+      : viewMode === 'data'
+        ? dataAccess
+          ? `접근 ${dataAccess.accesses.length}곳 · 쓰기 경로 ${dataAccess.writePaths.length}개 · 점검 ${dataAccess.findings.length}건`
+          : '솔루션을 분석해야 한다'
+      : viewMode === 'middleware'
+        ? middlewarePipeline
+          ? `단계 ${middlewarePipeline.steps.length}개 · 점검 ${middlewarePipeline.findings.length}건`
+          : '솔루션을 분석해야 한다'
       : viewMode === 'startup'
         ? graph?.startupFlow
           ? `서비스 등록 ${graph.startupFlow.serviceSteps.length}개 · 미들웨어 ${graph.startupFlow.middlewareSteps.length}개`
@@ -640,6 +750,11 @@ export default function App() {
         flowEntryId={flowEntryId}
         depth={depth}
         onChangeDepth={setDepth}
+        dataView={dataView}
+        onChangeDataView={(patch) => setDataView((current) => ({ ...current, ...patch }))}
+        middlewareView={middlewareView}
+        onChangeMiddlewareView={(patch) => setMiddlewareView((current) => ({ ...current, ...patch }))}
+        shardingEnabled={dataAccess?.shardingEnabled ?? false}
       />
 
       {error && <div className="global-error">{error}</div>}
@@ -647,7 +762,13 @@ export default function App() {
         <div className="analysis-summary">
           진입점 {summary.entryPointCount} · 네임스페이스 {namespaces.length} · 클래스 {summary.classCount}
           (인터페이스 {summary.interfaceCount}) · 멤버 {summary.memberCount} · 메서드 {summary.nodeCount}
-          · 호출 엣지 {summary.edgeCount} · {Math.round(summary.graphSizeBytes / 1024)}KB · {summary.elapsedMs}ms
+          · 호출 엣지 {summary.edgeCount}
+          {(findingCounts.Critical + findingCounts.Warning + findingCounts.Info > 0) && (
+            <> · 점검 <b className="sev-inline critical">치명 {findingCounts.Critical}</b>
+              <b className="sev-inline warning">경고 {findingCounts.Warning}</b>
+              <b className="sev-inline info">정보 {findingCounts.Info}</b></>
+          )}
+          · {Math.round(summary.graphSizeBytes / 1024)}KB · {summary.elapsedMs}ms
           {summary.previousAnalyzedAt && (
             <> · 재분석 {formatTime(summary.previousAnalyzedAt)} → {formatTime(summary.analyzedAt)}</>
           )}
@@ -657,7 +778,17 @@ export default function App() {
       <section className="workspace" ref={workspaceRef}>
         <aside className="panel side-panel">
           <header>
-            <span>{viewMode === 'classmap' ? '네임스페이스' : viewMode === 'startup' ? '시작 흐름' : '진입점'}</span>
+            <span>
+              {viewMode === 'classmap'
+                ? '네임스페이스'
+                : viewMode === 'startup'
+                  ? '시작 흐름'
+                  : viewMode === 'data'
+                    ? 'DB · 캐시'
+                    : viewMode === 'middleware'
+                      ? '파이프라인'
+                      : '진입점'}
+            </span>
             <small>
               {viewMode === 'classmap'
                 ? `${namespaces.length - hiddenNamespaces.size}/${namespaces.length} 표시`
@@ -665,7 +796,11 @@ export default function App() {
                   ? graph?.startupFlow
                     ? `${graph.startupFlow.serviceSteps.length + graph.startupFlow.middlewareSteps.length}단계`
                     : ''
-                  : `${entryPoints.length}개`}
+                  : viewMode === 'data'
+                    ? dataAccess ? `데이터소스 ${dataAccess.dataSources.length}개` : ''
+                    : viewMode === 'middleware'
+                      ? middlewarePipeline ? `${middlewarePipeline.steps.length}단계` : ''
+                      : `${entryPoints.length}개`}
             </small>
           </header>
           {viewMode === 'callflow' && (
@@ -722,6 +857,31 @@ export default function App() {
               ? <StartupFlowSidePanel flow={graph.startupFlow} />
               : <div className="panel-message">솔루션을 분석하면 시작 흐름이 표시된다.</div>
           )}
+          {viewMode === 'data' && (
+            dataAccess
+              ? (
+                <DataSidePanel
+                  data={dataAccess}
+                  entryPoints={entryPoints}
+                  view={dataView}
+                  onChangeView={(patch) => setDataView((current) => ({ ...current, ...patch }))}
+                  selection={selection}
+                  onSelect={setSelection}
+                />
+              )
+              : <div className="panel-message">솔루션을 분석하면 DB·캐시 접근이 표시된다.</div>
+          )}
+          {viewMode === 'middleware' && (
+            middlewarePipeline
+              ? (
+                <MiddlewareSidePanel
+                  pipeline={middlewarePipeline}
+                  selection={selection}
+                  onSelect={setSelection}
+                />
+              )
+              : <div className="panel-message">Program.cs를 찾으면 미들웨어 파이프라인이 표시된다.</div>
+          )}
         </aside>
 
         <Splitter
@@ -740,7 +900,11 @@ export default function App() {
                   ? 'Flow map'
                   : viewMode === 'startup'
                     ? 'Startup flow'
-                    : 'Call flow'}
+                    : viewMode === 'data'
+                      ? 'Data access'
+                      : viewMode === 'middleware'
+                        ? 'Middleware'
+                        : 'Call flow'}
             </span>
             <small>{graphMeta}</small>
           </header>
@@ -793,8 +957,33 @@ export default function App() {
               onSelect={(key) => setSelection({ type: 'startupStep', key })}
             />
           )}
+          {viewMode === 'data' && graph && dataAccess && (
+            <div className="graph-shell" ref={shellRef}>
+              <DataAccessView
+                graph={graph}
+                data={dataAccess}
+                entryPoints={entryPoints}
+                view={dataView}
+                onChangeView={(patch) => setDataView((current) => ({ ...current, ...patch }))}
+                selection={selection}
+                onSelect={setSelection}
+              />
+            </div>
+          )}
+          {viewMode === 'middleware' && middlewarePipeline && (
+            <div className="graph-shell">
+              <MiddlewareView
+                pipeline={middlewarePipeline}
+                view={middlewareView}
+                selection={selection}
+                onSelect={setSelection}
+              />
+            </div>
+          )}
           {((viewMode === 'classmap' && !classDiagram) ||
             (viewMode === 'flowmap' && !flowView) ||
+            (viewMode === 'data' && !dataAccess) ||
+            (viewMode === 'middleware' && !middlewarePipeline) ||
             (viewMode === 'startup' && !graph?.startupFlow)) && (
             <div className="diagram-wrap"><div className="graph-shell"><div className="panel-message">솔루션을 분석하면 여기에 그려진다.</div></div></div>
           )}
@@ -820,18 +1009,39 @@ export default function App() {
                       ? '네임스페이스'
                       : selection?.type === 'startupStep'
                         ? '시작 흐름 단계'
-                        : ''}
+                        : selection?.type === 'finding'
+                          ? '점검 항목'
+                          : selection?.type === 'writePath'
+                            ? '쓰기 경로'
+                            : selection?.type === 'dataSource'
+                              ? '데이터소스'
+                              : selection?.type === 'storageTarget'
+                                ? '테이블 · 키'
+                                : selection?.type === 'rule'
+                                  ? '규칙'
+                                  : selection?.type === 'middlewareStep'
+                                    ? '미들웨어 단계'
+                                    : ''}
               </small>
             </header>
-            <DetailPanel
-              graph={graph}
-              selection={selection}
-              relations={relations}
-              namespaces={namespaces}
-              entryPoints={entryPoints}
-              namespacePrefix={namespacePrefix}
-              actions={detailActions}
-            />
+            {isDataSelection && graph ? (
+              <DataDetailPanel
+                graph={graph}
+                selection={selection!}
+                onSelect={setSelection}
+                onShowFlow={openFlow}
+              />
+            ) : (
+              <DetailPanel
+                graph={graph}
+                selection={selection}
+                relations={relations}
+                namespaces={namespaces}
+                entryPoints={entryPoints}
+                namespacePrefix={namespacePrefix}
+                actions={detailActions}
+              />
+            )}
           </section>
           <AskPanel context={askContext} />
         </div>
@@ -841,6 +1051,20 @@ export default function App() {
 }
 
 function selectionExists(graph: GraphDocument, selection: Selection): boolean {
+  if (selection.type === 'finding') {
+    return [...(graph.dataAccess?.findings ?? []), ...(graph.middleware?.findings ?? [])]
+      .some((item) => item.id === selection.key)
+  }
+
+  if (selection.type === 'writePath') return graph.dataAccess?.writePaths.some((item) => item.id === selection.key) ?? false
+  if (selection.type === 'dataSource') return graph.dataAccess?.dataSources.some((item) => item.name === selection.key) ?? false
+  if (selection.type === 'storageTarget') return graph.dataAccess?.accesses.some((item) => item.target === selection.key) ?? false
+  if (selection.type === 'rule') {
+    return [...(graph.dataAccess?.rules ?? []), ...(graph.middleware?.rules ?? [])]
+      .some((item) => item.id === selection.key)
+  }
+
+  if (selection.type === 'middlewareStep') return graph.middleware?.steps.some((item) => item.id === selection.key) ?? false
   if (selection.type === 'class') return graph.classes.some((item) => item.id === selection.key)
   if (selection.type === 'namespace') return graph.classes.some((item) => item.namespace === selection.key)
   if (selection.type === 'startupStep') return findStartupStep(graph, selection.key) !== undefined

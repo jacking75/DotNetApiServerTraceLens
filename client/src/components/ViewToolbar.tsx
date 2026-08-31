@@ -1,6 +1,6 @@
 import { relationLabels, type RelationType } from '../graph/relations'
-import type { ClassMapState } from '../state/viewState'
-import type { ViewMode } from '../types/graph'
+import type { ClassMapState, DataViewState, MiddlewareViewState } from '../state/viewState'
+import type { FindingSeverity, ViewMode } from '../types/graph'
 
 interface ViewToolbarProps {
   viewMode: ViewMode
@@ -12,6 +12,12 @@ interface ViewToolbarProps {
   flowEntryId: string | null
   depth: number
   onChangeDepth: (depth: number) => void
+  dataView: DataViewState
+  onChangeDataView: (patch: Partial<DataViewState>) => void
+  middlewareView: MiddlewareViewState
+  onChangeMiddlewareView: (patch: Partial<MiddlewareViewState>) => void
+  /** 설정에서 읽은 구성. 샤딩을 쓰면 SHARD 규칙군이 켜진다. */
+  shardingEnabled: boolean
 }
 
 const modes: Array<{ mode: ViewMode; label: string }> = [
@@ -19,6 +25,8 @@ const modes: Array<{ mode: ViewMode; label: string }> = [
   { mode: 'classmap', label: '클래스 다이어그램' },
   { mode: 'flowmap', label: '전체 흐름도' },
   { mode: 'startup', label: '시작 흐름' },
+  { mode: 'data', label: 'DB · 캐시' },
+  { mode: 'middleware', label: '미들웨어' },
 ]
 
 const hints: Record<ViewMode, string> = {
@@ -26,6 +34,8 @@ const hints: Record<ViewMode, string> = {
   classmap: '솔루션 전체 클래스를 관계 방향에 따라 층을 나눠 그린다.',
   flowmap: '모든 진입점과 그 아래 클래스 흐름이다. 라우트 줄을 누르면 그 진입점의 전 구간으로 들어간다.',
   startup: 'Program.cs를 훑어 API 서버가 시작될 때까지 어떤 객체를 등록하고 어떻게 연결하는지 순서대로 보여준다.',
+  data: 'DB와 캐시에 닿는 경로를 순서대로 세우고, 트랜잭션 없이 쓰는 자리에서 무엇이 되돌려지지 않는지 본다.',
+  middleware: '요청이 무엇을 통과하고 어디서 끊기는지, 응답이 돌아올 때 무엇이 더 실행되는지 순서대로 보여준다.',
 }
 
 export function ViewToolbar({
@@ -38,6 +48,11 @@ export function ViewToolbar({
   flowEntryId,
   depth,
   onChangeDepth,
+  dataView,
+  onChangeDataView,
+  middlewareView,
+  onChangeMiddlewareView,
+  shardingEnabled,
 }: ViewToolbarProps) {
   const hint = viewMode === 'classmap'
     ? classMap.focusOnly
@@ -68,6 +83,16 @@ export function ViewToolbar({
       <span className="mode-hint">{hint}</span>
       <div className="toolbar-extra">
         {viewMode === 'callflow' && <span>레벨 {callFlowLevel}</span>}
+        {viewMode === 'data' && (
+          <DataControls
+            dataView={dataView}
+            onChange={onChangeDataView}
+            shardingEnabled={shardingEnabled}
+          />
+        )}
+        {viewMode === 'middleware' && (
+          <MiddlewareControls middlewareView={middlewareView} onChange={onChangeMiddlewareView} />
+        )}
         {viewMode === 'classmap' && (
           <ClassMapControls classMap={classMap} onChange={onChangeClassMap} onFitZoom={onFitZoom} />
         )}
@@ -175,5 +200,111 @@ function Chip({ label, active, onClick, title }: ChipProps) {
     <button type="button" className={`chipbtn${active ? ' active' : ''}`} onClick={onClick} title={title}>
       {label}
     </button>
+  )
+}
+
+const severityFilters: { key: 'all' | FindingSeverity; label: string }[] = [
+  { key: 'all', label: '전체' },
+  { key: 'Critical', label: '치명' },
+  { key: 'Warning', label: '경고' },
+  { key: 'Info', label: '정보' },
+]
+
+function DataControls({
+  dataView,
+  onChange,
+  shardingEnabled,
+}: {
+  dataView: DataViewState
+  onChange: (patch: Partial<DataViewState>) => void
+  shardingEnabled: boolean
+}) {
+  const subs: { key: DataViewState['sub']; label: string }[] = [
+    { key: 'route', label: '실행 경로' },
+    { key: 'map', label: '접근 지도' },
+    { key: 'tx', label: '트랜잭션' },
+    { key: 'comp', label: '보상 처리' },
+    { key: 'check', label: '점검 결과' },
+  ]
+
+  return (
+    <>
+      {subs.map((sub) => (
+        <Chip
+          key={sub.key}
+          label={sub.label}
+          active={dataView.sub === sub.key}
+          onClick={() => onChange({ sub: sub.key })}
+        />
+      ))}
+      <span className="sepline" />
+      <span className="chipbtn static" title="tracelens.config.json의 dataSources에서 읽은 구성이다.">
+        구성: {shardingEnabled ? '샤딩' : '단일 DB'}
+      </span>
+      <Chip
+        label="확실한 것만"
+        active={dataView.onlyCertain}
+        onClick={() => onChange({ onlyCertain: !dataView.onlyCertain })}
+      />
+      {dataView.sub === 'check' && (
+        <>
+          <span className="sepline" />
+          {severityFilters.map((filter) => (
+            <Chip
+              key={filter.key}
+              label={filter.label}
+              active={dataView.severity === filter.key}
+              onClick={() => onChange({ severity: filter.key })}
+            />
+          ))}
+        </>
+      )}
+    </>
+  )
+}
+
+function MiddlewareControls({
+  middlewareView,
+  onChange,
+}: {
+  middlewareView: MiddlewareViewState
+  onChange: (patch: Partial<MiddlewareViewState>) => void
+}) {
+  const subs: { key: MiddlewareViewState['sub']; label: string }[] = [
+    { key: 'pipe', label: '파이프라인' },
+    { key: 'sc', label: '단락 지점' },
+    { key: 'check', label: '점검 결과' },
+  ]
+
+  return (
+    <>
+      {subs.map((sub) => (
+        <Chip
+          key={sub.key}
+          label={sub.label}
+          active={middlewareView.sub === sub.key}
+          onClick={() => onChange({ sub: sub.key })}
+        />
+      ))}
+      <span className="sepline" />
+      <Chip
+        label="응답 경로 표시"
+        active={middlewareView.showPost}
+        onClick={() => onChange({ showPost: !middlewareView.showPost })}
+      />
+      {middlewareView.sub === 'check' && (
+        <>
+          <span className="sepline" />
+          {severityFilters.map((filter) => (
+            <Chip
+              key={filter.key}
+              label={filter.label}
+              active={middlewareView.severity === filter.key}
+              onClick={() => onChange({ severity: filter.key })}
+            />
+          ))}
+        </>
+      )}
+    </>
   )
 }

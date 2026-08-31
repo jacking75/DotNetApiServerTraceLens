@@ -54,6 +54,8 @@ const graph: GraphDocument = {
   ],
   fileHashes: {},
   startupFlow: null,
+  dataAccess: null,
+  middleware: null,
 }
 
 describe('포커스 기반 윈도잉', () => {

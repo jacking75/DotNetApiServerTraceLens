@@ -40,7 +40,8 @@ public static class AnalyzeEndpoints
                 result.GraphSizeBytes,
                 result.ElapsedMs,
                 result.Graph.AnalyzedAt,
-                previousAnalyzedAt));
+                previousAnalyzedAt,
+                result.FindingCount));
         }
         catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
         {
@@ -137,7 +138,8 @@ public static class AnalyzeEndpoints
         graphSizeBytes,
         elapsedMs,
         graph.AnalyzedAt,
-        null);
+        null,
+        (graph.DataAccess?.Findings.Count ?? 0) + (graph.Middleware?.Findings.Count ?? 0));
 }
 
 public sealed record AnalyzeRequest(string SolutionPath);
@@ -155,4 +157,5 @@ public sealed record AnalyzeResponse(
     int GraphSizeBytes,
     long ElapsedMs,
     DateTimeOffset AnalyzedAt,
-    DateTimeOffset? PreviousAnalyzedAt);
+    DateTimeOffset? PreviousAnalyzedAt,
+    int FindingCount);

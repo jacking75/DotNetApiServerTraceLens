@@ -19,6 +19,10 @@ public sealed class TraceLensAnalyzer(
     CallGraphWalker callGraphWalker,
     SnapshotHasher snapshotHasher,
     StartupFlowScanner startupFlowScanner,
+    DataAccessScanner dataAccessScanner,
+    CompensationAnalyzer compensationAnalyzer,
+    DataRuleEngine dataRuleEngine,
+    MiddlewareScanner middlewareScanner,
     ILogger<TraceLensAnalyzer> logger) : ITraceLensAnalyzer
 {
     public async Task<AnalysisResult> AnalyzeAsync(string targetPath, CancellationToken cancellationToken = default)
@@ -62,6 +66,20 @@ public sealed class TraceLensAnalyzer(
             cancellationToken);
         var startupFlow = await startupFlowScanner.ScanAsync(loaded, config, solutionDirectory, cancellationToken);
 
+        DataAccessScanResult? dataScan = null;
+        DataAccessDocument? dataAccess = null;
+        if (config.IncludeDataAccess)
+        {
+            dataScan = await dataAccessScanner.ScanAsync(loaded, config, solutionDirectory, cancellationToken);
+            var effects = compensationAnalyzer.BuildEffects(dataScan.Methods, dataScan.MethodDataSources);
+            var writePaths = compensationAnalyzer.BuildWritePaths(
+                dataScan.Methods, effects, dataScan.MethodDataSources, config);
+            dataAccess = dataRuleEngine.Build(dataScan, writePaths, effects, startupFlow, config);
+        }
+
+        var middleware = await middlewareScanner.ScanAsync(
+            loaded, config, solutionDirectory, startupFlow, dataScan, cancellationToken);
+
         var document = new GraphDocument(
             GraphDocument.CurrentSchemaVersion,
             fullTargetPath,
@@ -73,7 +91,9 @@ public sealed class TraceLensAnalyzer(
             fileHashes)
         {
             RootDirectory = solutionDirectory,
-            StartupFlow = startupFlow
+            StartupFlow = startupFlow,
+            DataAccess = dataAccess,
+            Middleware = middleware
         };
         var outputDirectory = Path.Combine(solutionDirectory, ".tracelens");
         Directory.CreateDirectory(outputDirectory);
@@ -101,7 +121,8 @@ public sealed class TraceLensAnalyzer(
             outputPath,
             scan.MemberCount,
             scan.MemberElapsedMs,
-            json.Length);
+            json.Length,
+            (dataAccess?.Findings.Count ?? 0) + (middleware?.Findings.Count ?? 0));
     }
 
     /// <summary>이 크기를 넘으면 <c>includeMembers</c>를 끄라고 안내한다.</summary>
@@ -169,10 +190,12 @@ public sealed class TraceLensAnalyzer(
 /// <param name="MemberCount">클래스 다이어그램용으로 모은 멤버 수.</param>
 /// <param name="MemberElapsedMs">멤버 수집에만 쓴 시간(ms). 전체 <paramref name="ElapsedMs"/> 안에 포함된다.</param>
 /// <param name="GraphSizeBytes">저장한 <c>graph.json</c>의 크기.</param>
+/// <param name="FindingCount">DB·캐시와 미들웨어 점검에서 잡은 항목 수.</param>
 public sealed record AnalysisResult(
     GraphDocument Graph,
     long ElapsedMs,
     string OutputPath,
     int MemberCount,
     long MemberElapsedMs,
-    int GraphSizeBytes);
+    int GraphSizeBytes,
+    int FindingCount);

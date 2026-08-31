@@ -1,0 +1,18 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FixtureDataApp", "FixtureDataApp\FixtureDataApp.csproj", "{B72C1E44-9F1D-4E6A-9B3C-4F2A5D7C8E10}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B72C1E44-9F1D-4E6A-9B3C-4F2A5D7C8E10}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B72C1E44-9F1D-4E6A-9B3C-4F2A5D7C8E10}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B72C1E44-9F1D-4E6A-9B3C-4F2A5D7C8E10}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B72C1E44-9F1D-4E6A-9B3C-4F2A5D7C8E10}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

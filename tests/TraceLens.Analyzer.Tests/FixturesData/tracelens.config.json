@@ -1,0 +1,16 @@
+{
+  "db": {
+    "shardKeyParameters": ["userNo", "friendNo", "targetNo"],
+    "dataSources": {
+      "GameDb": { "kind": "shard", "shardCount": 8, "typePatterns": ["*IShardConnectionFactory", "*ShardConnectionFactory"] },
+      "GameDbReplica": { "kind": "single", "readOnly": true, "typePatterns": ["*ReplicaConnectionFactory"] },
+      "LogDb": { "kind": "single", "writeOnly": true, "typePatterns": ["*LogConnectionFactory"] },
+      "Redis": { "kind": "cache", "typePatterns": ["*IGameCache", "*RedisGameCache"] }
+    },
+    "compensation": {
+      "pairs": [{ "do": "InsertMemberAsync", "undo": "RemoveMemberAsync" }],
+      "irreversible": ["*PushClient.SendAsync"],
+      "idempotent": ["*IGameCache.RemoveAsync"]
+    }
+  }
+}

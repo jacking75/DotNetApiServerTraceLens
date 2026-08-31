@@ -1,5 +1,5 @@
 # TraceLens
-이 문서는 TraceLens 저장소에서 작업하는 AI 코딩 에이전트(Claude Code 포함)를 위한 지침이다. 사람이 보는 개요는 README.md, 단계별 구현 상세와 체크리스트는 task.md(1~4단계)와 task2.md(5단계: 클래스 다이어그램·전체 흐름도)를 참고한다.
+이 문서는 TraceLens 저장소에서 작업하는 AI 코딩 에이전트(Claude Code 포함)를 위한 지침이다. 사람이 보는 개요는 README.md, 단계별 구현 상세와 체크리스트는 task.md(1~4단계), task2.md(5단계: 클래스 다이어그램·전체 흐름도), task3.md(6단계: DB·캐시 보기와 미들웨어 보기)를 참고한다.
 
 ## 프로젝트 한 줄 설명
 ASP.NET Core Web API 코드베이스의 호출 흐름을 진입점 기준 그래프로 시각화하고, 그래프에서 선택한 코드 위치를 Claude Code에게 곧바로 질의할 수 있게 해주는 로컬 개발 도구다. 데모용이 아니라 실전에서 계속 쓰는 것을 목표로 개발한다.
@@ -20,6 +20,8 @@ ASP.NET Core Web API 코드베이스의 호출 흐름을 진입점 기준 그래
    이 손잡이 없이 전체를 그리는 화면은 추가하지 않는다.
 2. **엣지 범위.** 그래프의 엣지는 메서드 호출 관계로만 구성한다. 생성자(`new X()`)도 메서드 호출로 보고 포함하며(`includeObjectCreation`으로 끌 수 있다), 프로퍼티 읽기/쓰기 같은 접근은 엣지로 만들지 않는다. DI 의존 관계나 이벤트/메시지 발행-구독 흐름을 엣지로 표현하는 기능을 넣지 않는다. DI 등록 정보(`AddScoped`/`AddSingleton`/`TryAdd*` 등)는 인터페이스 호출을 실제 구현체 메서드로 정확히 연결하는 내부 해석 로직에만 사용하고, 등록을 찾지 못하면 솔루션 안 구현체가 하나뿐일 때만 그 구현체로 잇는다.
 
+   **예외 — "DB · 캐시" 보기와 "미들웨어" 보기는 호출 그래프가 아니라 별도 분석이다.** DB·캐시 보기는 SQL 리터럴과 캐시 호출에서 뽑은 **저장소 접근**과, 트랜잭션 없이 쓰는 경로의 **보상 처리(수동 롤백) 판정**을 보여준다. 미들웨어 보기는 `app.UseXxx()` 순서와 각 미들웨어의 `InvokeAsync` 본문(요청/응답 구간·단락 지점)을 보여준다. 둘 다 호출 흐름 엣지를 늘리지 않는다(6단계에서 확정, 상세는 task3.md). 규칙 판정은 언제나 **근거와 확실도(확실/추정)를 함께** 보여주고, 검사하지 않는 규칙도 카탈로그에 "꺼짐"으로 남겨 무엇을 보지 않는지 분명히 한다.
+
    **예외 — "시작 흐름" 보기는 Program.cs의 DI 등록·미들웨어 파이프라인을 그대로 보여준다.** 이 보기는 위에서 말하는 "그래프"(호출 흐름 엣지)가 아니라, Program.cs 하나를 소스 순서대로 읽어 만드는 별도의 타임라인이다(어떤 인터페이스가 어떤 구현체로, 어떤 수명(Scoped/Singleton/Transient)으로 등록됐는지와 `app.UseXxx()`/`MapXxx()` 파이프라인 순서). 상단 메뉴의 "전체 흐름도" 옆에 네 번째 보기로 둔다.
 3. **최신 상태 유지.** 파일 저장을 감지해서 자동으로 재분석하는 기능을 넣지 않는다. 재분석은 항상 사용자가 명시적으로 실행한다(버튼 클릭 또는 API 호출). 대신 마지막 분석 시점과 현재 코드가 같은지 항상 확인할 수 있는 신선도 표시를 유지한다.
 4. **로컬 전용.** 그래프 서버와 (3단계의) MCP 연동은 `localhost`에서만 동작한다. 원격에서 접근 가능하게 만드는 옵션, 인증 없이 외부 바인딩을 허용하는 설정을 추가하지 않는다.
@@ -34,6 +36,7 @@ tracelens/
 ├── README.md
 ├── task.md                       # 0장 데이터 계약 + 1~4단계
 ├── task2.md                      # 5단계(클래스 다이어그램·전체 흐름도)
+├── task3.md                      # 6단계(DB·캐시 보기·보상 처리·미들웨어 보기)
 ├── TraceLens.sln
 ├── src/
 │   ├── TraceLens.Analyzer/       # Roslyn 기반 분석 라이브러리 (UI/서버에 대한 의존성 없음)
@@ -43,6 +46,11 @@ tracelens/
 │   │   ├── ClassMemberCollector.cs       # 타입 심볼 → GraphClassMember (5단계)
 │   │   ├── InvocationResolver.cs         # 호출식 → 심볼 해석 (스캔/BFS 공용)
 │   │   ├── CallGraphWalker.cs            # 진입점 BFS (analysisScope=entryPoints)
+│   │   ├── DataAccessScanner.cs          # DB·캐시 접근과 구조 정보 수집 (6단계)
+│   │   ├── CompensationAnalyzer.cs       # 접근 요약 전파 + 쓰기 경로·보상 판정 (6단계)
+│   │   ├── DataRuleEngine.cs             # DB·캐시 규칙과 규칙 카탈로그 (6단계)
+│   │   ├── MiddlewareScanner.cs          # 미들웨어 파이프라인·단락·MW 규칙 (6단계)
+│   │   ├── DataAccessOptions.cs          # tracelens.config.json의 db 섹션 (6단계)
 │   │   ├── DiResolver.cs
 │   │   ├── NodeClassifier.cs
 │   │   ├── SnapshotHasher.cs
@@ -51,6 +59,9 @@ tracelens/
 │   │       ├── GraphEdge.cs
 │   │       ├── GraphClass.cs
 │   │       ├── GraphClassMember.cs
+│   │       ├── DataAccess.cs             # 접근·트랜잭션·쓰기 경로 (6단계)
+│   │       ├── MiddlewarePipeline.cs     # 미들웨어 단계 (6단계)
+│   │       ├── Findings.cs               # 점검 항목·규칙 카탈로그 (6단계)
 │   │       └── GraphDocument.cs
 │   ├── TraceLens.Server/         # ASP.NET Core Minimal API + React 빌드 결과물 정적 호스팅
 │   │   ├── Program.cs
@@ -68,7 +79,11 @@ tracelens/
 └── client/                               # React + TypeScript (Vite)
     └── src/
         ├── components/
-        │   ├── ViewToolbar.tsx           # 보기 전환(호출 흐름 / 클래스 다이어그램 / 전체 흐름도) + 보기별 컨트롤
+        │   ├── ViewToolbar.tsx           # 보기 전환(호출 흐름 / 클래스 다이어그램 / 전체 흐름도 / 시작 흐름 / DB·캐시 / 미들웨어)
+        │   ├── DataAccessView.tsx        # DB·캐시 보기(실행 경로·접근 지도·트랜잭션·보상 처리·점검) (6단계)
+        │   ├── MiddlewareView.tsx        # 미들웨어 보기(파이프라인·단락 지점·점검) (6단계)
+        │   ├── DataSidePanels.tsx        # 두 보기의 좌측 패널 (6단계)
+        │   ├── DataDetailPanel.tsx       # 점검 항목·쓰기 경로·규칙 상세 (6단계)
         │   ├── GraphView.tsx             # Cytoscape.js 래퍼 (호출 흐름 전용)
         │   ├── DiagramCanvas.tsx         # 배치 결과(박스+선)를 그리는 공용 캔버스
         │   ├── UmlClassBox.tsx           # UML 박스(이름/필드/메서드 3단)
@@ -82,6 +97,7 @@ tracelens/
         │   ├── PathPicker.tsx            # 분석 대상 선택 대화상자
         │   └── FreshnessBadge.tsx
         ├── graph/
+        │   ├── dataView.ts               # 보상 격자·접근 매트릭스·진입점 저장소 경로 (순수, 6단계)
         │   ├── windowing.ts              # 호출 흐름의 포커스 기반 윈도잉
         │   ├── relations.ts              # 상속·구현·연관·의존 관계 파생 (순수)
         │   ├── treeLayout.ts             # 계층(트리) 배치 엔진 (순수)
@@ -131,11 +147,11 @@ npm run build
 
 ## 데이터 계약
 
-그래프 JSON 스키마, API 엔드포인트 계약, `tracelens.config.json` 스키마의 최신 정의는 task.md에 있다. 스키마를 변경할 때는 Analyzer/Server/client 세 곳의 타입 정의를 함께 갱신하고 task.md도 갱신한다.
+그래프 JSON 스키마, API 엔드포인트 계약, `tracelens.config.json` 스키마의 최신 정의는 task.md에 있다(6단계에서 추가된 `dataAccess`·`middleware` 섹션과 `db` 설정은 task3.md 2장). 스키마를 변경할 때는 Analyzer/Server/client 세 곳의 타입 정의를 함께 갱신하고 해당 task 문서도 갱신한다. 현재 스키마는 **v6**이다.
 
 ## 진행 상태 확인
 
-task.md와 task2.md의 각 단계 체크리스트가 현재 진행 상태를 나타낸다. 새 작업을 시작하기 전에 두 문서를 먼저 읽고 지금이 몇 단계인지, 어떤 항목이 남았는지 확인한 뒤 그 단계 범위 안에서만 작업한다. 다음 단계의 기능을 앞당겨 구현하지 않는다.
+task.md·task2.md·task3.md의 각 단계 체크리스트가 현재 진행 상태를 나타낸다. 새 작업을 시작하기 전에 세 문서를 먼저 읽고 지금이 몇 단계인지, 어떤 항목이 남았는지 확인한 뒤 그 단계 범위 안에서만 작업한다. 다음 단계의 기능을 앞당겨 구현하지 않는다.
 
 ## 분석 대상과 이 저장소를 혼동하지 않기
 

@@ -23,6 +23,15 @@ public enum AnalysisScope
 /// <param name="IncludeStartupFlow">
 /// Program.cs를 훑어 DI 등록·미들웨어 파이프라인("시작 흐름")을 수집할지 여부. 끄면 그 보기가 빈 상태로 남는다.
 /// </param>
+/// <param name="IncludeDataAccess">
+/// DB·캐시 접근과 보상 처리(트랜잭션 없는 쓰기 경로)를 수집할지 여부. 끄면 "DB · 캐시" 보기가 빈 상태로 남는다.
+/// </param>
+/// <param name="IncludeMiddleware">
+/// 미들웨어 파이프라인을 열어 요청/응답 구간·단락을 수집할지 여부. 끄면 "미들웨어" 보기가 빈 상태로 남는다.
+/// </param>
+/// <param name="Db">
+/// 사내 DB·캐시 계층의 모양을 알려주는 설정. 비워 두면 SQL 리터럴과 타입 이름에서 짐작한다.
+/// </param>
 public sealed record TraceLensConfig(
     IReadOnlyList<string> EntryPointAttributes,
     IReadOnlyList<KindRule> KindRules,
@@ -32,7 +41,10 @@ public sealed record TraceLensConfig(
     bool IncludeObjectCreation,
     bool IncludeMembers,
     bool IncludeInterfaces,
-    bool IncludeStartupFlow)
+    bool IncludeStartupFlow,
+    bool IncludeDataAccess,
+    bool IncludeMiddleware,
+    DataAccessOptions Db)
 {
     public static TraceLensConfig Default { get; } = new(
         ["HttpGet", "HttpPost", "HttpPut", "HttpDelete", "HttpPatch"],
@@ -50,7 +62,10 @@ public sealed record TraceLensConfig(
         true,
         true,
         true,
-        true);
+        true,
+        true,
+        true,
+        DataAccessOptions.Default);
 
     public static async Task<TraceLensConfig> LoadAsync(
         string solutionDirectory,
@@ -83,7 +98,14 @@ public sealed record TraceLensConfig(
                 : Default.IncludeInterfaces,
             root.TryGetProperty("includeStartupFlow", out var includeStartupFlow)
                 ? includeStartupFlow.GetBoolean()
-                : Default.IncludeStartupFlow);
+                : Default.IncludeStartupFlow,
+            root.TryGetProperty("includeDataAccess", out var includeDataAccess)
+                ? includeDataAccess.GetBoolean()
+                : Default.IncludeDataAccess,
+            root.TryGetProperty("includeMiddleware", out var includeMiddleware)
+                ? includeMiddleware.GetBoolean()
+                : Default.IncludeMiddleware,
+            DataAccessOptions.Read(root));
     }
 
     private static AnalysisScope? ReadAnalysisScope(JsonElement root) =>

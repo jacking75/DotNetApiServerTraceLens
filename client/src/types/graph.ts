@@ -135,6 +135,10 @@ export interface GraphDocument {
   fileHashes: Record<string, string>
   /** v5부터 있다. v4 이하 문서를 읽으면 null이다. */
   startupFlow: StartupFlowDocument | null
+  /** v6부터 있다. 설정에서 껐거나 v5 이하 문서를 읽으면 null이다. */
+  dataAccess: DataAccessDocument | null
+  /** v6부터 있다. Program.cs를 찾지 못했거나 v5 이하 문서를 읽으면 null이다. */
+  middleware: MiddlewarePipelineDocument | null
 }
 
 /** 그래프 창의 종류. 지금은 호출 흐름 보기만 이 창을 쓴다. */
@@ -149,17 +153,28 @@ export interface GraphWindow {
   branchNodeIds: Set<string>
 }
 
-/** 상단 보기 전환 툴바가 고르는 네 가지 보기. */
-export type ViewMode = 'callflow' | 'classmap' | 'flowmap' | 'startup'
+/** 상단 보기 전환 툴바가 고르는 보기. */
+export type ViewMode = 'callflow' | 'classmap' | 'flowmap' | 'startup' | 'data' | 'middleware'
 
-/** 선택 대상. 클래스 다이어그램은 앞 세 종류를, 시작 흐름은 startupStep을 다룬다. */
+/**
+ * 선택 대상. 클래스 다이어그램은 앞 세 종류를, 시작 흐름은 startupStep을,
+ * DB·캐시와 미들웨어 보기는 나머지 여섯 종류를 다룬다.
+ */
 export type Selection =
   | { type: 'class'; key: string }
   | { type: 'method'; key: string }
   | { type: 'namespace'; key: string }
   | { type: 'startupStep'; key: string }
+  | { type: 'finding'; key: string }
+  | { type: 'writePath'; key: string }
+  | { type: 'dataSource'; key: string }
+  | { type: 'storageTarget'; key: string }
+  | { type: 'rule'; key: string }
+  | { type: 'middlewareStep'; key: string }
 
 export interface AnalyzeSummary {
+  /** DB·캐시와 미들웨어 점검에서 잡은 항목 수. v6부터 채워진다. */
+  findingCount?: number
   entryPointCount: number
   classCount: number
   interfaceCount: number
@@ -218,4 +233,183 @@ export interface EditorResponse {
   opened: boolean
   fallbackUri: string
   error: string | null
+}
+
+/* ------------------------------------------------------------------ DB · 캐시 (스키마 v6) */
+
+export type StorageKind = 'Database' | 'Cache' | 'External'
+export type AccessOperation = 'Read' | 'Write' | 'Delete' | 'Other'
+/** 쓰기 한 단계가 실패했을 때 되돌려지는지에 대한 판정. */
+export type CompensationKind = 'Transaction' | 'Yes' | 'PartialPaths' | 'No' | 'NotNeeded' | 'Irreversible'
+export type FindingSeverity = 'Critical' | 'Warning' | 'Info'
+export type FindingConfidence = 'Certain' | 'Estimated'
+
+export interface FindingEvidence {
+  /** ok는 확인된 사실, bad는 문제의 근거, 빈 값은 중립이다. */
+  tone: string
+  head: string
+  detail: string
+  note: string
+}
+
+export interface Finding {
+  id: string
+  ruleId: string
+  severity: FindingSeverity
+  confidence: FindingConfidence
+  what: string
+  why: string
+  fix: string
+  symbol: string
+  file: string
+  line: number
+  nodeId: string | null
+  pathId: string | null
+  stepId: string | null
+  target: string | null
+  evidence: FindingEvidence[]
+}
+
+export interface RuleInfo {
+  id: string
+  group: string
+  name: string
+  severity: FindingSeverity
+  judge: FindingConfidence
+  description: string
+  shardOnly: boolean
+  /** 이번 분석에서 실제로 검사했는지. false면 화면에 "꺼짐"으로 나온다. */
+  enabled: boolean
+}
+
+export interface DataAccess {
+  id: string
+  storage: StorageKind
+  dataSource: string
+  /** 테이블 이름, 프로시저 이름, 또는 정규화한 캐시 키 패턴. */
+  target: string
+  operation: AccessOperation
+  statement: string
+  methodNodeId: string
+  methodDisplayName: string
+  classId: string
+  file: string
+  line: number
+  inTransaction: boolean
+  inLoop: boolean
+}
+
+export interface TransactionScopeInfo {
+  id: string
+  methodNodeId: string
+  methodDisplayName: string
+  classId: string
+  file: string
+  startLine: number
+  hasCommit: boolean
+  dataSources: string[]
+  accessIds: string[]
+  externalCalls: string[]
+  cacheCalls: string[]
+}
+
+export interface WriteStep {
+  order: number
+  label: string
+  detail: string
+  storage: StorageKind
+  dataSource: string
+  target: string
+  operation: AccessOperation
+  compensation: CompensationKind
+  compensationNote: string
+  file: string
+  line: number
+}
+
+export interface WritePath {
+  id: string
+  methodNodeId: string
+  methodDisplayName: string
+  classId: string
+  file: string
+  startLine: number
+  inTransaction: boolean
+  note: string
+  steps: WriteStep[]
+  findingIds: string[]
+}
+
+export interface DataSourceInfo {
+  name: string
+  /** single · shard · cache. */
+  kind: string
+  shardCount: number
+  readOnly: boolean
+  writeOnly: boolean
+  description: string
+  accessCount: number
+}
+
+export interface DataAccessDocument {
+  shardingEnabled: boolean
+  dataSources: DataSourceInfo[]
+  accesses: DataAccess[]
+  transactions: TransactionScopeInfo[]
+  writePaths: WritePath[]
+  findings: Finding[]
+  rules: RuleInfo[]
+}
+
+/* ------------------------------------------------------------------ 미들웨어 (스키마 v6) */
+
+export type MiddlewareType = 'Custom' | 'Framework'
+export type ContextAccessMode = 'Read' | 'Write'
+
+export interface MiddlewareShortCircuit {
+  statusCode: string
+  condition: string
+  line: number
+}
+
+export interface ContextAccess {
+  mode: ContextAccessMode
+  target: string
+}
+
+export interface EndpointFilterInfo {
+  name: string
+  detail: string
+  statusCode: string | null
+}
+
+export interface MiddlewareStepInfo {
+  id: string
+  order: number
+  name: string
+  type: MiddlewareType
+  registrationFile: string
+  registrationLine: number
+  classId: string | null
+  implementationFile: string | null
+  implementationLine: number
+  /** next 호출 전에 하는 일. */
+  pre: string | null
+  /** next 이후(응답이 돌아올 때) 하는 일. 없으면 null. */
+  post: string | null
+  shortCircuit: MiddlewareShortCircuit | null
+  contextAccesses: ContextAccess[]
+  storeAccesses: string[]
+  filters: EndpointFilterInfo[]
+  isTerminal: boolean
+  isDead: boolean
+  condition: string | null
+  note: string | null
+}
+
+export interface MiddlewarePipelineDocument {
+  programFile: string
+  steps: MiddlewareStepInfo[]
+  findings: Finding[]
+  rules: RuleInfo[]
 }

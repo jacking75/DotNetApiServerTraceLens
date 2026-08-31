@@ -1,0 +1,227 @@
+import { useMemo, useState } from 'react'
+import { dataSourceTone } from '../graph/dataView'
+import type { DataViewState } from '../state/viewState'
+import type {
+  DataAccessDocument,
+  EntryPoint,
+  FindingSeverity,
+  MiddlewarePipelineDocument,
+  RuleInfo,
+  Selection,
+} from '../types/graph'
+import { SeverityBadge } from './DataAccessView'
+import { MiddlewareStepRow } from './MiddlewareView'
+
+type DataTab = 'entries' | 'sources' | 'targets' | 'rules'
+
+interface DataSidePanelProps {
+  data: DataAccessDocument
+  entryPoints: EntryPoint[]
+  view: DataViewState
+  onChangeView: (patch: Partial<DataViewState>) => void
+  selection: Selection | null
+  onSelect: (selection: Selection) => void
+}
+
+export function DataSidePanel({
+  data,
+  entryPoints,
+  view,
+  onChangeView,
+  selection,
+  onSelect,
+}: DataSidePanelProps) {
+  const [tab, setTab] = useState<DataTab>('entries')
+  const [search, setSearch] = useState('')
+
+  const targets = useMemo(() => {
+    const map = new Map<string, { name: string; dataSource: string; storage: string; count: number }>()
+    for (const access of data.accesses) {
+      if (!access.target) continue
+      const entry = map.get(access.target)
+        ?? { name: access.target, dataSource: access.dataSource, storage: access.storage, count: 0 }
+      entry.count += 1
+      map.set(access.target, entry)
+    }
+
+    return [...map.values()].sort((left, right) => left.name.localeCompare(right.name))
+  }, [data.accesses])
+
+  const ruleCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const finding of data.findings) counts.set(finding.ruleId, (counts.get(finding.ruleId) ?? 0) + 1)
+    return counts
+  }, [data.findings])
+
+  const keyword = search.trim().toLowerCase()
+  const matches = (value: string) => keyword.length === 0 || value.toLowerCase().includes(keyword)
+
+  return (
+    <>
+      <div className="side-tabs">
+        <button type="button" className={tab === 'entries' ? 'active' : ''} onClick={() => setTab('entries')}>진입점</button>
+        <button type="button" className={tab === 'sources' ? 'active' : ''} onClick={() => setTab('sources')}>데이터소스</button>
+        <button type="button" className={tab === 'targets' ? 'active' : ''} onClick={() => setTab('targets')}>테이블·키</button>
+        <button type="button" className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>점검</button>
+      </div>
+      <input
+        className="side-search"
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="검색…"
+      />
+      <div className="side-list">
+        {tab === 'entries' && entryPoints.filter((entry) => matches(entry.route)).map((entry) => (
+          <button
+            type="button"
+            key={entry.nodeId}
+            className={`side-item${view.entryNodeId === entry.nodeId ? ' selected' : ''}`}
+            onClick={() => {
+              onChangeView({ sub: 'route', entryNodeId: entry.nodeId })
+              onSelect({ type: 'method', key: entry.nodeId })
+            }}
+          >
+            <span className={`http ${entry.httpMethod.toLowerCase()}`}>{entry.httpMethod}</span>
+            <span className="grow">{entry.route}</span>
+          </button>
+        ))}
+
+        {tab === 'sources' && data.dataSources.filter((source) => matches(source.name)).map((source) => (
+          <button
+            type="button"
+            key={source.name}
+            className={`side-item${selection?.type === 'dataSource' && selection.key === source.name ? ' selected' : ''}`}
+            onClick={() => onSelect({ type: 'dataSource', key: source.name })}
+          >
+            <span className={`ds-dot ${dataSourceTone(source.kind)}`} />
+            <span className="grow">
+              {source.name}
+              <span className="sub">
+                {source.description}
+                {source.readOnly ? ' · 읽기 전용' : ''}
+                {source.writeOnly ? ' · 쓰기 전용' : ''}
+              </span>
+            </span>
+            <span className="count">{source.accessCount}</span>
+          </button>
+        ))}
+
+        {tab === 'targets' && targets.filter((target) => matches(target.name)).map((target) => (
+          <button
+            type="button"
+            key={target.name}
+            className={`side-item${selection?.type === 'storageTarget' && selection.key === target.name ? ' selected' : ''}`}
+            onClick={() => onSelect({ type: 'storageTarget', key: target.name })}
+          >
+            <span className={`ds-dot ${target.storage === 'Cache' ? 'redis' : 'shard'}`} />
+            <span className="grow">
+              {target.name}
+              <span className="sub">{target.dataSource} · 접근 {target.count}곳</span>
+            </span>
+          </button>
+        ))}
+
+        {tab === 'rules' && (
+          <RuleList
+            rules={data.rules.filter((rule) => matches(`${rule.id} ${rule.name}`))}
+            counts={ruleCounts}
+            selection={selection}
+            onSelect={onSelect}
+          />
+        )}
+      </div>
+    </>
+  )
+}
+
+interface MiddlewareSidePanelProps {
+  pipeline: MiddlewarePipelineDocument
+  selection: Selection | null
+  onSelect: (selection: Selection) => void
+}
+
+export function MiddlewareSidePanel({ pipeline, selection, onSelect }: MiddlewareSidePanelProps) {
+  const [tab, setTab] = useState<'pipeline' | 'rules'>('pipeline')
+  const severityByStep = useMemo(() => {
+    const map = new Map<string, FindingSeverity>()
+    for (const finding of pipeline.findings) {
+      if (!finding.stepId) continue
+      const current = map.get(finding.stepId)
+      if (current === 'Critical') continue
+      map.set(finding.stepId, finding.severity)
+    }
+
+    return map
+  }, [pipeline.findings])
+  const ruleCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const finding of pipeline.findings) counts.set(finding.ruleId, (counts.get(finding.ruleId) ?? 0) + 1)
+    return counts
+  }, [pipeline.findings])
+
+  return (
+    <>
+      <div className="side-tabs two">
+        <button type="button" className={tab === 'pipeline' ? 'active' : ''} onClick={() => setTab('pipeline')}>파이프라인</button>
+        <button type="button" className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>점검</button>
+      </div>
+      <div className="side-list">
+        {tab === 'pipeline' && pipeline.steps.map((step) => (
+          <MiddlewareStepRow
+            key={step.id}
+            step={step}
+            selected={selection?.type === 'middlewareStep' && selection.key === step.id}
+            severity={severityByStep.get(step.id) ?? null}
+            onSelect={() => onSelect({ type: 'middlewareStep', key: step.id })}
+          />
+        ))}
+        {tab === 'rules' && (
+          <RuleList rules={pipeline.rules} counts={ruleCounts} selection={selection} onSelect={onSelect} />
+        )}
+      </div>
+    </>
+  )
+}
+
+function RuleList({
+  rules,
+  counts,
+  selection,
+  onSelect,
+}: {
+  rules: RuleInfo[]
+  counts: Map<string, number>
+  selection: Selection | null
+  onSelect: (selection: Selection) => void
+}) {
+  const hit = rules.filter((rule) => (counts.get(rule.id) ?? 0) > 0)
+  const clean = rules.filter((rule) => (counts.get(rule.id) ?? 0) === 0 && rule.enabled)
+  const off = rules.filter((rule) => !rule.enabled)
+
+  const row = (rule: RuleInfo, dim: boolean, label: string) => (
+    <button
+      type="button"
+      key={rule.id}
+      className={`side-item${selection?.type === 'rule' && selection.key === rule.id ? ' selected' : ''}`}
+      style={dim ? { opacity: 0.55 } : undefined}
+      onClick={() => onSelect({ type: 'rule', key: rule.id })}
+    >
+      <span className="grow">
+        <span className="rule-id">{rule.id}</span>
+        <span className="sub">{rule.name}</span>
+      </span>
+      <span className="count">{label}</span>
+    </button>
+  )
+
+  return (
+    <>
+      {hit.length > 0 && <div className="side-group">걸린 규칙</div>}
+      {hit.map((rule) => row(rule, false, String(counts.get(rule.id))))}
+      {clean.length > 0 && <div className="side-group">통과한 규칙</div>}
+      {clean.map((rule) => row(rule, true, '0'))}
+      {off.length > 0 && <div className="side-group">검사하지 않는 규칙</div>}
+      {off.map((rule) => row(rule, true, rule.shardOnly ? '샤딩 전용' : '꺼짐'))}
+    </>
+  )
+}

@@ -1,7 +1,7 @@
 import type { DiagramLayoutMode } from '../graph/classDiagram'
 import type { RelationType } from '../graph/relations'
 import type { TreeDirection } from '../graph/treeLayout'
-import type { Selection, ViewMode } from '../types/graph'
+import type { FindingSeverity, Selection, ViewMode } from '../types/graph'
 
 export interface ClassMapState {
   layout: DiagramLayoutMode
@@ -14,6 +14,31 @@ export interface ClassMapState {
   hiddenNamespaces: string[]
 }
 
+/** DB · 캐시 보기의 하위 보기. */
+export type DataSubView = 'route' | 'map' | 'tx' | 'comp' | 'check'
+
+export interface DataViewState {
+  sub: DataSubView
+  /** 실행 경로에서 고른 진입점. */
+  entryNodeId: string | null
+  /** 보상 처리에서 펼친 쓰기 경로. */
+  pathId: string | null
+  mapFilter: 'all' | 'write' | 'flagged'
+  severity: 'all' | FindingSeverity
+  /** 추정 판정을 접는다. */
+  onlyCertain: boolean
+}
+
+/** 미들웨어 보기의 하위 보기. */
+export type MiddlewareSubView = 'pipe' | 'sc' | 'check'
+
+export interface MiddlewareViewState {
+  sub: MiddlewareSubView
+  /** 응답 경로(next 이후) 줄을 표시할지. */
+  showPost: boolean
+  severity: 'all' | FindingSeverity
+}
+
 export interface PersistedState {
   viewMode: ViewMode
   classMap: ClassMapState
@@ -22,6 +47,8 @@ export interface PersistedState {
   selection: Selection | null
   columns: { left: number; right: number }
   solutionPath: string
+  dataView: DataViewState
+  middlewareView: MiddlewareViewState
 }
 
 export const defaultColumns = { left: 272, right: 392 }
@@ -43,6 +70,15 @@ export const defaultState: PersistedState = {
   selection: null,
   columns: { ...defaultColumns },
   solutionPath: '',
+  dataView: {
+    sub: 'comp',
+    entryNodeId: null,
+    pathId: null,
+    mapFilter: 'all',
+    severity: 'all',
+    onlyCertain: false,
+  },
+  middlewareView: { sub: 'pipe', showPost: true, severity: 'all' },
 }
 
 const storageKey = 'tracelens.view'
@@ -58,6 +94,8 @@ export function loadState(): PersistedState {
       ...parsed,
       classMap: { ...defaultState.classMap, ...parsed.classMap, relations: { ...defaultState.classMap.relations, ...parsed.classMap?.relations } },
       columns: { ...defaultColumns, ...parsed.columns },
+      dataView: { ...defaultState.dataView, ...parsed.dataView },
+      middlewareView: { ...defaultState.middlewareView, ...parsed.middlewareView },
     }
   } catch {
     return defaultState

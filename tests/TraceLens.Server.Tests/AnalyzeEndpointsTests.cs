@@ -19,7 +19,7 @@ public sealed class AnalyzeEndpointsTests
         var currentGraph = CreateGraph(currentTime);
         var graphStore = new GraphStore();
         graphStore.Set(previousGraph);
-        var analyzer = new StubAnalyzer(new AnalysisResult(currentGraph, 42, "graph.json", 7, 3, 1024));
+        var analyzer = new StubAnalyzer(new AnalysisResult(currentGraph, 42, "graph.json", 7, 3, 1024, 5));
 
         var result = await AnalyzeEndpoints.AnalyzeAsync(
             new AnalyzeRequest(currentGraph.SolutionPath),

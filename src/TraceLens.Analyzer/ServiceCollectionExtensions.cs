@@ -14,5 +14,9 @@ public static class ServiceCollectionExtensions
         .AddScoped<CallGraphWalker>()
         .AddScoped<SnapshotHasher>()
         .AddScoped<StartupFlowScanner>()
+        .AddScoped<DataAccessScanner>()
+        .AddScoped<CompensationAnalyzer>()
+        .AddScoped<DataRuleEngine>()
+        .AddScoped<MiddlewareScanner>()
         .AddScoped<ITraceLensAnalyzer, TraceLensAnalyzer>();
 }
