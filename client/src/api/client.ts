@@ -33,12 +33,24 @@ export function analyzeTarget(targetPath: string): Promise<AnalyzeSummary> {
   })
 }
 
-/** 다시 분석하지 않고, 이전에 저장한 `.tracelens/graph.json`을 그대로 불러온다. 저장된 파일이 없으면 실패한다. */
+/**
+ * 다시 분석하지 않고, 이전에 저장한 `.tracelens/graph.json`을 그대로 불러온다. 저장된 파일이 없으면 실패한다.
+ * 서버 재시작 직후 마지막 분석 결과를 조용히 되살리는 내부 동작에만 쓴다(사용자가 누르는 버튼은 없다).
+ */
 export function loadSavedGraph(targetPath: string): Promise<AnalyzeSummary> {
   return request('/api/analyze/load', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ solutionPath: targetPath }),
+  })
+}
+
+/** 사용자가 "불러오기"로 고른 파일(분석 결과를 저장해 둔 JSON)의 내용을 그대로 서버에 전달해 불러온다. */
+export function importGraph(rawJson: string): Promise<AnalyzeSummary> {
+  return request('/api/analyze/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: rawJson,
   })
 }
 

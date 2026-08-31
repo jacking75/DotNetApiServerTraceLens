@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using TraceLens.Analyzer;
@@ -80,6 +81,43 @@ public sealed class AnalyzeEndpointsTests
 
         var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
         Assert.Equal(StatusCodes.Status404NotFound, statusResult.StatusCode);
+        Assert.Null(graphStore.Current);
+    }
+
+    [Fact]
+    public async Task ImportAsync_ReadsPostedGraphJson()
+    {
+        var analyzedAt = DateTimeOffset.Parse("2026-08-11T18:00:00+09:00");
+        var graph = CreateGraph(analyzedAt);
+        var json = JsonSerializer.Serialize(graph, GraphDocument.JsonOptions);
+        var context = new DefaultHttpContext
+        {
+            Request = { Body = new MemoryStream(Encoding.UTF8.GetBytes(json)) },
+        };
+        var graphStore = new GraphStore();
+
+        var result = await AnalyzeEndpoints.ImportAsync(context, graphStore, CancellationToken.None);
+
+        var valueResult = Assert.IsAssignableFrom<IValueHttpResult>(result);
+        var response = Assert.IsType<AnalyzeResponse>(valueResult.Value);
+        Assert.Equal(analyzedAt, response.AnalyzedAt);
+        Assert.Null(response.PreviousAnalyzedAt);
+        Assert.Equal(graph.SolutionPath, graphStore.Current?.SolutionPath);
+    }
+
+    [Fact]
+    public async Task ImportAsync_ReturnsBadRequest_ForInvalidJson()
+    {
+        var context = new DefaultHttpContext
+        {
+            Request = { Body = new MemoryStream(Encoding.UTF8.GetBytes("이건 JSON이 아니다")) },
+        };
+        var graphStore = new GraphStore();
+
+        var result = await AnalyzeEndpoints.ImportAsync(context, graphStore, CancellationToken.None);
+
+        var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status400BadRequest, statusResult.StatusCode);
         Assert.Null(graphStore.Current);
     }
 

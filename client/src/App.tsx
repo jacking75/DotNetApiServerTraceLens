@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { analyzeTarget, getEntryPoints, getGraph, getNamespaces, loadSavedGraph } from './api/client'
+import { analyzeTarget, getEntryPoints, getGraph, getNamespaces, importGraph, loadSavedGraph } from './api/client'
 import { AskPanel, type AskContext } from './components/AskPanel'
 import { Breadcrumb, type BreadcrumbItem } from './components/Breadcrumb'
 import { ClassDiagram } from './components/ClassDiagram'
@@ -54,6 +54,13 @@ const formatTime = (value: string) => new Intl.DateTimeFormat('ko-KR', {
   second: '2-digit',
 }).format(new Date(value))
 
+/** "저장" 버튼이 내려받는 파일의 기본 이름. 솔루션 이름 + 분석 시각으로 나중에 알아보기 쉽게 만든다. */
+const graphFileName = (graph: GraphDocument) => {
+  const baseName = graph.solutionPath.split(/[\\/]/).pop()?.replace(/\.(sln|csproj)$/i, '') || 'tracelens'
+  const stamp = graph.analyzedAt.slice(0, 10)
+  return `${baseName}.${stamp}.tracelens.json`
+}
+
 export default function App() {
   const initial = useRef<PersistedState>(loadState()).current
   const [solutionPath, setSolutionPath] = useState(initial.solutionPath)
@@ -84,6 +91,7 @@ export default function App() {
 
   const workspaceRef = useRef<HTMLElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   /* ---------------------------------------------------------------- 파생 데이터 */
 
@@ -261,17 +269,32 @@ export default function App() {
     }
   }
 
-  /** 다시 분석하지 않고, 이전에 저장한 `.tracelens/graph.json`을 그대로 불러온다. */
-  const loadSaved = async () => {
-    if (!solutionPath.trim()) return
+  /** 지금 분석 결과를 사용자가 고르는 위치에 파일로 저장한다(브라우저의 "다른 이름으로 저장" 창). */
+  const saveGraphAs = () => {
+    if (!graph) return
+    const blob = new Blob([JSON.stringify(graph, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = graphFileName(graph)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  /** 사용자가 "불러오기"로 고른 파일을 읽어 서버에 그대로 불러온다(다시 분석하지 않는다). */
+  const importFromFile = async (file: File) => {
     setBusy(true)
     setError(null)
     try {
-      const nextSummary = await loadSavedGraph(solutionPath.trim())
+      const text = await file.text()
+      const nextSummary = await importGraph(text)
       const nextGraph = await loadGraphData()
+      setSolutionPath(nextGraph.solutionPath)
       applyAnalyzedGraph(nextGraph, nextSummary)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '저장된 분석 결과를 불러오지 못했다.')
+      setError(reason instanceof Error ? reason.message : '파일을 불러오지 못했다.')
     } finally {
       setBusy(false)
     }
@@ -535,14 +558,35 @@ export default function App() {
           <button type="button" className="browse" onClick={() => setPickerOpen(true)} disabled={busy}>
             찾아보기…
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="visually-hidden"
+            tabIndex={-1}
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              event.target.value = '' // 같은 파일을 다시 골라도 onChange가 뜨도록 비워 둔다.
+              if (file) void importFromFile(file)
+            }}
+          />
           <button
             type="button"
             className="browse"
-            title="다시 분석하지 않고, 이전에 저장한 분석 결과를 그대로 불러온다."
-            disabled={busy || !solutionPath.trim()}
-            onClick={() => void loadSaved()}
+            title="저장해 둔 분석 결과 파일을 골라 불러온다(다시 분석하지 않는다)."
+            disabled={busy}
+            onClick={() => fileInputRef.current?.click()}
           >
             불러오기
+          </button>
+          <button
+            type="button"
+            className="browse"
+            title="지금 분석 결과를 원하는 위치에 파일로 저장한다."
+            disabled={busy || !graph}
+            onClick={saveGraphAs}
+          >
+            저장
           </button>
           <button type="submit" className="primary" disabled={busy || !solutionPath.trim()}>
             {busy ? '처리 중…' : '분석'}
