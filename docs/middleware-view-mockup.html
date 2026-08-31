@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TraceLens — 미들웨어 파이프라인 보기 목업</title>
+<style>
+:root{
+  --bg:#0c111b; --panel:#111827; --panel-2:#151f30; --border:#263247; --border-2:#2c3b52;
+  --text:#e7edf7; --dim:#8290a4; --dim-2:#75859a; --accent:#79d4ff;
+  --bad:#ff8d91; --bad-bg:#3a1f24; --bad-line:#7b343f;
+  --warn:#ffbb6b; --warn-bg:#332413; --warn-line:#7d5a2c;
+  --ok:#7ee0b8; --ok-bg:#123027; --ok-line:#2a6b56;
+  --shard:#bd9cff; --global:#79d4ff; --logdb:#efbc72; --cache:#90e6ce;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; min-width:1180px; color:var(--text);
+  background:radial-gradient(circle at 20% 0%,#18253b 0,#0c111b 38%);
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans KR",sans-serif;
+}
+button,input,textarea{font:inherit}
+button{cursor:pointer}
+code,.mono{font-family:Consolas,"D2Coding",monospace}
+
+.page{width:100%;margin:0;padding:16px 18px 24px}
+.app-header{display:flex;align-items:center;gap:18px;margin-bottom:12px}
+.app-header h1{margin:0;font-size:24px;letter-spacing:-.03em}
+.eyebrow{color:#7990ae;font-size:11px;text-transform:uppercase;letter-spacing:.12em}
+.mock-tag{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:800;
+  color:#ffd9a3;background:#3a2a17;border:1px solid #7d5a2c;vertical-align:3px}
+.fake-form{display:flex;gap:8px;flex:1;max-width:600px;margin-left:auto}
+.fake-form input{flex:1;color:var(--text);background:#111827;border:1px solid #2d3a4f;border-radius:8px;padding:9px 12px}
+.btn{color:#cbd8ea;background:#17202f;border:1px solid #304059;border-radius:8px;padding:9px 13px;white-space:nowrap}
+.btn:hover{color:var(--text);border-color:#4d6383}
+.btn.primary{color:#08111b;background:var(--accent);border:0;font-weight:750}
+.btn.sm{padding:5px 10px;font-size:11px;border-radius:7px}
+.freshness-badge{display:flex;align-items:center;gap:6px;color:#9de2c7;background:#12342c;border:1px solid #286c58;
+  border-radius:999px;padding:6px 10px;font-size:11px;font-weight:700;white-space:nowrap}
+.freshness-dot{width:7px;height:7px;border-radius:50%;background:#64ddb0;box-shadow:0 0 7px #64ddb088}
+
+.mode-bar{display:flex;align-items:center;gap:12px;margin-bottom:10px;padding:8px 10px;
+  background:#111827cc;border:1px solid var(--border);border-radius:10px}
+.mode-switch{display:flex;gap:4px;background:#0c1320;border:1px solid var(--border);border-radius:9px;padding:3px;flex:none}
+.mode-switch button{color:var(--dim);background:transparent;border:0;border-radius:7px;padding:7px 14px;font-size:13px;font-weight:700}
+.mode-switch button:hover{color:var(--text)}
+.mode-switch button.active{color:#08111b;background:var(--accent)}
+.mode-switch button .new-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--warn);margin-left:6px;vertical-align:2px}
+.mode-switch button.active .new-dot{background:#08111b}
+.mode-hint{color:var(--dim);font-size:12px;flex:1;min-width:120px}
+.toolbar-extra{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:flex-end;color:var(--dim);font-size:11px}
+.toolbar-extra .sepline{width:1px;height:18px;background:var(--border);margin:0 3px}
+.chipbtn{color:var(--dim);background:#0c1320;border:1px solid var(--border);border-radius:7px;padding:5px 9px;font-size:11px;font-weight:700}
+.chipbtn:hover{color:var(--text)}
+.chipbtn.active{color:#a9e7ff;background:#153044;border-color:#3e7695}
+.summary-line{color:#97a8bf;font-size:12px;margin:-2px 0 10px;text-align:right}
+.summary-line b{color:#dbe6f5}
+
+.workspace{
+  --col-left:280px; --col-right:400px;
+  display:grid;
+  grid-template-columns:var(--col-left) 8px minmax(420px,1fr) 8px var(--col-right);
+  height:calc(100vh - 200px);
+  min-height:600px;
+}
+.splitter{position:relative;cursor:col-resize;touch-action:none}
+.splitter::before{content:"";position:absolute;top:0;bottom:0;left:3px;width:2px;background:var(--border);border-radius:2px}
+.splitter:hover::before,.splitter.dragging::before{background:var(--accent);box-shadow:0 0 8px #79d4ff66}
+body.resizing{cursor:col-resize;user-select:none}
+.panel{background:#111827e8;border:1px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+.panel>header{height:42px;padding:0 13px;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid var(--border);font-size:13px;font-weight:700;flex:none}
+.panel>header small{color:#8190a5;font-weight:500;max-width:62%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.right-column{display:grid;grid-template-rows:1fr 300px;gap:8px;min-height:0}
+
+/* 좌측 패널 */
+.side-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;padding:8px 8px 0;flex:none}
+.side-tabs button{color:#8290a4;background:#0c1320;border:1px solid var(--border);border-radius:6px;padding:6px 2px;font-size:10.5px;font-weight:700}
+.side-tabs button.active{color:#a9e7ff;border-color:#3e7695;background:#153044}
+.side-search{width:calc(100% - 16px);margin:8px 8px 0;color:var(--text);background:#0c1320;
+  border:1px solid var(--border-2);border-radius:7px;padding:7px 9px;font-size:12px;flex:none}
+.side-list{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:3px}
+.side-group{color:var(--dim-2);font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:9px 7px 3px}
+.side-item{display:flex;align-items:center;gap:8px;min-width:0;color:#dce5f2;background:transparent;
+  border:1px solid transparent;border-radius:7px;padding:8px;text-align:left;width:100%}
+.side-item:hover{background:#1c2738;border-color:#31415a}
+.side-item.selected{background:#1b2942;border-color:#3f5a80}
+.side-item .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side-item .sub{display:block;color:var(--dim-2);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
+.side-item .count{color:var(--dim-2);font-size:11px}
+.http{min-width:44px;font-size:10px;font-weight:800;color:#90e6ce}
+.http.post{color:#efbc72}.http.delete{color:#ff8d91}.http.put,.http.patch{color:#bd9cff}
+.ds-dot{width:9px;height:9px;border-radius:2px;flex:none}
+.dot-shard{background:var(--shard)}.dot-global{background:var(--global)}.dot-log{background:var(--logdb)}
+.dot-replica{background:#6fb4d8}.dot-cache{background:var(--cache)}
+
+/* 심각도 표시 */
+.sev{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:800;white-space:nowrap}
+.sev.critical{color:#ffb4b4;background:var(--bad-bg);border:1px solid var(--bad-line)}
+.sev.warn{color:#ffd9a3;background:var(--warn-bg);border:1px solid var(--warn-line)}
+.sev.info{color:#a9d4ff;background:#152437;border:1px solid #2f4d6d}
+.sev.ok{color:#9de2c7;background:var(--ok-bg);border:1px solid var(--ok-line)}
+.sev.muted{color:#8a97a9;background:#161e2c;border:1px solid #2b3648}
+
+/* 가운데 */
+.graph-area{min-width:0}
+.breadcrumb{min-height:38px;padding:7px 12px;display:flex;align-items:center;flex-wrap:wrap;gap:6px;
+  border-bottom:1px solid var(--border);flex:none}
+.breadcrumb button{color:#9eb0c8;background:transparent;border:0;padding:3px 4px;font-size:12px}
+.breadcrumb button:hover{color:var(--accent)}
+.breadcrumb .current{color:#e4ebf4;font-size:12px}
+.breadcrumb-separator{color:#4e6078;margin:0 1px}
+.canvas-notice{flex:none;padding:7px 12px;color:#ffd9a3;background:#2a1f11;border-bottom:1px solid #6d5027;font-size:11.5px}
+.graph-shell{position:relative;flex:1;min-height:0;overflow:auto;padding:16px 18px 22px}
+
+/* 샤드 라우팅 파이프라인 */
+.route-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.route-head h3{margin:0;font-size:15px}
+.route-head .route-path{color:var(--dim-2);font-size:11.5px;font-family:Consolas,monospace}
+.stage{display:grid;grid-template-columns:104px 1fr;gap:12px}
+.stage-label{color:var(--dim-2);font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding-top:13px;text-align:right}
+.stage-cards{display:flex;flex-direction:column;gap:8px}
+.card{position:relative;display:block;width:100%;background:#0e1626;border:1px solid var(--border-2);border-radius:9px;
+  padding:10px 12px;text-align:left;color:var(--text)}
+.card:hover{border-color:#4d6383}
+.card.selected{border-color:var(--accent);box-shadow:0 0 0 1px #79d4ff55}
+.card.bad{border-color:var(--bad-line);background:#1c1219}
+.card.warn{border-color:var(--warn-line);background:#1b1710}
+.card.ok{border-color:#2b4c40;background:#0f1a1a}
+.card-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card-title{font-size:12.5px;font-weight:700}
+.card-sub{color:#95a4b8;font-size:11px;margin-top:5px;line-height:1.55}
+.card .loc{color:#62748c;font-size:10.5px;margin-top:5px;font-family:Consolas,monospace}
+.card .sql{margin-top:7px;padding:6px 8px;background:#0a1120;border:1px solid #1e293c;border-radius:6px;
+  color:#c6d4e6;font-family:Consolas,monospace;font-size:10.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.card .sql .kw{color:#79a8ff}
+.card .sql .par{color:#efbc72}
+.arrow{color:#3e4f68;font-size:14px;line-height:1;margin:5px 0 5px 118px}
+.tag{display:inline-flex;align-items:center;gap:4px;border-radius:6px;padding:2px 6px;font-size:10px;font-weight:800;
+  color:#cfdaea;background:#0c1320;border:1px solid var(--border)}
+.tag.shard{color:#d5c2ff;border-color:#54408a}
+.tag.global{color:#a9e7ff;border-color:#2f5f7d}
+.tag.log{color:#f2cf9a;border-color:#77592c}
+.tag.replica{color:#a9d4ff;border-color:#2f4d6d}
+.tag.write{color:#ffb4b4;border-color:#6c3a41}
+.tag.read{color:#9de2c7;border-color:#2a6b56}
+.tag.tx{color:#e2d3ff;border-color:#4a3f77}
+
+/* 접근 지도(매트릭스) */
+.matrix-wrap{overflow:auto;border:1px solid var(--border);border-radius:9px}
+table.matrix{border-collapse:separate;border-spacing:0;font-size:11.5px;min-width:100%}
+table.matrix th,table.matrix td{border-bottom:1px solid #1c2739;border-right:1px solid #1c2739;padding:7px 9px;white-space:nowrap}
+table.matrix thead th{position:sticky;top:0;background:#131c2c;color:#a9b8cc;font-size:10.5px;font-weight:800;z-index:2}
+table.matrix thead th small{display:block;color:#6f8098;font-size:9.5px;font-weight:600;margin-top:2px}
+table.matrix tbody th{position:sticky;left:0;background:#101827;color:#dce5f2;text-align:left;font-weight:600;z-index:1}
+table.matrix td{text-align:center;color:#5d6c81}
+.cell{display:inline-flex;min-width:30px;justify-content:center;border-radius:5px;padding:2px 6px;font-size:10px;font-weight:800}
+.cell.r{color:#9de2c7;background:#12342c}
+.cell.w{color:#ffc0a8;background:#3a2318}
+.cell.rw{color:#e5d0ff;background:#2b2145}
+.cell.flag{outline:1px solid var(--bad-line);box-shadow:0 0 0 2px #ff8d9122}
+.matrix-legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--dim);font-size:11px;margin-top:10px}
+
+/* 트랜잭션 타임라인 */
+.tx-card{background:#0e1626;border:1px solid var(--border-2);border-radius:9px;padding:12px 14px;margin-bottom:10px}
+.tx-card.bad{border-color:var(--bad-line)}
+.tx-card.warn{border-color:var(--warn-line)}
+.tx-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.tx-head .name{font-size:13px;font-weight:700}
+.tx-head .loc{color:#62748c;font-size:10.5px;font-family:Consolas,monospace}
+.tx-steps{display:flex;flex-direction:column;border-left:2px solid #253247;margin-left:6px}
+.tx-step{position:relative;padding:6px 0 6px 18px;font-size:11.5px;color:#c4d1e2}
+.tx-step::before{content:"";position:absolute;left:-6px;top:12px;width:9px;height:9px;border-radius:50%;
+  background:#25314a;border:2px solid #0e1626}
+.tx-step.conn::before{background:var(--shard)}
+.tx-step.query::before{background:#4e7fb5}
+.tx-step.ext::before{background:var(--warn)}
+.tx-step.commit::before{background:var(--ok)}
+.tx-step .meta{color:#66788f;font-size:10.5px;font-family:Consolas,monospace;margin-left:6px}
+.tx-flag{margin-top:10px;padding:8px 10px;border-radius:7px;font-size:11.5px;line-height:1.6}
+.tx-flag.bad{color:#ffc4c4;background:var(--bad-bg);border:1px solid var(--bad-line)}
+.tx-flag.warn{color:#ffd9a3;background:var(--warn-bg);border:1px solid var(--warn-line)}
+.tx-flag.ok{color:#a9e7c9;background:var(--ok-bg);border:1px solid var(--ok-line)}
+
+/* 점검 결과 표 */
+table.findings{width:100%;border-collapse:collapse;font-size:11.5px}
+table.findings th{color:#8fa0b6;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  text-align:left;padding:0 9px 8px;border-bottom:1px solid var(--border)}
+table.findings td{padding:9px;border-bottom:1px solid #1a2334;vertical-align:top}
+table.findings tr.row{cursor:pointer}
+table.findings tr.row:hover td{background:#151f30}
+table.findings tr.row.selected td{background:#1b2942}
+table.findings tr.ignored td{opacity:.42}
+table.findings .rule{font-family:Consolas,monospace;color:#a9c4e0;font-size:11px;white-space:nowrap}
+table.findings .where{color:#93a3b8;font-family:Consolas,monospace;font-size:10.5px}
+table.findings .what{color:#e0e9f5}
+table.findings .conf{color:#8a97a9;font-size:10.5px;white-space:nowrap}
+
+/* 우측 상세 */
+.detail-body{flex:1;overflow-y:auto;padding:12px}
+.detail-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.detail-title h3{margin:0;font-size:14.5px}
+.detail-path{color:var(--dim-2);font-family:Consolas,monospace;font-size:11px;margin-bottom:11px;overflow-wrap:anywhere}
+.detail-section{margin-bottom:12px}
+.detail-section h4{margin:0 0 6px;color:var(--dim);font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.detail-section p{margin:0 0 6px;color:#b8c5d7;font-size:12px;line-height:1.65}
+.pill-list{display:flex;flex-wrap:wrap;gap:4px}
+.pill{display:inline-flex;align-items:center;gap:5px;color:#cfdaea;background:#0c1320;border:1px solid var(--border);
+  border-radius:999px;padding:4px 9px;font-size:11px}
+.chain{display:flex;flex-direction:column;border-left:2px solid #2b3a52;margin-left:5px}
+.chain-step{position:relative;padding:6px 0 6px 16px;font-size:11.5px;color:#c3d0e1;line-height:1.6}
+.chain-step::before{content:"";position:absolute;left:-5px;top:12px;width:8px;height:8px;border-radius:50%;background:#3c5074}
+.chain-step.bad::before{background:var(--bad)}
+.chain-step.ok::before{background:var(--ok)}
+.chain-step .mono{color:#a9e7ff;font-size:11px}
+.chain-step .note{display:block;color:#7f8ea3;font-size:10.5px}
+.code-block{background:#0b1220;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.code-block pre{margin:0;padding:8px 0;font-family:Consolas,monospace;font-size:11px;line-height:1.6;overflow-x:auto}
+.code-line{display:flex;gap:10px;padding:0 11px;white-space:pre}
+.code-line.hit{background:#5a202655;box-shadow:inset 2px 0 0 var(--bad)}
+.code-line.hit-ok{background:#24456555;box-shadow:inset 2px 0 0 var(--accent)}
+.code-no{color:#4b5c74;min-width:26px;text-align:right}
+.detail-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+
+.ask-panel{display:flex;flex-direction:column;min-height:0}
+.ask-mode-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:8px 12px 0;flex:none}
+.ask-mode-tabs button{color:#8290a4;background:#0c1320;border:1px solid var(--border);border-radius:6px;padding:6px 5px;font-size:10px}
+.ask-mode-tabs button.active{color:#a9e7ff;border-color:#3e7695;background:#153044}
+.captured{margin:10px 12px;padding:9px;color:#a8b5c7;background:#0c1320;border:1px solid var(--border);
+  border-radius:7px;font-family:Consolas,monospace;font-size:10.5px;line-height:1.6;overflow-wrap:anywhere}
+.ask-panel textarea{display:block;width:calc(100% - 24px);height:74px;margin:0 12px 8px;resize:none;color:var(--text);
+  background:#0c1320;border:1px solid var(--border-2);border-radius:7px;padding:8px 10px;font-size:12px;line-height:1.55}
+.ask-actions{display:flex;gap:8px;margin:0 12px 12px}
+
+.notes{max-width:1620px;margin:26px auto 0;padding:0 20px 60px}
+.notes h2{font-size:18px;margin:0 0 6px}
+.notes .lead{color:var(--dim);font-size:13px;margin:0 0 16px;line-height:1.7}
+.note-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px}
+.note-card{background:#111827cc;border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.note-card h3{margin:0 0 8px;font-size:13.5px}
+.note-card p,.note-card li{color:#b3c1d4;font-size:12.5px;line-height:1.65;margin:0 0 6px}
+.note-card ul{margin:0;padding-left:17px}
+.note-card code{color:#a9e7ff;font-family:Consolas,monospace;font-size:11.5px}
+.note-card pre{margin:6px 0 0;padding:10px;background:#0b1220;border:1px solid var(--border);border-radius:8px;
+  color:#c6d4e6;font-family:Consolas,monospace;font-size:11px;line-height:1.6;overflow-x:auto}
+.note-card.ask{border-color:#7d5a2c;background:#231a10cc}
+.note-card.ask h3{color:#ffd9a3}
+.note-card.wide{grid-column:1/-1}
+.rule-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
+.rule-table th{color:#8fa0b6;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  text-align:left;padding:0 8px 7px;border-bottom:1px solid var(--border)}
+.rule-table td{padding:7px 8px;border-bottom:1px solid #1a2334;color:#b8c5d7;vertical-align:top}
+.rule-table td.id{font-family:Consolas,monospace;color:#a9c4e0;white-space:nowrap}
+.rule-table td.sevcol{white-space:nowrap}
+
+/* Redis */
+.dot-redis{background:#ff9d8a}
+.tag.redis{color:#ffc0b0;border-color:#7d4438}
+.tag.single{color:#a9e7ff;border-color:#2f5f7d}
+.cell.c{color:#ffc0b0;background:#3a1f18}
+
+/* 보상 처리(수동 롤백) 보기 */
+.path-card{background:#0e1626;border:1px solid var(--border-2);border-radius:10px;padding:13px 15px;margin-bottom:12px}
+.path-card.bad{border-color:var(--bad-line)}
+.path-card.warn{border-color:var(--warn-line)}
+.path-card.ok{border-color:#2b4c40}
+.path-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.path-head .name{font-size:13.5px;font-weight:700}
+.path-head .loc{color:#62748c;font-size:10.5px;font-family:Consolas,monospace}
+.path-note{color:#93a3b8;font-size:11.5px;line-height:1.6;margin:6px 0 10px}
+.wsteps{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.wstep{display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:center;
+  background:#0b1220;border:1px solid #1e293c;border-radius:8px;padding:8px 10px}
+.wstep.bad{border-color:var(--bad-line);background:#1a1116}
+.wstep .idx{width:22px;height:22px;border-radius:50%;background:#1d2941;color:#b9c9e0;
+  font-size:11px;font-weight:800;line-height:22px;text-align:center}
+.wstep .body{min-width:0}
+.wstep .t{display:block;font-size:12px;color:#dde7f4}
+.wstep .m{display:block;color:#6c7d94;font-size:10.5px;font-family:Consolas,monospace;margin-top:3px}
+.comp{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:3px 9px;font-size:10px;font-weight:800;white-space:nowrap}
+.comp.yes{color:#9de2c7;background:var(--ok-bg);border:1px solid var(--ok-line)}
+.comp.no{color:#ffb4b4;background:var(--bad-bg);border:1px solid var(--bad-line)}
+.comp.na{color:#8a97a9;background:#161e2c;border:1px solid #2b3648}
+.comp.never{color:#ffd9a3;background:var(--warn-bg);border:1px solid var(--warn-line)}
+
+table.failgrid{border-collapse:separate;border-spacing:0;font-size:11px;width:100%}
+table.failgrid th,table.failgrid td{border-bottom:1px solid #1c2739;border-right:1px solid #1c2739;padding:6px 8px;text-align:center;white-space:nowrap}
+table.failgrid thead th{background:#131c2c;color:#a9b8cc;font-size:10px;font-weight:800}
+table.failgrid tbody th{background:#101827;color:#dce5f2;text-align:left;font-weight:600;font-size:11px}
+.fc{display:inline-flex;min-width:58px;justify-content:center;border-radius:5px;padding:2px 6px;font-size:10px;font-weight:800}
+.fc.stays{color:#ffb4b4;background:var(--bad-bg)}
+.fc.undone{color:#9de2c7;background:var(--ok-bg)}
+.fc.harmless{color:#8a97a9;background:#161e2c}
+.fc.here{color:#ffd9a3;background:var(--warn-bg)}
+.fc.notrun{color:#4f5d72;background:#0e1421}
+.failgrid-legend{display:flex;gap:12px;flex-wrap:wrap;color:var(--dim);font-size:10.5px;margin-top:8px}
+.grid-title{color:var(--dim-2);font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin:2px 0 7px}
+.keylist{display:flex;flex-direction:column;gap:5px}
+.keyrow{display:flex;align-items:center;gap:8px;background:#0b1220;border:1px solid #1e293c;border-radius:7px;padding:7px 9px;font-size:11.5px}
+.keyrow .k{font-family:Consolas,monospace;color:#ffc0b0;min-width:230px}
+.keyrow .u{color:#93a3b8;font-size:11px;flex:1}
+
+/* 미들웨어 파이프라인 */
+.pipe-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.pipe-head h3{margin:0;font-size:15px}
+.pipe-head .sub{color:var(--dim-2);font-size:11.5px}
+.mwrow{display:grid;grid-template-columns:24px 1fr 168px;gap:10px;align-items:start}
+.mwnum{color:#5d6c81;font-size:11px;font-weight:800;text-align:right;padding-top:13px}
+.mw-card{display:block;width:100%;text-align:left;background:#0e1626;border:1px solid var(--border-2);border-radius:9px;padding:9px 12px;color:var(--text)}
+.mw-card:hover{border-color:#4d6383}
+.mw-card.selected{border-color:var(--accent);box-shadow:0 0 0 1px #79d4ff55}
+.mw-card.bad{border-color:var(--bad-line);background:#1c1219}
+.mw-card.warn{border-color:var(--warn-line);background:#1b1710}
+.mw-card.ok{border-color:#2b4c40;background:#0f1a1a}
+.mw-card.dim{opacity:.5}
+.mw-card.endpoint{border-color:#3e7695;background:#10202e}
+.mw-top{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.mw-name{font-size:12.5px;font-weight:700}
+.mw-reg{color:#5f7089;font-size:10px;font-family:Consolas,monospace;margin-left:auto}
+.mw-line{display:flex;gap:8px;font-size:11px;line-height:1.55;margin-top:6px;color:#a9b8cc}
+.mw-line .dir{flex:none;width:52px;font-weight:800;font-size:10px;letter-spacing:.04em}
+.mw-line.pre .dir{color:#79a8ff}
+.mw-line.post .dir{color:#7ee0b8}
+.mw-line.bad{color:#ffc4c4}
+.mw-io{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.io{display:inline-flex;gap:4px;border-radius:6px;padding:2px 6px;font-size:9.5px;font-weight:700;font-family:Consolas,monospace}
+.io.r{color:#9de2c7;background:#12342c}
+.io.w{color:#ffc0a8;background:#3a2318}
+.mw-branch{padding-top:12px}
+.branch{display:flex;align-items:center;gap:6px;color:#ffb4b4;background:var(--bad-bg);border:1px solid var(--bad-line);
+  border-radius:7px;padding:5px 8px;font-size:10.5px;line-height:1.4}
+.branch .code{font-weight:800}
+.branch.soft{color:#ffd9a3;background:var(--warn-bg);border-color:var(--warn-line)}
+.pipe-arrow{color:#3e4f68;font-size:13px;line-height:1;margin:3px 0 3px 34px}
+.pipe-legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--dim);font-size:11px;margin-top:14px}
+
+/* 단락 지점 */
+.sc-card{background:#0e1626;border:1px solid var(--border-2);border-radius:9px;padding:12px 14px;margin-bottom:10px}
+.sc-card.bad{border-color:var(--bad-line)}
+.sc-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.sc-head .code{font-size:13px;font-weight:800;color:#ffb4b4}
+.sc-head .name{font-size:12.5px;font-weight:700}
+.sc-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.sc-col h5{margin:0 0 5px;color:var(--dim);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.sc-col ul{margin:0;padding-left:16px}
+.sc-col li{color:#b8c5d7;font-size:11.5px;line-height:1.65}
+.sc-col.skip li{color:#8b98ab}
+.sc-note{margin-top:9px;padding:7px 9px;border-radius:7px;font-size:11px;line-height:1.6;
+  color:#a9d4ff;background:#152437;border:1px solid #2f4d6d}
+
+.cellmw{display:inline-flex;min-width:26px;justify-content:center;border-radius:5px;padding:2px 6px;font-size:10px;font-weight:800}
+.cellmw.on{color:#9de2c7;background:#12342c}
+.cellmw.cond{color:#ffd9a3;background:#332413}
+.cellmw.off{color:#4f5d72;background:#0e1421}
+.cellmw.flag{outline:1px solid var(--bad-line);box-shadow:0 0 0 2px #ff8d9122}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="app-header">
+    <div>
+      <div class="eyebrow">ASP.NET Core call explorer</div>
+      <h1>TraceLens<span class="mock-tag">목업 · 클릭 가능 · 데이터는 가짜</span></h1>
+    </div>
+    <div class="freshness-badge"><span class="freshness-dot"></span>최신 상태 · 14:32</div>
+    <div class="fake-form">
+      <input value="C:\repos\GameServer\GameServer.sln" readonly>
+      <button class="btn">찾아보기…</button>
+      <button class="btn primary">다시 분석</button>
+    </div>
+  </header>
+
+  <div class="mode-bar">
+    <div class="mode-switch" id="modeSwitch">
+      <button data-mode="callflow">호출 흐름</button>
+      <button data-mode="classmap">클래스 다이어그램</button>
+      <button data-mode="flowmap">전체 흐름도</button>
+      <button data-mode="startup">시작 흐름</button>
+      <button data-mode="db">DB · 캐시<span class="new-dot"></span></button>
+      <button data-mode="middleware" class="active">미들웨어<span class="new-dot"></span></button>
+    </div>
+    <span class="mode-hint" id="modeHint"></span>
+    <div class="toolbar-extra" id="toolbarExtra"></div>
+  </div>
+
+  <div class="summary-line" id="summaryLine"></div>
+
+  <section class="workspace" id="workspace">
+    <aside class="panel side-panel">
+      <header><span id="sideTitle">파이프라인</span><small id="sideMeta"></small></header>
+      <div class="side-tabs" id="sideTabs" style="grid-template-columns:repeat(3,1fr)">
+        <button data-tab="pipeline" class="active">파이프라인</button>
+        <button data-tab="endpoints">진입점</button>
+        <button data-tab="rules">점검</button>
+      </div>
+      <input class="side-search" id="sideSearch" placeholder="검색…">
+      <div class="side-list" id="sideList"></div>
+    </aside>
+
+    <div class="splitter" data-split="left" title="드래그해서 좌측 패널 폭 조절"></div>
+
+    <section class="panel graph-area">
+      <header><span id="graphTitle">미들웨어</span><small id="graphMeta"></small></header>
+      <div class="breadcrumb" id="crumbs"></div>
+      <div class="canvas-notice" id="notice" style="display:none"></div>
+      <div class="graph-shell" id="graphShell"></div>
+    </section>
+
+    <div class="splitter" data-split="right" title="드래그해서 우측 패널 폭 조절"></div>
+
+    <div class="right-column">
+      <section class="panel">
+        <header><span>선택한 항목</span><small id="detailKind"></small></header>
+        <div class="detail-body" id="detailBody"></div>
+      </section>
+      <section class="panel ask-panel">
+        <header><span>Claude에게 질문</span><small>MCP 직접 연동</small></header>
+        <div class="ask-mode-tabs">
+          <button>클립보드 복사</button>
+          <button class="active">MCP 직접 연동</button>
+          <button>에디터에서 열기</button>
+        </div>
+        <div class="captured" id="captured"></div>
+        <textarea id="askText"></textarea>
+        <div class="ask-actions">
+          <button class="btn primary">질문 보내기</button>
+          <button class="btn">컨텍스트 다시 잡기</button>
+        </div>
+      </section>
+    </div>
+  </section>
+</div>
+
+<section class="notes">
+  <h2>설계 메모 — 확정 전에 맞출 것</h2>
+  <p class="lead">
+    여섯 번째 보기 <b>“미들웨어”</b>의 목업이다. 기존 <b>시작 흐름</b> 보기가 “Program.cs에 무엇이 <i>등록</i>돼 있나”를 소스 순서대로 보여준다면,
+    이 보기는 <b>“요청 하나가 실제로 무엇을 <i>통과</i>하고, 어디서 끊기고, 응답이 돌아올 때 무엇이 더 실행되나”</b>를 보여준다.
+    미들웨어를 처음 보는 사람이 제일 헷갈리는 것이 <b>돌아오는 길</b>과 <b>단락(short-circuit)</b>이라, 그 둘을 화면의 중심에 뒀다.
+  </p>
+
+  <div class="note-grid">
+    <div class="note-card">
+      <h3>1. 이 보기가 답하는 질문</h3>
+      <ul>
+        <li>요청이 <b>어떤 순서로</b> 무엇을 통과하는가 — 그리고 응답은 <b>역순으로</b> 무엇을 더 거치는가</li>
+        <li>어디서 <b>끊길 수 있는가</b>(401 · 429 · 503 · 400), 끊기면 <b>무엇이 실행되지 않는가</b></li>
+        <li>각 미들웨어가 <code>HttpContext</code>의 <b>무엇을 읽고 무엇을 쓰는가</b>(Items · Headers · User)</li>
+        <li>이 엔드포인트에는 <b>실제로 무엇이 적용되는가</b>(UseWhen · 라우트 그룹 · 필터까지 합쳐서)</li>
+        <li>등록만 하고 <b>실행되지 않는</b> 미들웨어가 있는가</li>
+      </ul>
+    </div>
+
+    <div class="note-card">
+      <h3>2. 화면 구성 — 하위 보기 4개</h3>
+      <ul>
+        <li><b>파이프라인</b> — 등록 순서대로 세운 세로 지도. 카드마다 <span style="color:#79a8ff">요청 시</span>/<span style="color:#7ee0b8">응답 시</span> 두 줄로 나눠 적고, 단락은 오른쪽으로 빠지는 빨간 가지로 표시한다.</li>
+        <li><b>엔드포인트별</b> — 진입점 × 미들웨어 매트릭스. ● 적용 / ○ 조건부 / · 미적용.</li>
+        <li><b>단락 지점</b> — 끊기는 자리마다 “실행되지 않는 것”과 “그래도 실행되는 응답 후처리”를 나란히 놓는다.</li>
+        <li><b>점검 결과</b> — 순서·구성 규칙에 걸린 항목 표.</li>
+      </ul>
+    </div>
+
+    <div class="note-card">
+      <h3>3. 무엇을 정적으로 읽어내나</h3>
+      <ul>
+        <li><b>순서</b> — <code>app.UseXxx()</code>/<code>app.Use(...)</code> 호출 순서(시작 흐름 보기가 이미 읽고 있다).</li>
+        <li><b>요청/응답 구간</b> — <code>InvokeAsync</code> 본문에서 <code>await _next(context)</code> 호출을 기준으로 앞뒤를 나눈다.</li>
+        <li><b>단락</b> — <code>_next</code>를 부르지 않고 끝나는 분기. 그 분기에서 <code>StatusCode</code>에 넣는 상수를 응답 코드로 읽는다.</li>
+        <li><b>읽기/쓰기</b> — <code>context.Items[...]</code>, <code>Response.Headers[...]</code>, <code>context.User</code> 접근을 모아 카드에 붙인다.</li>
+        <li><b>조건부 적용</b> — <code>UseWhen</code>/<code>MapWhen</code>의 조건식과 <code>env.IsDevelopment()</code> 같은 분기.</li>
+        <li><b>필터</b> — <code>[Authorize]</code>, 액션 필터, <code>AddEndpointFilter</code>까지 이어 붙여 엔드포인트 파이프라인을 만든다.</li>
+      </ul>
+    </div>
+
+    <div class="note-card">
+      <h3>4. 못 읽는 것 — 솔직하게 표시한다</h3>
+      <ul>
+        <li>런타임 설정으로 갈리는 분기(<code>if (_options.Enabled)</code>)는 <b>조건부</b>로만 표시하고 값은 모른다고 적는다.</li>
+        <li><code>IStartupFilter</code>·라이브러리가 몰래 끼워 넣는 미들웨어는 어셈블리 안이라 안 보인다. “여기에 프레임워크가 더 넣을 수 있다”는 자리만 알려준다.</li>
+        <li>같은 이름의 <code>Use...</code> 확장이 여러 개면 어느 것인지 심볼로 확정하고, 실패하면 후보를 나열한다.</li>
+      </ul>
+    </div>
+
+    <div class="note-card wide">
+      <h3>5. 점검 규칙 초안</h3>
+      <p>미들웨어는 “순서가 곧 동작”이라 규칙 대부분이 순서·위치 검사다. <b>추정</b>으로 표시된 것은 조건식 값을 모르는 경우다.</p>
+      <table class="rule-table">
+        <thead><tr><th>규칙</th><th>내용</th><th>심각도</th><th>판정</th></tr></thead>
+        <tbody id="ruleTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="note-card">
+      <h3>6. 기존 보기와의 연결</h3>
+      <ul>
+        <li><b>시작 흐름</b> — 등록 순서는 거기서 읽은 것을 그대로 쓴다. 시작 흐름의 <code>app.UseXxx()</code> 줄을 누르면 이 보기의 해당 카드로 온다.</li>
+        <li><b>DB · 캐시</b> — 미들웨어가 여는 저장소 접근(레이트리밋의 <code>INCR</code>, 세션 검증의 <code>GET</code>)도 같은 규칙으로 검사해 양쪽에 함께 띄운다.</li>
+        <li><b>호출 흐름</b> — 미들웨어 카드에서 “이 안의 호출 흐름 보기”로 넘어가면 <code>InvokeAsync</code>부터의 그래프를 그린다.</li>
+      </ul>
+    </div>
+
+    <div class="note-card ask">
+      <h3>확인이 필요한 것</h3>
+      <ul>
+        <li><b>미들웨어 작성 방식</b> — 규약 기반 클래스(<code>InvokeAsync</code>)인가, <code>IMiddleware</code> 구현인가, 인라인 <code>app.Use(async (ctx, next) =&gt; ...)</code>인가? 셋 다 읽지만 우선순위를 알고 싶다.</li>
+        <li><b>필터도 같이 볼지</b> — 액션 필터·엔드포인트 필터까지 한 지도에 그릴지, 미들웨어만 그릴지. 목업은 “엔드포인트 안쪽”으로 접어서 함께 그렸다.</li>
+        <li><b>보고 싶은 것이 어느 쪽인가</b> — “새로 온 사람이 구조를 파악”이 목적인지, “순서 실수를 잡는 점검”이 목적인지에 따라 기본 화면을 다르게 두겠다.</li>
+        <li>미들웨어가 <b>사내 공통 라이브러리</b>에 있다면 그 어셈블리도 솔루션에 포함되는가? 아니면 이름만 보이고 내부는 못 읽는다.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+<script>
+/* ------------------------------------------------------------------ 가짜 데이터 */
+
+var RULES = [
+  {id:'MW-001', name:'예외 처리 미들웨어가 앞쪽이 아니다', sev:'critical', judge:'확실',
+   desc:'예외를 잡는 미들웨어보다 앞에 등록된 미들웨어의 예외는 잡히지 않는다. 파이프라인 최상단(또는 그에 준하는 위치)에 있어야 한다.'},
+  {id:'MW-002', name:'인증·인가·라우팅 순서가 어긋남', sev:'critical', judge:'확실',
+   desc:'UseRouting → UseAuthentication → UseAuthorization → 엔드포인트 순서를 벗어나면 정책이 적용되지 않거나 조용히 통과한다.'},
+  {id:'MW-003', name:'UseCors 위치가 잘못됨', sev:'warn', judge:'확실',
+   desc:'UseRouting 앞에 있으면 엔드포인트별 CORS 정책이 적용되지 않는다. UseRouting 뒤, UseAuthorization 앞이 맞다.'},
+  {id:'MW-004', name:'미들웨어 생성자에 Scoped 서비스 주입', sev:'critical', judge:'확실',
+   desc:'규약 기반 미들웨어는 Singleton으로 한 번만 만들어진다. 생성자로 받은 Scoped 서비스는 첫 요청의 것이 계속 쓰인다(캡처된 의존성). InvokeAsync 인자로 받아야 한다.'},
+  {id:'MW-005', name:'next도 부르지 않고 응답도 쓰지 않는 분기', sev:'critical', judge:'확실',
+   desc:'요청이 조용히 끝나 빈 200이 나간다. 클라이언트는 성공으로 읽는다.'},
+  {id:'MW-006', name:'응답 시작 후 헤더 수정', sev:'warn', judge:'확실',
+   desc:'next 이후(응답 구간)에서 Response.Headers를 건드린다. 이미 전송이 시작됐으면 예외가 난다. OnStarting 콜백으로 옮겨야 한다.'},
+  {id:'MW-007', name:'요청 본문을 버퍼링 없이 다시 읽음', sev:'warn', judge:'확실',
+   desc:'Request.Body는 한 번만 읽을 수 있다. EnableBuffering 없이 두 번 읽으면 뒤쪽이 빈 본문을 받는다.'},
+  {id:'MW-008', name:'미들웨어에서 동기 대기(.Result/.Wait())', sev:'warn', judge:'확실',
+   desc:'모든 요청이 지나는 자리라 스레드풀 고갈로 바로 이어진다.'},
+  {id:'MW-009', name:'가벼운 엔드포인트가 무거운 미들웨어를 전부 통과', sev:'info', judge:'추정',
+   desc:'헬스체크·메트릭 같은 경로가 인증·세션 조회를 그대로 탄다. UseWhen으로 건너뛰게 하면 부하가 준다. 의도일 수 있어 추정이다.'},
+  {id:'MW-010', name:'예외를 삼키고 정상 응답으로 만든다', sev:'warn', judge:'확실',
+   desc:'catch에서 로그만 남기고 next를 부르지 않은 채 200을 반환한다. 장애가 성공으로 보인다.'},
+  {id:'MW-011', name:'UseWhen 조건과 실제 라우트가 어긋남', sev:'warn', judge:'추정',
+   desc:'조건 경로에 해당하는 엔드포인트가 하나도 없다. 오타이거나 라우트가 바뀐 뒤 방치된 경우다.'},
+  {id:'MW-012', name:'등록됐지만 실행되지 않는 미들웨어', sev:'warn', judge:'확실',
+   desc:'터미널 미들웨어(엔드포인트 실행) 뒤에 등록되어 절대 실행되지 않는다.'}
+];
+function rule(id){ for (var i=0;i<RULES.length;i++) if (RULES[i].id===id) return RULES[i]; return {id:id,name:id,sev:'info',judge:'추정',desc:''}; }
+
+var FINDINGS = [
+  {id:'M1', rule:'MW-004', mw:'ratelimit', conf:'확실',
+   what:'RateLimitMiddleware 생성자가 Scoped 서비스(IUserContext)를 받는다',
+   where:'Middleware/RateLimitMiddleware.cs:19', symbol:'GameServer.Middleware.RateLimitMiddleware..ctor',
+   why:'규약 기반 미들웨어는 앱 시작 때 한 번 만들어진다. 생성자로 받은 Scoped IUserContext는 첫 요청의 인스턴스가 그대로 굳는다. 두 번째 요청부터는 남의 컨텍스트를 보게 된다.',
+   fix:'IUserContext를 InvokeAsync(HttpContext ctx, IUserContext userContext) 인자로 옮긴다. 프레임워크가 요청마다 주입해 준다.',
+   chain:[{t:'bad',h:'생성자 주입',m:'RateLimitMiddleware(RequestDelegate next, IUserContext userContext)',n:'RateLimitMiddleware.cs:19'},
+          {t:'bad',h:'IUserContext의 등록 수명',m:'services.AddScoped<IUserContext, UserContext>()',n:'Program.cs:41 · 시작 흐름 보기에서 읽음'},
+          {t:'bad',h:'미들웨어 자체는 한 번만 생성된다',m:'app.UseMiddleware<RateLimitMiddleware>()',n:'Program.cs:61'}],
+   code:[{no:19,t:'public RateLimitMiddleware(RequestDelegate next, IUserContext userContext)',hit:true},
+         {no:21,t:'    _next = next; _userContext = userContext;   // 첫 요청의 것이 굳는다',hit:true}],
+   ask:'RateLimitMiddleware 가 생성자로 Scoped IUserContext 를 받는다. InvokeAsync 인자로 옮길 때 함께 고쳐야 할 곳을 알려줘.'},
+
+  {id:'M2', rule:'MW-003', mw:'cors', conf:'확실',
+   what:'UseCors가 UseRouting 앞에 등록되어 있다',
+   where:'Program.cs:58', symbol:'Program.<Main>$',
+   why:'UseRouting 앞에서는 어떤 엔드포인트로 갈지 아직 정해지지 않아 엔드포인트별 CORS 정책([EnableCors])이 적용되지 않는다. 프리플라이트가 기본 정책으로만 처리된다.',
+   fix:'UseRouting 뒤, UseAuthorization 앞으로 옮긴다.',
+   chain:[{t:'bad',h:'현재 순서',m:'UseCors("game") → UseRouting',n:'Program.cs:58, 59'},
+          {t:'ok',h:'권장 순서',m:'UseRouting → UseCors → UseAuthentication → UseAuthorization',n:'ASP.NET Core 미들웨어 순서 규약'}],
+   code:[{no:58,t:'app.UseCors("game");     // ← UseRouting 앞',hit:true},
+         {no:59,t:'app.UseRouting();'}],
+   ask:'Program.cs 에서 UseCors 를 UseRouting 뒤로 옮기려 한다. 엔드포인트별 CORS 정책을 쓰는 곳이 있는지 확인해줘.'},
+
+  {id:'M3', rule:'MW-006', mw:'log', conf:'확실',
+   what:'응답 구간에서 Response.Headers에 X-Elapsed를 추가한다',
+   where:'Middleware/RequestLoggingMiddleware.cs:41', symbol:'GameServer.Middleware.RequestLoggingMiddleware.InvokeAsync',
+   why:'await _next(ctx) 이후에는 응답 전송이 이미 시작됐을 수 있다. 그때 헤더를 건드리면 InvalidOperationException이 난다 — 평소엔 지나가다가 큰 응답에서만 터진다.',
+   fix:'ctx.Response.OnStarting(...) 콜백에서 헤더를 넣는다.',
+   chain:[{t:'ok',h:'요청 구간',m:'TraceId 발급 → ctx.Items["TraceId"]',n:'RequestLoggingMiddleware.cs:28'},
+          {t:'bad',h:'응답 구간에서 헤더 수정',m:'ctx.Response.Headers["X-Elapsed"] = sw.ElapsedMilliseconds',n:'RequestLoggingMiddleware.cs:41'}],
+   code:[{no:39,t:'await _next(ctx);'},
+         {no:41,t:'ctx.Response.Headers["X-Elapsed"] = sw.ElapsedMilliseconds.ToString();   // 이미 시작됐을 수 있다',hit:true}],
+   ask:'RequestLoggingMiddleware 의 X-Elapsed 헤더 추가를 OnStarting 으로 옮기는 코드를 제안해줘.'},
+
+  {id:'M4', rule:'MW-005', mw:'session', conf:'확실',
+   what:'토큰 형식이 틀린 분기에서 next도 부르지 않고 응답도 쓰지 않는다',
+   where:'Middleware/SessionValidationMiddleware.cs:47', symbol:'GameServer.Middleware.SessionValidationMiddleware.InvokeAsync',
+   why:'그 분기로 빠지면 상태 코드 200에 빈 본문이 나간다. 클라이언트는 성공으로 처리하고, 로그에도 오류가 남지 않아 원인을 찾기 어렵다.',
+   fix:'401을 명시적으로 쓰고 반환한다. 아래 401 분기와 같은 처리를 하면 된다.',
+   chain:[{t:'ok',h:'세션 없음 분기는 제대로 끊는다',m:'ctx.Response.StatusCode = 401; return;',n:'SessionValidationMiddleware.cs:39'},
+          {t:'bad',h:'형식 오류 분기는 그냥 return',m:'if (!TryParseToken(raw, out var token)) return;',n:'SessionValidationMiddleware.cs:47'},
+          {t:'bad',h:'그 결과',m:'200 · 본문 없음 — 아래 미들웨어와 엔드포인트는 실행되지 않는다',n:'클라이언트는 성공으로 읽는다'}],
+   code:[{no:47,t:'if (!TryParseToken(raw, out var token)) return;   // 응답도 안 쓰고 next도 안 부른다',hit:true},
+         {no:49,t:'var session = await _cache.GetAsync($"session:{token}");'}],
+   ask:'SessionValidationMiddleware 에서 next 도 응답도 없이 return 하는 분기를 찾아 401 로 끊도록 고쳐줘.'},
+
+  {id:'M5', rule:'MW-008', mw:'maint', conf:'확실',
+   what:'점검 모드 설정을 .Result로 동기 대기한다',
+   where:'Middleware/MaintenanceMiddleware.cs:33', symbol:'GameServer.Middleware.MaintenanceMiddleware.InvokeAsync',
+   why:'모든 요청이 지나는 자리에서 스레드를 막는다. 설정 조회가 Redis 왕복이라 부하가 몰리면 그대로 스레드풀이 마른다.',
+   fix:'await로 바꾸고, 설정은 짧은 TTL의 메모리 캐시로 감싼다.',
+   chain:[{t:'bad',h:'동기 대기',m:'_configService.GetMaintenanceAsync().Result',n:'MaintenanceMiddleware.cs:33'},
+          {t:'bad',h:'이 자리를 지나는 요청',m:'전체 진입점 6개 중 6개',n:'조건부 적용 없음'}],
+   code:[{no:33,t:'var maintenance = _configService.GetMaintenanceAsync().Result;   // 동기 대기',hit:true}],
+   ask:'MaintenanceMiddleware 의 .Result 를 await 로 바꾸고 설정 조회를 캐시하는 방법을 제안해줘.'},
+
+  {id:'M6', rule:'MW-009', mw:'session', conf:'추정',
+   what:'/health · /metrics 가 인증·세션 검증·점검 모드를 전부 통과한다',
+   where:'Program.cs:60', symbol:'Program.<Main>$',
+   why:'헬스체크는 초당 여러 번 호출된다. 그때마다 Redis 세션 조회와 점검 모드 조회가 함께 일어난다. 모니터링이 죽으면 안 되는 경로라 앞에서 갈라주는 편이 안전하다.',
+   fix:'app.UseWhen(ctx => !ctx.Request.Path.StartsWithSegments("/health"), branch => { ... }) 로 감싸거나, 헬스체크를 별도 포트로 뺀다.',
+   chain:[{t:'bad',h:'조건 없이 등록',m:'app.UseMiddleware<SessionValidationMiddleware>()',n:'Program.cs:63'},
+          {t:'bad',h:'통과하는 가벼운 엔드포인트',m:'/health · /metrics',n:'엔드포인트별 보기에서 확인'},
+          {t:'ok',h:'다만 의도일 수 있다',m:'내부망 전용이면 문제가 아니다',n:'그래서 “추정”이다'}],
+   code:[{no:63,t:'app.UseMiddleware<SessionValidationMiddleware>();   // 조건 없이 전부 통과',hit:true}],
+   ask:'헬스체크와 메트릭 경로가 세션 검증 미들웨어를 건너뛰게 UseWhen 으로 감싸는 코드를 제안해줘.'},
+
+  {id:'M7', rule:'MW-012', mw:'legacy', conf:'확실',
+   what:'LegacyHeaderMiddleware가 엔드포인트 실행 뒤에 등록되어 실행되지 않는다',
+   where:'Program.cs:74', symbol:'Program.<Main>$',
+   why:'app.MapControllers() 이후에 등록됐다. 엔드포인트가 요청을 끝내므로 이 미들웨어에는 요청이 오지 않는다. 헤더가 안 붙는다는 제보가 여기서 온다.',
+   fix:'MapControllers 앞으로 옮긴다. 필요 없어진 것이면 등록을 지운다.',
+   chain:[{t:'bad',h:'등록 위치',m:'app.MapControllers(); … app.UseMiddleware<LegacyHeaderMiddleware>();',n:'Program.cs:72, 74'},
+          {t:'bad',h:'도달 여부',m:'실행되는 요청 0건 — 앞에서 끝난다',n:'파이프라인 보기에서 회색으로 표시'}],
+   code:[{no:72,t:'app.MapControllers();'},
+         {no:74,t:'app.UseMiddleware<LegacyHeaderMiddleware>();   // 여기까지 오지 않는다',hit:true}],
+   ask:'LegacyHeaderMiddleware 가 실행되지 않는다. 옮길 위치를 정하고, 이 헤더를 기대하는 클라이언트가 있는지 확인해줘.'}
+];
+function finding(id){ for (var i=0;i<FINDINGS.length;i++) if (FINDINGS[i].id===id) return FINDINGS[i]; return null; }
+function findingsOfMw(id){ var r=[]; for (var i=0;i<FINDINGS.length;i++) if (FINDINGS[i].mw===id) r.push(FINDINGS[i]); return r; }
+
+/* 파이프라인 — 등록 순서 그대로 */
+var MW = [
+  {id:'ex', name:'ExceptionHandlingMiddleware', type:'custom', tone:'ok', reg:'Program.cs:52', file:'Middleware/ExceptionHandlingMiddleware.cs:18',
+   pre:'try 블록을 열고 아래 전부를 감싼다', post:'예외를 잡아 500 + JSON 본문으로 바꾼다 (TraceId 포함)',
+   io:[['r','Items["TraceId"]'],['w','Response.StatusCode']], applies:'모든 요청',
+   note:'파이프라인 맨 앞이라 아래 전부의 예외를 잡는다 — 이 자리가 맞다.'},
+
+  {id:'log', name:'RequestLoggingMiddleware', type:'custom', tone:'warn', reg:'Program.cs:54', file:'Middleware/RequestLoggingMiddleware.cs:22',
+   pre:'TraceId를 발급해 Items에 넣고 스톱워치를 시작한다', post:'상태 코드·소요 시간을 로그로 남기고 X-Elapsed 헤더를 추가한다',
+   postBad:true, f:'M3',
+   io:[['w','Items["TraceId"]'],['w','Response.Headers["X-Elapsed"]']], applies:'모든 요청'},
+
+  {id:'https', name:'UseHttpsRedirection', type:'framework', tone:'', reg:'Program.cs:56', file:'(프레임워크)',
+   pre:'http 요청이면 https로 돌린다', post:null,
+   sc:{code:'307', cond:'스킴이 http일 때'}, io:[['r','Request.Scheme']], applies:'모든 요청'},
+
+  {id:'cors', name:'UseCors("game")', type:'framework', tone:'warn', reg:'Program.cs:58', file:'(프레임워크)', f:'M2',
+   pre:'Origin 헤더를 보고 CORS 헤더를 붙인다. 프리플라이트면 여기서 끝낸다', post:null,
+   sc:{code:'204', cond:'OPTIONS 프리플라이트'}, io:[['r','Request.Headers["Origin"]'],['w','Response.Headers']],
+   applies:'모든 요청', note:'UseRouting 앞이라 엔드포인트별 정책이 적용되지 않는다.'},
+
+  {id:'routing', name:'UseRouting', type:'framework', tone:'', reg:'Program.cs:59', file:'(프레임워크)',
+   pre:'요청 경로에 맞는 엔드포인트를 고른다(실행은 하지 않는다)', post:null,
+   io:[['w','Endpoint 메타데이터']], applies:'모든 요청',
+   note:'이 뒤부터 “어느 엔드포인트인지”를 알 수 있다. CORS·인가는 그래서 이 뒤에 와야 한다.'},
+
+  {id:'ratelimit', name:'RateLimitMiddleware', type:'custom', tone:'bad', reg:'Program.cs:61', file:'Middleware/RateLimitMiddleware.cs:24', f:'M1',
+   pre:'Redis INCR로 분당 호출 수를 세고 한도를 넘으면 끊는다', post:null,
+   sc:{code:'429', cond:'분당 한도 초과'}, io:[['r','Items["UserNo"]'],['w','Response.Headers["Retry-After"]']],
+   applies:'모든 요청', store:'Redis · INCR ratelimit:{ip}:{minute}',
+   note:'생성자에 Scoped 서비스를 받아 캡처된 의존성 문제가 있다.'},
+
+  {id:'auth', name:'UseAuthentication', type:'framework', tone:'', reg:'Program.cs:62', file:'(프레임워크)',
+   pre:'토큰을 검증해 ctx.User를 채운다(실패해도 끊지 않는다)', post:null,
+   io:[['w','ctx.User']], applies:'모든 요청'},
+
+  {id:'session', name:'SessionValidationMiddleware', type:'custom', tone:'bad', reg:'Program.cs:63', file:'Middleware/SessionValidationMiddleware.cs:26', f:'M4',
+   pre:'Redis에서 session:{token}을 읽어 UserNo를 Items에 넣는다', post:null,
+   sc:{code:'401', cond:'세션 없음 · 만료'}, io:[['r','Request.Headers["Authorization"]'],['w','Items["UserNo"]']],
+   applies:'모든 요청', store:'Redis · GET session:{token}',
+   note:'토큰 형식 오류 분기에서 next도 응답도 없이 빠져나간다.'},
+
+  {id:'authz', name:'UseAuthorization', type:'framework', tone:'', reg:'Program.cs:64', file:'(프레임워크)',
+   pre:'엔드포인트의 [Authorize] 정책을 평가한다', post:null,
+   sc:{code:'403', cond:'정책 불충족'}, io:[['r','ctx.User'],['r','Endpoint 메타데이터']], applies:'모든 요청'},
+
+  {id:'maint', name:'MaintenanceMiddleware', type:'custom', tone:'warn', reg:'Program.cs:66', file:'Middleware/MaintenanceMiddleware.cs:27', f:'M5',
+   pre:'점검 모드면 503으로 끊는다', post:null,
+   sc:{code:'503', cond:'점검 모드 ON'}, io:[['r','설정(Redis)']], applies:'모든 요청', store:'Redis · GET config:maintenance',
+   note:'인증·세션 검증 뒤에 있어, 점검 중에도 세션 조회 부하가 그대로 든다.'},
+
+  {id:'endpoint', endpoint:true, name:'엔드포인트 실행', type:'framework', tone:'', reg:'Program.cs:72', file:'app.MapControllers()',
+   pre:'엔드포인트 파이프라인(필터)을 거쳐 액션을 실행한다', post:'여기서 응답이 만들어지고, 위로 되돌아간다',
+   filters:[{n:'[Authorize] 정책 필터', d:'엔드포인트 메타데이터 기준', sc:'403'},
+            {n:'ApiVersionFilter (라우트 그룹)', d:'api.AddEndpointFilter<ApiVersionFilter>()', sc:'400'},
+            {n:'ModelValidationFilter', d:'ModelState 검사', sc:'400'},
+            {n:'ActionLoggingFilter', d:'액션 이름·소요 시간 기록', sc:null},
+            {n:'액션 실행', d:'ItemController.UseItem 등', sc:null}],
+   io:[['r','Items["UserNo"]']], applies:'라우트가 맞는 요청'},
+
+  {id:'legacy', name:'LegacyHeaderMiddleware', type:'custom', tone:'warn', dead:true, reg:'Program.cs:74', file:'Middleware/LegacyHeaderMiddleware.cs:14', f:'M7',
+   pre:'X-Legacy-Api 헤더를 붙인다', post:null, io:[['w','Response.Headers["X-Legacy-Api"]']],
+   applies:'실행되지 않음', note:'MapControllers 뒤에 등록되어 요청이 도달하지 않는다.'}
+];
+function mw(id){ for (var i=0;i<MW.length;i++) if (MW[i].id===id) return MW[i]; return MW[0]; }
+
+var ENDPOINTS = [
+  {id:'item-use', method:'POST', route:'/api/item/use', title:'ItemController.UseItem',
+   cells:{ex:'on',log:'on',https:'on',cors:'on',routing:'on',ratelimit:'on',auth:'on',session:'on',authz:'on',maint:'on',endpoint:'on',legacy:'off'},
+   note:'인증이 필요한 일반 API. 파이프라인 전체를 통과한다.'},
+  {id:'friend-list', method:'GET', route:'/api/friend/list', title:'FriendController.List',
+   cells:{ex:'on',log:'on',https:'on',cors:'on',routing:'on',ratelimit:'on',auth:'on',session:'on',authz:'on',maint:'on',endpoint:'on',legacy:'off'},
+   note:'위와 같다.'},
+  {id:'login', method:'POST', route:'/api/account/login', title:'AccountController.Login',
+   cells:{ex:'on',log:'on',https:'on',cors:'on',routing:'on',ratelimit:'on',auth:'on',session:'cond',authz:'cond',maint:'on',endpoint:'on',legacy:'off'},
+   note:'익명 허용이라 세션 검증은 통과만 하고 끊지 않는다([AllowAnonymous] 확인).'},
+  {id:'health', method:'GET', route:'/health', title:'HealthCheck',
+   cells:{ex:'on',log:'on',https:'on',cors:'on',routing:'on',ratelimit:'on',auth:'on',session:'on',authz:'on',maint:'on',endpoint:'on',legacy:'off'},
+   flags:{session:'M6',maint:'M6'},
+   note:'초당 여러 번 호출되는데 세션 조회·점검 모드 조회를 그대로 탄다.'},
+  {id:'metrics', method:'GET', route:'/metrics', title:'MetricsEndpoint',
+   cells:{ex:'on',log:'on',https:'on',cors:'on',routing:'on',ratelimit:'on',auth:'on',session:'on',authz:'on',maint:'on',endpoint:'on',legacy:'off'},
+   flags:{session:'M6'},
+   note:'위와 같다. 내부망 전용이면 문제가 아니라서 “추정”으로 둔다.'},
+  {id:'swagger', method:'GET', route:'/swagger/index.html', title:'UseSwaggerUI',
+   cells:{ex:'on',log:'on',https:'on',cors:'on',routing:'on',ratelimit:'on',auth:'on',session:'cond',authz:'off',maint:'on',endpoint:'off',legacy:'off'},
+   note:'env.IsDevelopment() 조건부 등록이라 운영 빌드에는 없다 — 조건부(○)로 표시한다.'}
+];
+function endpoint(id){ for (var i=0;i<ENDPOINTS.length;i++) if (ENDPOINTS[i].id===id) return ENDPOINTS[i]; return ENDPOINTS[0]; }
+
+/* ------------------------------------------------------------------ 상태 */
+
+var state = { tab:'pipeline', sub:'pipe', epFilter:null, sel:{kind:'mw', id:'session'}, showPost:true, sevFilter:'all' };
+
+var $ = function(id){ return document.getElementById(id); };
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function sevLabel(s){ return s==='critical'?'치명':s==='warn'?'경고':s==='info'?'정보':'정상'; }
+function sevPill(s){ return '<span class="sev '+s+'">'+sevLabel(s)+'</span>'; }
+function visibleFindings(){
+  var out=[];
+  for (var i=0;i<FINDINGS.length;i++){
+    var f=FINDINGS[i], r=rule(f.rule);
+    if (state.sevFilter!=='all' && r.sev!==state.sevFilter) continue;
+    out.push(f);
+  }
+  return out;
+}
+function mwCount(){ var c={all:0,custom:0,fw:0}; for (var i=0;i<MW.length;i++){ if (MW[i].endpoint) continue;
+  c.all++; if (MW[i].type==='custom') c.custom++; else c.fw++; } return c; }
+function scCount(){ var n=0; for (var i=0;i<MW.length;i++){ if (MW[i].sc) n++;
+  if (MW[i].filters) for (var j=0;j<MW[i].filters.length;j++) if (MW[i].filters[j].sc) n++; } return n; }
+function counts(){
+  var c={critical:0,warn:0,info:0};
+  for (var i=0;i<FINDINGS.length;i++) c[rule(FINDINGS[i].rule).sev]++;
+  return c;
+}
+
+/* ------------------------------------------------------------------ 상단 */
+
+function renderTop(){
+  $('modeHint').textContent = '요청 하나가 무엇을 통과하고 어디서 끊기는지, 응답이 돌아올 때 무엇이 더 실행되는지를 순서대로 보여준다.';
+  var subs=[['pipe','파이프라인'],['matrix','엔드포인트별'],['sc','단락 지점'],['check','점검 결과']];
+  var h='';
+  for (var i=0;i<subs.length;i++)
+    h+='<button class="chipbtn'+(state.sub===subs[i][0]?' active':'')+'" data-sub="'+subs[i][0]+'">'+subs[i][1]+'</button>';
+  h+='<span class="sepline"></span>';
+  h+='<button class="chipbtn'+(state.epFilter?' active':'')+'" data-toggle="clearEp">기준: '
+    +(state.epFilter?esc(endpoint(state.epFilter).route):'전체 요청')+'</button>';
+  h+='<button class="chipbtn'+(state.showPost?' active':'')+'" data-toggle="showPost">응답 경로 표시</button>';
+  $('toolbarExtra').innerHTML=h;
+
+  var c=counts();
+  $('summaryLine').innerHTML =
+    '미들웨어 <b>'+mwCount().all+'</b>(직접 작성 '+mwCount().custom+' · 프레임워크 '+mwCount().fw+') · 엔드포인트 필터 <b>'+mw('endpoint').filters.filter(function(x){return x.n!=="액션 실행"}).length+'</b> · 단락 지점 <b>'+scCount()+'</b> · 진입점 <b>'+ENDPOINTS.length+'</b>'
+    + ' &nbsp;·&nbsp; 점검 ' + sevPill('critical') + ' <b>' + c.critical + '</b> '
+    + sevPill('warn') + ' <b>' + c.warn + '</b> ' + sevPill('info') + ' <b>' + c.info + '</b>';
+}
+
+/* ------------------------------------------------------------------ 좌측 */
+
+function renderSide(){
+  var tabs=$('sideTabs').children, i;
+  for (i=0;i<tabs.length;i++) tabs[i].className = (tabs[i].getAttribute('data-tab')===state.tab)?'active':'';
+  var h='';
+
+  if (state.tab==='pipeline'){
+    $('sideTitle').textContent='파이프라인'; $('sideMeta').textContent='등록 순서';
+    for (i=0;i<MW.length;i++){
+      var m=MW[i], fs=findingsOfMw(m.id), worst='';
+      for (var j=0;j<fs.length;j++){ var s=rule(fs[j].rule).sev;
+        if (s==='critical') worst='critical'; else if (s!=='info'&&worst!=='critical') worst='warn'; else if (!worst) worst='info'; }
+      h+='<button class="side-item'+(state.sel.kind==='mw'&&state.sel.id===m.id?' selected':'')+'" data-mw="'+m.id+'"'
+        +(m.dead?' style="opacity:.55"':'')+'>'
+        +'<span class="count" style="min-width:14px">'+(i+1)+'</span>'
+        +'<span class="grow">'+esc(m.name)+'<span class="sub">'
+        +(m.type==='custom'?'직접 작성':'프레임워크')+(m.sc?' · 단락 '+m.sc.code:'')+(m.post?' · 응답 처리 있음':'')+'</span></span>'
+        +(worst?sevPill(worst):'')+'</button>';
+    }
+  } else if (state.tab==='endpoints'){
+    $('sideTitle').textContent='진입점'; $('sideMeta').textContent=ENDPOINTS.length+'개';
+    for (i=0;i<ENDPOINTS.length;i++){
+      var e=ENDPOINTS[i], on=0;
+      for (var k in e.cells) if (e.cells[k]==='on') on++;
+      h+='<button class="side-item'+(state.epFilter===e.id?' selected':'')+'" data-ep="'+e.id+'">'
+        +'<span class="http '+e.method.toLowerCase()+'">'+e.method+'</span>'
+        +'<span class="grow">'+esc(e.route)+'<span class="sub">'+esc(e.title)+' · 통과 '+on+'단계</span></span>'
+        +(e.flags?sevPill('info'):'')+'</button>';
+    }
+  } else {
+    $('sideTitle').textContent='점검 규칙'; $('sideMeta').textContent=RULES.length+'개 중 걸린 것';
+    var byRule={};
+    for (i=0;i<FINDINGS.length;i++){ var ff=FINDINGS[i]; (byRule[ff.rule]=byRule[ff.rule]||[]).push(ff); }
+    h+='<div class="side-group">걸린 규칙</div>';
+    for (i=0;i<RULES.length;i++){
+      var r=RULES[i]; if (!byRule[r.id]) continue;
+      h+='<button class="side-item'+(state.sel.kind==='rule'&&state.sel.id===r.id?' selected':'')+'" data-rule="'+r.id+'">'
+        +'<span class="grow"><span class="mono" style="color:#a9c4e0;font-size:11px">'+r.id+'</span>'
+        +'<span class="sub">'+esc(r.name)+'</span></span><span class="count">'+byRule[r.id].length+'</span></button>';
+    }
+    h+='<div class="side-group">걸리지 않은 규칙</div>';
+    for (i=0;i<RULES.length;i++){
+      if (byRule[RULES[i].id]) continue;
+      h+='<button class="side-item" data-rule="'+RULES[i].id+'" style="opacity:.5">'
+        +'<span class="grow"><span class="mono" style="font-size:11px">'+RULES[i].id+'</span>'
+        +'<span class="sub">'+esc(RULES[i].name)+'</span></span><span class="count">0</span></button>';
+    }
+  }
+  $('sideList').innerHTML=h;
+}
+
+/* ------------------------------------------------------------------ 가운데 */
+
+function renderCrumbs(){
+  var h='', i;
+  if (state.sub==='pipe'){
+    h='<button>미들웨어</button><span class="breadcrumb-separator">›</span><span class="current">파이프라인'
+      +(state.epFilter?' · '+esc(endpoint(state.epFilter).route)+' 기준':' · 전체 요청')+'</span>';
+  } else if (state.sub==='matrix'){
+    h='<button>미들웨어</button><span class="breadcrumb-separator">›</span><span class="current">엔드포인트별 적용</span>';
+  } else if (state.sub==='sc'){
+    h='<button>미들웨어</button><span class="breadcrumb-separator">›</span><span class="current">단락 지점 '+scCount()+'개</span>';
+  } else {
+    h='<button>미들웨어</button><span class="breadcrumb-separator">›</span><span class="current">점검 결과</span>'
+      +'<span style="margin-left:auto;display:flex;gap:5px">';
+    var fs=[['all','전체'],['critical','치명'],['warn','경고'],['info','정보']];
+    for (i=0;i<fs.length;i++)
+      h+='<button class="chipbtn'+(state.sevFilter===fs[i][0]?' active':'')+'" data-sev="'+fs[i][0]+'">'+fs[i][1]+'</button>';
+    h+='</span>';
+  }
+  $('crumbs').innerHTML=h;
+}
+
+function renderNotice(){
+  var n=$('notice');
+  if (state.sub==='pipe' && state.epFilter){
+    var e=endpoint(state.epFilter);
+    n.style.display='block';
+    n.innerHTML='<b>'+e.method+' '+esc(e.route)+'</b> 기준으로 봤다. '+esc(e.note);
+  } else if (state.sub==='sc'){
+    n.style.display='block';
+    n.innerHTML='단락이 일어나도 <b>그 앞 미들웨어의 응답 처리는 실행된다</b>. 로그·헤더가 남는 이유가 여기 있다.';
+  } else n.style.display='none';
+}
+
+function ioHtml(m){
+  if (!m.io || !m.io.length) return '';
+  var h='<div class="mw-io">';
+  for (var i=0;i<m.io.length;i++)
+    h+='<span class="io '+m.io[i][0]+'">'+(m.io[i][0]==='r'?'읽기 ':'쓰기 ')+esc(m.io[i][1])+'</span>';
+  if (m.store) h+='<span class="io r" style="color:#ffc0b0;background:#3a1f18">'+esc(m.store)+'</span>';
+  return h+'</div>';
+}
+
+function renderPipe(){
+  var h='', i, ep=state.epFilter?endpoint(state.epFilter):null;
+  h+='<div class="pipe-head"><h3>요청 파이프라인</h3>'
+    +'<span class="sub">위에서 아래로 요청, 아래에서 위로 응답. 오른쪽 빨간 가지는 그 자리에서 끊길 수 있다는 뜻이다.</span></div>';
+
+  for (i=0;i<MW.length;i++){
+    var m=MW[i], f=m.f?finding(m.f):null;
+    var applied = !ep ? 'on' : (ep.cells[m.id]||'off');
+    var dim = m.dead || applied==='off';
+    var tone = m.tone||'';
+    var sel = (state.sel.kind==='mw'&&state.sel.id===m.id)?' selected':'';
+    h+='<div class="mwrow"><div class="mwnum">'+(i+1)+'</div>';
+    h+='<button class="mw-card '+(m.endpoint?'endpoint ':'')+tone+(dim?' dim':'')+sel+'" data-mw="'+m.id+'">';
+    h+='<div class="mw-top"><span class="mw-name">'+esc(m.name)+'</span>'
+      +'<span class="tag">'+(m.type==='custom'?'직접 작성':'프레임워크')+'</span>'
+      +(applied==='cond'?'<span class="tag replica">조건부</span>':'')
+      +(m.dead?'<span class="sev warn">실행되지 않음</span>':'')
+      +(applied==='off'&&!m.dead?'<span class="sev muted">이 요청엔 미적용</span>':'')
+      +(f?'<span class="sev '+rule(f.rule).sev+'">'+f.rule+'</span>':'')
+      +'<span class="mw-reg">'+esc(m.reg)+'</span></div>';
+    if (m.pre) h+='<div class="mw-line pre"><span class="dir">요청 →</span><span>'+esc(m.pre)+'</span></div>';
+    if (m.filters){
+      h+='<div class="mw-io" style="flex-direction:column;gap:3px;align-items:flex-start;margin-top:7px">';
+      for (var fl=0;fl<m.filters.length;fl++)
+        h+='<span style="font-size:11px;color:#b8c5d7">└ '+esc(m.filters[fl].n)
+          +' <span style="color:#6c7d94;font-size:10.5px">'+esc(m.filters[fl].d)+'</span>'
+          +(m.filters[fl].sc?' <span class="tag write">'+m.filters[fl].sc+'</span>':'')+'</span>';
+      h+='</div>';
+    }
+    if (state.showPost && m.post) h+='<div class="mw-line post'+(m.postBad?' bad':'')+'"><span class="dir">← 응답</span><span>'+esc(m.post)+'</span></div>';
+    h+=ioHtml(m);
+    h+='</button>';
+    h+='<div class="mw-branch">'+(m.sc
+      ? '<div class="branch'+(applied==='on'?'':' soft')+'"><span class="code">'+m.sc.code+'</span> '+esc(m.sc.cond)+'</div>'
+      : '')+'</div>';
+    h+='</div>';
+    if (i<MW.length-1) h+='<div class="pipe-arrow">↓</div>';
+  }
+  h+='<div class="pipe-legend">'
+    +'<span><span class="mw-line pre" style="display:inline-flex;margin:0"><span class="dir">요청 →</span></span> next 호출 전에 하는 일</span>'
+    +'<span><span class="mw-line post" style="display:inline-flex;margin:0"><span class="dir">← 응답</span></span> next 이후, 응답이 돌아올 때 하는 일</span>'
+    +'<span><span class="io r">읽기</span><span class="io w">쓰기</span> HttpContext 접근</span></div>';
+  return h;
+}
+
+function renderMatrix(){
+  var h='<div class="matrix-wrap"><table class="matrix"><thead><tr><th style="min-width:210px">진입점 · 미들웨어</th>';
+  var i, j;
+  for (i=0;i<MW.length;i++) h+='<th>'+(i+1)+'<small>'+esc(MW[i].name.replace('Middleware','').replace('Use',''))+'</small></th>';
+  h+='</tr></thead><tbody>';
+  for (i=0;i<ENDPOINTS.length;i++){
+    var e=ENDPOINTS[i];
+    h+='<tr><th><span class="http '+e.method.toLowerCase()+'">'+e.method+'</span> '+esc(e.route)+'</th>';
+    for (j=0;j<MW.length;j++){
+      var v=e.cells[MW[j].id]||'off';
+      var fid=e.flags&&e.flags[MW[j].id];
+      var label = v==='on'?'●':(v==='cond'?'○':'·');
+      var cls='cellmw '+v+(fid?' flag':'');
+      h+='<td>'+(fid?'<button class="'+cls+'" data-finding="'+fid+'">'+label+'</button>'
+                    :'<span class="'+cls+'">'+label+'</span>')+'</td>';
+    }
+    h+='</tr>';
+  }
+  h+='</tbody></table></div>';
+  h+='<div class="matrix-legend"><span><span class="cellmw on">●</span> 적용</span>'
+    +'<span><span class="cellmw cond">○</span> 조건부(환경·정책에 따라)</span>'
+    +'<span><span class="cellmw off">·</span> 미적용</span>'
+    +'<span><span class="cellmw on flag">●</span> 규칙에 걸린 칸 — 누르면 상세로</span></div>';
+  return h;
+}
+
+function renderSc(){
+  var h='', i, j;
+  for (i=0;i<MW.length;i++){
+    var m=MW[i];
+    var scs=[];
+    if (m.sc) scs.push({code:m.sc.code, cond:m.sc.cond, name:m.name});
+    if (m.filters) for (j=0;j<m.filters.length;j++) if (m.filters[j].sc)
+      scs.push({code:m.filters[j].sc, cond:m.filters[j].d, name:m.filters[j].n});
+    for (var s=0;s<scs.length;s++){
+      var sc=scs[s];
+      h+='<div class="sc-card'+(sc.code==='401'||sc.code==='429'?' bad':'')+'">';
+      h+='<div class="sc-head"><span class="code">'+sc.code+'</span><span class="name">'+esc(sc.name)+'</span>'
+        +'<span class="tag">'+esc(sc.cond)+'</span><span class="mw-reg" style="margin-left:auto">'+esc(m.reg)+'</span></div>';
+      h+='<div class="sc-cols"><div class="sc-col skip"><h5>실행되지 않는 것</h5><ul>';
+      var any=false;
+      for (j=i+1;j<MW.length;j++){ if (MW[j].dead) continue; any=true;
+        h+='<li>'+esc(MW[j].name)+(MW[j].endpoint?' (액션까지 전부)':'')+'</li>'; }
+      if (m.filters && s===0 && m.endpoint) h+='<li>이후 필터와 액션</li>';
+      if (!any && !(m.filters)) h+='<li>없음 — 마지막 단계다</li>';
+      h+='</ul></div><div class="sc-col"><h5>그래도 실행되는 것 (응답 경로)</h5><ul>';
+      var back=[];
+      for (j=i-1;j>=0;j--) if (MW[j].post) back.push(MW[j]);
+      if (!back.length) h+='<li>없음</li>';
+      for (j=0;j<back.length;j++) h+='<li>'+esc(back[j].name)+' — '+esc(back[j].post)+'</li>';
+      h+='</ul></div></div>';
+      h+='<div class="sc-note">이 단락이 일어나면 상태 코드 '+sc.code+'로 응답이 만들어지고, 위 목록의 응답 처리를 거쳐 돌아간다. '
+        +'요청 로그에는 남지만 액션은 실행되지 않는다.</div>';
+      h+='</div>';
+    }
+  }
+  return h;
+}
+
+function renderCheck(){
+  var list=visibleFindings();
+  if (!list.length) return '<div class="panel-message" style="padding:20px">거른 조건에 맞는 항목이 없다.</div>';
+  var h='<table class="findings"><thead><tr><th>규칙</th><th>심각도</th><th>내용</th><th>위치</th><th>확실도</th></tr></thead><tbody>';
+  for (var i=0;i<list.length;i++){
+    var f=list[i], r=rule(f.rule);
+    h+='<tr class="row'+(state.sel.kind==='finding'&&state.sel.id===f.id?' selected':'')+'" data-finding="'+f.id+'">'
+      +'<td class="rule">'+f.rule+'</td><td>'+sevPill(r.sev)+'</td>'
+      +'<td class="what">'+esc(f.what)+'</td><td class="where">'+esc(f.where)+'</td>'
+      +'<td class="conf">'+f.conf+'</td></tr>';
+  }
+  return h+'</tbody></table>';
+}
+
+function renderCenter(){
+  renderCrumbs(); renderNotice();
+  var titles={pipe:'파이프라인', matrix:'엔드포인트별 적용', sc:'단락 지점', check:'점검 결과'};
+  $('graphTitle').textContent='미들웨어 · '+titles[state.sub];
+  $('graphMeta').textContent = state.sub==='pipe' ? (state.epFilter?endpoint(state.epFilter).route+' 기준':'전체 요청 기준')
+    : state.sub==='matrix' ? '진입점 '+ENDPOINTS.length+' × 단계 '+MW.length
+    : state.sub==='sc' ? '단락 '+scCount()+'곳' : visibleFindings().length+'건';
+  $('graphShell').innerHTML =
+    state.sub==='pipe' ? renderPipe()
+    : state.sub==='matrix' ? renderMatrix()
+    : state.sub==='sc' ? renderSc() : renderCheck();
+}
+
+/* ------------------------------------------------------------------ 우측 */
+
+function codeBlock(f){
+  var h='<div class="code-block"><pre>';
+  for (var i=0;i<f.code.length;i++){
+    var l=f.code[i];
+    h+='<div class="code-line'+(l.hit?(rule(f.rule).sev==='info'?' hit-ok':' hit'):'')+'">'
+      +'<span class="code-no">'+l.no+'</span><span>'+esc(l.t)+'</span></div>';
+  }
+  return h+'</pre></div>';
+}
+
+function renderFindingDetail(f){
+  var r=rule(f.rule), h='', i;
+  $('detailKind').textContent='점검 항목 · '+f.rule;
+  h+='<div class="detail-title">'+sevPill(r.sev)+'<h3>'+esc(r.name)+'</h3></div>';
+  h+='<div class="detail-path">'+esc(f.symbol)+'<br>'+esc(f.where)+'</div>';
+  h+='<div class="detail-section"><h4>무엇이 걸렸나</h4><p>'+esc(f.what)+'</p></div>';
+  h+='<div class="detail-section"><h4>판정 근거 <span style="color:#7f8ea3;font-weight:600">· '+f.conf+'</span></h4><div class="chain">';
+  for (i=0;i<f.chain.length;i++){
+    var c=f.chain[i];
+    h+='<div class="chain-step '+(c.t||'')+'">'+esc(c.h)
+      +'<span class="note mono">'+esc(c.m)+'</span><span class="note">'+esc(c.n)+'</span></div>';
+  }
+  h+='</div></div>';
+  h+='<div class="detail-section"><h4>왜 문제인가</h4><p>'+esc(f.why)+'</p></div>';
+  h+='<div class="detail-section"><h4>코드</h4>'+codeBlock(f)+'</div>';
+  h+='<div class="detail-section"><h4>제안</h4><p>'+esc(f.fix)+'</p></div>';
+  h+='<div class="detail-actions"><button class="btn sm">코드 패널에서 열기</button>'
+    +(f.mw?'<button class="btn sm" data-mw="'+f.mw+'">파이프라인에서 보기</button>':'')
+    +'<button class="btn sm">의도된 것으로 표시</button><button class="btn sm">이 규칙 끄기</button></div>';
+  $('detailBody').innerHTML=h;
+  $('captured').innerHTML='파일: '+esc(f.where.split(':')[0])+'<br>라인: '+esc(f.where.split(':')[1])
+    +'<br>심볼: '+esc(f.symbol)+'<br>규칙: '+f.rule+' ('+r.name+')';
+  $('askText').value=f.ask;
+}
+
+function renderMwDetail(m){
+  var fs=findingsOfMw(m.id), h='', i;
+  $('detailKind').textContent = m.endpoint?'엔드포인트 실행':(m.type==='custom'?'미들웨어 · 직접 작성':'미들웨어 · 프레임워크');
+  h+='<div class="detail-title"><h3>'+esc(m.name)+'</h3>'+(m.dead?'<span class="sev warn">실행되지 않음</span>':'')+'</div>';
+  h+='<div class="detail-path">'+esc(m.file)+'<br>등록: '+esc(m.reg)+'</div>';
+  h+='<div class="detail-section"><h4>요청 시</h4><p>'+esc(m.pre||'—')+'</p></div>';
+  h+='<div class="detail-section"><h4>응답 시 (next 이후)</h4><p>'+(m.post?esc(m.post):'하는 일 없음 — next 호출이 마지막이다.')+'</p></div>';
+  h+='<div class="detail-section"><h4>단락</h4><p>'+(m.sc?('조건: '+esc(m.sc.cond)+' → '+m.sc.code+' 로 끊는다. 아래 단계는 실행되지 않는다.'):'끊지 않는다 — 항상 next를 부른다.')+'</p></div>';
+  if (m.io && m.io.length){
+    h+='<div class="detail-section"><h4>HttpContext 접근</h4><div class="pill-list">';
+    for (i=0;i<m.io.length;i++) h+='<span class="pill">'+(m.io[i][0]==='r'?'읽기':'쓰기')+' '+esc(m.io[i][1])+'</span>';
+    h+='</div></div>';
+  }
+  if (m.store) h+='<div class="detail-section"><h4>저장소 접근</h4><p>'+esc(m.store)+' — DB · 캐시 보기에서 같은 규칙으로 검사한다.</p></div>';
+  if (m.filters){
+    h+='<div class="detail-section"><h4>엔드포인트 필터</h4><div class="chain">';
+    for (i=0;i<m.filters.length;i++)
+      h+='<div class="chain-step">'+esc(m.filters[i].n)+'<span class="note">'+esc(m.filters[i].d)
+        +(m.filters[i].sc?' · 단락 '+m.filters[i].sc:'')+'</span></div>';
+    h+='</div></div>';
+  }
+  if (m.note) h+='<div class="detail-section"><h4>메모</h4><p>'+esc(m.note)+'</p></div>';
+  if (fs.length){
+    h+='<div class="detail-section"><h4>점검 결과 '+fs.length+'건</h4>';
+    for (i=0;i<fs.length;i++)
+      h+='<div style="margin-bottom:6px"><button class="btn sm" data-finding="'+fs[i].id+'">'+fs[i].rule+'</button> '
+        +'<span style="color:#b8c5d7;font-size:11.5px">'+esc(fs[i].what)+'</span></div>';
+    h+='</div>';
+  }
+  h+='<div class="detail-section"><h4>통과하는 진입점</h4><div class="pill-list">';
+  for (i=0;i<ENDPOINTS.length;i++){
+    var v=ENDPOINTS[i].cells[m.id]||'off';
+    if (v==='off') continue;
+    h+='<span class="pill">'+esc(ENDPOINTS[i].route)+(v==='cond'?' (조건부)':'')+'</span>';
+  }
+  h+='</div></div>';
+  h+='<div class="detail-actions"><button class="btn sm">코드 패널에서 열기</button>'
+    +'<button class="btn sm">이 안의 호출 흐름 보기</button><button class="btn sm">시작 흐름에서 등록 줄 보기</button></div>';
+  $('detailBody').innerHTML=h;
+  $('captured').innerHTML='미들웨어: '+esc(m.name)+'<br>파일: '+esc(m.file)+'<br>등록: '+esc(m.reg);
+  $('askText').value=m.name+' 이(가) 요청과 응답에서 하는 일을 정리하고, 순서상 문제가 없는지 확인해줘.';
+}
+
+function renderEpDetail(e){
+  var h='', i;
+  $('detailKind').textContent='진입점';
+  h+='<div class="detail-title"><span class="http '+e.method.toLowerCase()+'">'+e.method+'</span><h3>'+esc(e.route)+'</h3></div>';
+  h+='<div class="detail-path">'+esc(e.title)+'</div>';
+  h+='<div class="detail-section"><h4>메모</h4><p>'+esc(e.note)+'</p></div>';
+  h+='<div class="detail-section"><h4>통과 순서</h4><div class="chain">';
+  for (i=0;i<MW.length;i++){
+    var v=e.cells[MW[i].id]||'off';
+    if (v==='off') continue;
+    h+='<div class="chain-step '+(MW[i].sc?'bad':'ok')+'">'+(i+1)+'. '+esc(MW[i].name)
+      +'<span class="note">'+(v==='cond'?'조건부 · ':'')+(MW[i].sc?('여기서 '+MW[i].sc.code+'로 끊길 수 있다'):'끊지 않는다')+'</span></div>';
+  }
+  h+='</div></div>';
+  h+='<div class="detail-actions"><button class="btn sm" data-ep="'+e.id+'" data-sub="pipe">이 요청 기준으로 파이프라인 보기</button>'
+    +'<button class="btn sm">호출 흐름으로 열기</button></div>';
+  $('detailBody').innerHTML=h;
+  $('captured').innerHTML='진입점: '+e.method+' '+esc(e.route)+'<br>핸들러: '+esc(e.title);
+  $('askText').value=e.method+' '+e.route+' 요청이 통과하는 미들웨어와 필터를 순서대로 정리하고, 건너뛰어도 되는 것이 있는지 알려줘.';
+}
+
+function renderRuleDetail(id){
+  var r=rule(id), h='', hits=[], i;
+  for (i=0;i<FINDINGS.length;i++) if (FINDINGS[i].rule===id) hits.push(FINDINGS[i]);
+  $('detailKind').textContent='규칙';
+  h+='<div class="detail-title">'+sevPill(r.sev)+'<h3>'+esc(r.id)+'</h3></div>';
+  h+='<div class="detail-path">'+esc(r.name)+' · 판정 '+r.judge+'</div>';
+  h+='<div class="detail-section"><h4>규칙 설명</h4><p>'+esc(r.desc)+'</p></div>';
+  h+='<div class="detail-section"><h4>걸린 항목 '+hits.length+'건</h4>';
+  if (!hits.length) h+='<p>이 코드베이스에서는 걸린 항목이 없다.</p>';
+  for (i=0;i<hits.length;i++)
+    h+='<div style="margin-bottom:6px"><button class="btn sm" data-finding="'+hits[i].id+'">'+esc(hits[i].where)+'</button></div>';
+  h+='</div><div class="detail-actions"><button class="btn sm">이 규칙 끄기</button></div>';
+  $('detailBody').innerHTML=h;
+  $('captured').innerHTML='규칙: '+r.id+'<br>'+r.name;
+  $('askText').value=r.id+'('+r.name+') 규칙에 걸린 코드를 고치는 방법을 정리해줘.';
+}
+
+function renderDetail(){
+  var s=state.sel;
+  if (s.kind==='finding') return renderFindingDetail(finding(s.id));
+  if (s.kind==='mw') return renderMwDetail(mw(s.id));
+  if (s.kind==='ep') return renderEpDetail(endpoint(s.id));
+  if (s.kind==='rule') return renderRuleDetail(s.id);
+}
+
+function renderAll(){ renderTop(); renderSide(); renderCenter(); renderDetail(); }
+
+/* ------------------------------------------------------------------ 이벤트 */
+
+document.addEventListener('click', function(e){
+  var el=e.target.closest ? e.target.closest('[data-finding],[data-mw],[data-ep],[data-rule],[data-sub],[data-tab],[data-toggle],[data-sev],[data-mode]') : null;
+  if (!el) return;
+  var v, sub=el.getAttribute('data-sub');
+  if ((v=el.getAttribute('data-mode'))){
+    if (v==='db') alert('DB · 캐시 보기는 db-view-mockup.html 에 따로 만들어 두었다.');
+    else if (v!=='middleware') alert('목업에서는 “미들웨어” 보기만 그려 두었다. 나머지 보기는 기존 화면 그대로다.');
+    return;
+  }
+  if ((v=el.getAttribute('data-ep'))){ state.epFilter=v; state.sel={kind:'ep',id:v}; if (sub) state.sub=sub; renderAll(); return; }
+  if ((v=el.getAttribute('data-finding'))){ state.sel={kind:'finding',id:v}; renderAll(); return; }
+  if ((v=el.getAttribute('data-mw'))){ state.sel={kind:'mw',id:v}; if (state.sub!=='pipe') state.sub='pipe'; renderAll(); return; }
+  if ((v=el.getAttribute('data-rule'))){ state.sel={kind:'rule',id:v}; renderAll(); return; }
+  if (sub){ state.sub=sub; renderAll(); return; }
+  if ((v=el.getAttribute('data-tab'))){ state.tab=v; renderSide(); return; }
+  if ((v=el.getAttribute('data-sev'))){ state.sevFilter=v; renderAll(); return; }
+  if ((v=el.getAttribute('data-toggle'))){
+    if (v==='clearEp') state.epFilter=null; else state[v]=!state[v];
+    renderAll(); return;
+  }
+});
+
+/* 스플리터 드래그 */
+(function(){
+  var ws=$('workspace'), drag=null;
+  ws.addEventListener('pointerdown', function(e){
+    var s=e.target.closest('.splitter'); if (!s) return;
+    drag={side:s.getAttribute('data-split'), x:e.clientX,
+          w:parseInt(getComputedStyle(ws).getPropertyValue(s.getAttribute('data-split')==='left'?'--col-left':'--col-right'),10)};
+    s.classList.add('dragging'); document.body.classList.add('resizing'); s.setPointerCapture(e.pointerId);
+  });
+  ws.addEventListener('pointermove', function(e){
+    if (!drag) return;
+    var d=e.clientX-drag.x, next=drag.side==='left'?drag.w+d:drag.w-d;
+    next=Math.max(200,Math.min(620,next));
+    ws.style.setProperty(drag.side==='left'?'--col-left':'--col-right', next+'px');
+  });
+  ws.addEventListener('pointerup', function(){
+    drag=null; document.body.classList.remove('resizing');
+    var els=ws.querySelectorAll('.splitter'); for (var i=0;i<els.length;i++) els[i].classList.remove('dragging');
+  });
+})();
+
+/* 아래 설계 메모의 규칙 표 */
+(function(){
+  var h='';
+  for (var i=0;i<RULES.length;i++){
+    var r=RULES[i];
+    h+='<tr><td class="id">'+r.id+'<br><span style="color:#8a97a9">'+esc(r.name)+'</span></td>'
+      +'<td>'+esc(r.desc)+'</td><td class="sevcol">'+sevPill(r.sev)+'</td>'
+      +'<td class="sevcol">'+(r.judge==='확실'?'<span class="sev ok">정적으로 확실</span>':'<span class="sev info">추정</span>')+'</td></tr>';
+  }
+  $('ruleTableBody').innerHTML=h;
+})();
+
+renderAll();
+</script>
+</body>
+</html>
