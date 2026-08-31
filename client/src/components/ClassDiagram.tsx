@@ -18,6 +18,8 @@ interface ClassDiagramProps {
   notice: string | null
   onSelectClass: (classId: string) => void
   onSelectMember: (graphClass: GraphClass, member: GraphClassMember) => void
+  onZoomChange?: (zoom: number) => void
+  onFitZoom?: () => void
 }
 
 const markers: Record<RelationType, { normal: string; active: string }> = {
@@ -39,6 +41,8 @@ export function ClassDiagram({
   notice,
   onSelectClass,
   onSelectMember,
+  onZoomChange,
+  onFitZoom,
 }: ClassDiagramProps) {
   // 선택한 클래스에 붙은 선만 강조하고, 그 선이 닿지 않는 박스는 흐리게 만든다.
   const { paths, related } = useMemo(() => {
@@ -81,6 +85,8 @@ export function ClassDiagram({
         emptyMessage={emptyMessage}
         scrollTarget={scrollTarget}
         ariaLabel="클래스 다이어그램"
+        onZoomChange={onZoomChange}
+        onFitZoom={onFitZoom}
       >
         {view.visible.map((graphClass) => {
           const box = view.boxes.get(graphClass.id)

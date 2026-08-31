@@ -325,6 +325,10 @@ export default function App() {
     setSelection({ type: 'method', key: memberKey(graphClass.id, member) })
   }, [])
 
+  const handleZoomChange = useCallback((nextZoom: number) => {
+    setClassMap((current) => ({ ...current, zoom: nextZoom }))
+  }, [])
+
   const fitZoom = useCallback(() => {
     const shell = shellRef.current
     if (!shell) return
@@ -620,6 +624,8 @@ export default function App() {
               notice={staleSchemaNotice ?? largeSolutionNotice}
               onSelectClass={(classId) => setSelection({ type: 'class', key: classId })}
               onSelectMember={selectMember}
+              onZoomChange={handleZoomChange}
+              onFitZoom={fitZoom}
             />
           )}
           {viewMode === 'flowmap' && flowView && (
@@ -633,6 +639,7 @@ export default function App() {
                 setSelection({ type: 'method', key })
                 if (rowKind === 'route') setFlowEntryId(key)
               }}
+              onZoomChange={handleZoomChange}
             />
           )}
           {viewMode === 'callflow' && (
@@ -647,7 +654,7 @@ export default function App() {
           )}
           {((viewMode === 'classmap' && !classDiagram) ||
             (viewMode === 'flowmap' && !flowView)) && (
-            <div className="graph-shell"><div className="panel-message">솔루션을 분석하면 여기에 그려진다.</div></div>
+            <div className="diagram-wrap"><div className="graph-shell"><div className="panel-message">솔루션을 분석하면 여기에 그려진다.</div></div></div>
           )}
         </section>
 

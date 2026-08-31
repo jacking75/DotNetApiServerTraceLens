@@ -1,7 +1,7 @@
-import { useMemo, type RefObject } from 'react'
+import { useCallback, useMemo, type RefObject } from 'react'
 import { layoutFlow, type FlowView } from '../graph/flowMap'
 import type { Selection } from '../types/graph'
-import { DiagramCanvas, type CanvasPath } from './DiagramCanvas'
+import { clampZoom, DiagramCanvas, type CanvasPath } from './DiagramCanvas'
 import { kindColors } from './kindColors'
 
 interface FlowDiagramProps {
@@ -11,12 +11,22 @@ interface FlowDiagramProps {
   shellRef: RefObject<HTMLDivElement>
   onSelectClass: (classId: string) => void
   onSelectRow: (key: string, rowKind: 'route' | 'method') => void
+  onZoomChange?: (zoom: number) => void
 }
 
 /** 전체 진입점 지도와 진입점 흐름을 같은 캔버스로 그린다. 차이는 박스 줄의 내용뿐이다. */
-export function FlowDiagram({ view, selection, zoom, shellRef, onSelectClass, onSelectRow }: FlowDiagramProps) {
+export function FlowDiagram({ view, selection, zoom, shellRef, onSelectClass, onSelectRow, onZoomChange }: FlowDiagramProps) {
   const layout = useMemo(() => layoutFlow(view), [view])
   const selectedKey = selection?.key ?? null
+
+  const fitZoom = useCallback(() => {
+    const shell = shellRef.current
+    if (!shell || layout.size.width === 0) return
+    const fit = Math.min(
+      (shell.clientWidth - 40) / Math.max(1, layout.size.width),
+      (shell.clientHeight - 40) / Math.max(1, layout.size.height))
+    onZoomChange?.(clampZoom(fit))
+  }, [shellRef, layout, onZoomChange])
 
   const paths: CanvasPath[] = layout.paths.map((path, index) => {
     const relation = path.relation
@@ -39,6 +49,8 @@ export function FlowDiagram({ view, selection, zoom, shellRef, onSelectClass, on
       paths={paths}
       emptyMessage={view.boxes.length === 0 ? '표시할 노드가 없다.' : undefined}
       ariaLabel="전체 흐름도"
+      onZoomChange={onZoomChange}
+      onFitZoom={onZoomChange ? fitZoom : undefined}
     >
       {view.boxes.map((box) => {
         const placed = layout.boxes.get(box.id)

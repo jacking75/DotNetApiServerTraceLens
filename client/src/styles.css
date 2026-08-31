@@ -115,8 +115,17 @@ main { padding: 14px 18px 18px; }
 .canvas-notice { flex: none; padding: 7px 12px; color: #ffd9a3; background: #2a1f11; border-bottom: 1px solid #6d5027; font-size: 11.5px; }
 .graph-shell { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 18px; }
 .graph-shell .canvas-empty { position: absolute; top: 34%; left: 0; right: 0; text-align: center; }
+/* diagram-wrap은 스크롤하지 않는 고정 틀이라, 그 위에 얹는 줌 컨트롤이 스크롤 위치와 무관하게 한 자리에 머문다. */
+.diagram-wrap { position: relative; flex: 1; min-height: 0; }
+.diagram-wrap .graph-shell { position: absolute; inset: 0; flex: none; cursor: grab; }
+.diagram-wrap .graph-shell.panning { cursor: grabbing; }
 .graph-canvas { width: 100%; height: 100%; }
 .graph-help { position: absolute; z-index: 2; bottom: 10px; left: 12px; color: var(--dim-2); font-size: 11px; pointer-events: none; }
+.zoom-controls { position: absolute; right: 14px; bottom: 14px; z-index: 5; display: flex; align-items: center; gap: 2px; background: #111827ee; border: 1px solid var(--border); border-radius: 9px; padding: 4px; box-shadow: 0 6px 16px #00000055; }
+.zoom-controls button { min-width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; color: var(--dim); background: transparent; border: 0; border-radius: 6px; padding: 0 6px; font-size: 14px; font-weight: 700; line-height: 1; }
+.zoom-controls button:hover { color: var(--text); background: #1c2738; }
+.zoom-controls .zoom-pct { font-size: 11px; }
+.zoom-controls .zoom-sep { width: 1px; height: 16px; background: var(--border); margin: 0 2px; }
 .dg-defs { position: absolute; width: 0; height: 0; }
 .dg-scale { transform-origin: 0 0; }
 .dg-root { position: relative; }
