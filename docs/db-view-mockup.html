@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TraceLens — DB 접근 / 샤드 라우팅 보기 목업</title>
+<style>
+:root{
+  --bg:#0c111b; --panel:#111827; --panel-2:#151f30; --border:#263247; --border-2:#2c3b52;
+  --text:#e7edf7; --dim:#8290a4; --dim-2:#75859a; --accent:#79d4ff;
+  --bad:#ff8d91; --bad-bg:#3a1f24; --bad-line:#7b343f;
+  --warn:#ffbb6b; --warn-bg:#332413; --warn-line:#7d5a2c;
+  --ok:#7ee0b8; --ok-bg:#123027; --ok-line:#2a6b56;
+  --shard:#bd9cff; --global:#79d4ff; --logdb:#efbc72; --cache:#90e6ce;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; min-width:1180px; color:var(--text);
+  background:radial-gradient(circle at 20% 0%,#18253b 0,#0c111b 38%);
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans KR",sans-serif;
+}
+button,input,textarea{font:inherit}
+button{cursor:pointer}
+code,.mono{font-family:Consolas,"D2Coding",monospace}
+
+.page{width:100%;margin:0;padding:16px 18px 24px}
+.app-header{display:flex;align-items:center;gap:18px;margin-bottom:12px}
+.app-header h1{margin:0;font-size:24px;letter-spacing:-.03em}
+.eyebrow{color:#7990ae;font-size:11px;text-transform:uppercase;letter-spacing:.12em}
+.mock-tag{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:800;
+  color:#ffd9a3;background:#3a2a17;border:1px solid #7d5a2c;vertical-align:3px}
+.fake-form{display:flex;gap:8px;flex:1;max-width:600px;margin-left:auto}
+.fake-form input{flex:1;color:var(--text);background:#111827;border:1px solid #2d3a4f;border-radius:8px;padding:9px 12px}
+.btn{color:#cbd8ea;background:#17202f;border:1px solid #304059;border-radius:8px;padding:9px 13px;white-space:nowrap}
+.btn:hover{color:var(--text);border-color:#4d6383}
+.btn.primary{color:#08111b;background:var(--accent);border:0;font-weight:750}
+.btn.sm{padding:5px 10px;font-size:11px;border-radius:7px}
+.freshness-badge{display:flex;align-items:center;gap:6px;color:#9de2c7;background:#12342c;border:1px solid #286c58;
+  border-radius:999px;padding:6px 10px;font-size:11px;font-weight:700;white-space:nowrap}
+.freshness-dot{width:7px;height:7px;border-radius:50%;background:#64ddb0;box-shadow:0 0 7px #64ddb088}
+
+.mode-bar{display:flex;align-items:center;gap:12px;margin-bottom:10px;padding:8px 10px;
+  background:#111827cc;border:1px solid var(--border);border-radius:10px}
+.mode-switch{display:flex;gap:4px;background:#0c1320;border:1px solid var(--border);border-radius:9px;padding:3px;flex:none}
+.mode-switch button{color:var(--dim);background:transparent;border:0;border-radius:7px;padding:7px 14px;font-size:13px;font-weight:700}
+.mode-switch button:hover{color:var(--text)}
+.mode-switch button.active{color:#08111b;background:var(--accent)}
+.mode-switch button .new-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--warn);margin-left:6px;vertical-align:2px}
+.mode-switch button.active .new-dot{background:#08111b}
+.mode-hint{color:var(--dim);font-size:12px;flex:1;min-width:120px}
+.toolbar-extra{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:flex-end;color:var(--dim);font-size:11px}
+.toolbar-extra .sepline{width:1px;height:18px;background:var(--border);margin:0 3px}
+.chipbtn{color:var(--dim);background:#0c1320;border:1px solid var(--border);border-radius:7px;padding:5px 9px;font-size:11px;font-weight:700}
+.chipbtn:hover{color:var(--text)}
+.chipbtn.active{color:#a9e7ff;background:#153044;border-color:#3e7695}
+.summary-line{color:#97a8bf;font-size:12px;margin:-2px 0 10px;text-align:right}
+.summary-line b{color:#dbe6f5}
+
+.workspace{
+  --col-left:280px; --col-right:400px;
+  display:grid;
+  grid-template-columns:var(--col-left) 8px minmax(420px,1fr) 8px var(--col-right);
+  height:calc(100vh - 200px);
+  min-height:600px;
+}
+.splitter{position:relative;cursor:col-resize;touch-action:none}
+.splitter::before{content:"";position:absolute;top:0;bottom:0;left:3px;width:2px;background:var(--border);border-radius:2px}
+.splitter:hover::before,.splitter.dragging::before{background:var(--accent);box-shadow:0 0 8px #79d4ff66}
+body.resizing{cursor:col-resize;user-select:none}
+.panel{background:#111827e8;border:1px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+.panel>header{height:42px;padding:0 13px;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid var(--border);font-size:13px;font-weight:700;flex:none}
+.panel>header small{color:#8190a5;font-weight:500;max-width:62%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.right-column{display:grid;grid-template-rows:1fr 300px;gap:8px;min-height:0}
+
+/* 좌측 패널 */
+.side-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;padding:8px 8px 0;flex:none}
+.side-tabs button{color:#8290a4;background:#0c1320;border:1px solid var(--border);border-radius:6px;padding:6px 2px;font-size:10.5px;font-weight:700}
+.side-tabs button.active{color:#a9e7ff;border-color:#3e7695;background:#153044}
+.side-search{width:calc(100% - 16px);margin:8px 8px 0;color:var(--text);background:#0c1320;
+  border:1px solid var(--border-2);border-radius:7px;padding:7px 9px;font-size:12px;flex:none}
+.side-list{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:3px}
+.side-group{color:var(--dim-2);font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:9px 7px 3px}
+.side-item{display:flex;align-items:center;gap:8px;min-width:0;color:#dce5f2;background:transparent;
+  border:1px solid transparent;border-radius:7px;padding:8px;text-align:left;width:100%}
+.side-item:hover{background:#1c2738;border-color:#31415a}
+.side-item.selected{background:#1b2942;border-color:#3f5a80}
+.side-item .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side-item .sub{display:block;color:var(--dim-2);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
+.side-item .count{color:var(--dim-2);font-size:11px}
+.http{min-width:44px;font-size:10px;font-weight:800;color:#90e6ce}
+.http.post{color:#efbc72}.http.delete{color:#ff8d91}.http.put,.http.patch{color:#bd9cff}
+.ds-dot{width:9px;height:9px;border-radius:2px;flex:none}
+.dot-shard{background:var(--shard)}.dot-global{background:var(--global)}.dot-log{background:var(--logdb)}
+.dot-replica{background:#6fb4d8}.dot-cache{background:var(--cache)}
+
+/* 심각도 표시 */
+.sev{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:800;white-space:nowrap}
+.sev.critical{color:#ffb4b4;background:var(--bad-bg);border:1px solid var(--bad-line)}
+.sev.warn{color:#ffd9a3;background:var(--warn-bg);border:1px solid var(--warn-line)}
+.sev.info{color:#a9d4ff;background:#152437;border:1px solid #2f4d6d}
+.sev.ok{color:#9de2c7;background:var(--ok-bg);border:1px solid var(--ok-line)}
+.sev.muted{color:#8a97a9;background:#161e2c;border:1px solid #2b3648}
+
+/* 가운데 */
+.graph-area{min-width:0}
+.breadcrumb{min-height:38px;padding:7px 12px;display:flex;align-items:center;flex-wrap:wrap;gap:6px;
+  border-bottom:1px solid var(--border);flex:none}
+.breadcrumb button{color:#9eb0c8;background:transparent;border:0;padding:3px 4px;font-size:12px}
+.breadcrumb button:hover{color:var(--accent)}
+.breadcrumb .current{color:#e4ebf4;font-size:12px}
+.breadcrumb-separator{color:#4e6078;margin:0 1px}
+.canvas-notice{flex:none;padding:7px 12px;color:#ffd9a3;background:#2a1f11;border-bottom:1px solid #6d5027;font-size:11.5px}
+.graph-shell{position:relative;flex:1;min-height:0;overflow:auto;padding:16px 18px 22px}
+
+/* 샤드 라우팅 파이프라인 */
+.route-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.route-head h3{margin:0;font-size:15px}
+.route-head .route-path{color:var(--dim-2);font-size:11.5px;font-family:Consolas,monospace}
+.stage{display:grid;grid-template-columns:104px 1fr;gap:12px}
+.stage-label{color:var(--dim-2);font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding-top:13px;text-align:right}
+.stage-cards{display:flex;flex-direction:column;gap:8px}
+.card{position:relative;display:block;width:100%;background:#0e1626;border:1px solid var(--border-2);border-radius:9px;
+  padding:10px 12px;text-align:left;color:var(--text)}
+.card:hover{border-color:#4d6383}
+.card.selected{border-color:var(--accent);box-shadow:0 0 0 1px #79d4ff55}
+.card.bad{border-color:var(--bad-line);background:#1c1219}
+.card.warn{border-color:var(--warn-line);background:#1b1710}
+.card.ok{border-color:#2b4c40;background:#0f1a1a}
+.card-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card-title{font-size:12.5px;font-weight:700}
+.card-sub{color:#95a4b8;font-size:11px;margin-top:5px;line-height:1.55}
+.card .loc{color:#62748c;font-size:10.5px;margin-top:5px;font-family:Consolas,monospace}
+.card .sql{margin-top:7px;padding:6px 8px;background:#0a1120;border:1px solid #1e293c;border-radius:6px;
+  color:#c6d4e6;font-family:Consolas,monospace;font-size:10.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.card .sql .kw{color:#79a8ff}
+.card .sql .par{color:#efbc72}
+.arrow{color:#3e4f68;font-size:14px;line-height:1;margin:5px 0 5px 118px}
+.tag{display:inline-flex;align-items:center;gap:4px;border-radius:6px;padding:2px 6px;font-size:10px;font-weight:800;
+  color:#cfdaea;background:#0c1320;border:1px solid var(--border)}
+.tag.shard{color:#d5c2ff;border-color:#54408a}
+.tag.global{color:#a9e7ff;border-color:#2f5f7d}
+.tag.log{color:#f2cf9a;border-color:#77592c}
+.tag.replica{color:#a9d4ff;border-color:#2f4d6d}
+.tag.write{color:#ffb4b4;border-color:#6c3a41}
+.tag.read{color:#9de2c7;border-color:#2a6b56}
+.tag.tx{color:#e2d3ff;border-color:#4a3f77}
+
+/* 접근 지도(매트릭스) */
+.matrix-wrap{overflow:auto;border:1px solid var(--border);border-radius:9px}
+table.matrix{border-collapse:separate;border-spacing:0;font-size:11.5px;min-width:100%}
+table.matrix th,table.matrix td{border-bottom:1px solid #1c2739;border-right:1px solid #1c2739;padding:7px 9px;white-space:nowrap}
+table.matrix thead th{position:sticky;top:0;background:#131c2c;color:#a9b8cc;font-size:10.5px;font-weight:800;z-index:2}
+table.matrix thead th small{display:block;color:#6f8098;font-size:9.5px;font-weight:600;margin-top:2px}
+table.matrix tbody th{position:sticky;left:0;background:#101827;color:#dce5f2;text-align:left;font-weight:600;z-index:1}
+table.matrix td{text-align:center;color:#5d6c81}
+.cell{display:inline-flex;min-width:30px;justify-content:center;border-radius:5px;padding:2px 6px;font-size:10px;font-weight:800}
+.cell.r{color:#9de2c7;background:#12342c}
+.cell.w{color:#ffc0a8;background:#3a2318}
+.cell.rw{color:#e5d0ff;background:#2b2145}
+.cell.flag{outline:1px solid var(--bad-line);box-shadow:0 0 0 2px #ff8d9122}
+.matrix-legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--dim);font-size:11px;margin-top:10px}
+
+/* 트랜잭션 타임라인 */
+.tx-card{background:#0e1626;border:1px solid var(--border-2);border-radius:9px;padding:12px 14px;margin-bottom:10px}
+.tx-card.bad{border-color:var(--bad-line)}
+.tx-card.warn{border-color:var(--warn-line)}
+.tx-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.tx-head .name{font-size:13px;font-weight:700}
+.tx-head .loc{color:#62748c;font-size:10.5px;font-family:Consolas,monospace}
+.tx-steps{display:flex;flex-direction:column;border-left:2px solid #253247;margin-left:6px}
+.tx-step{position:relative;padding:6px 0 6px 18px;font-size:11.5px;color:#c4d1e2}
+.tx-step::before{content:"";position:absolute;left:-6px;top:12px;width:9px;height:9px;border-radius:50%;
+  background:#25314a;border:2px solid #0e1626}
+.tx-step.conn::before{background:var(--shard)}
+.tx-step.query::before{background:#4e7fb5}
+.tx-step.ext::before{background:var(--warn)}
+.tx-step.commit::before{background:var(--ok)}
+.tx-step .meta{color:#66788f;font-size:10.5px;font-family:Consolas,monospace;margin-left:6px}
+.tx-flag{margin-top:10px;padding:8px 10px;border-radius:7px;font-size:11.5px;line-height:1.6}
+.tx-flag.bad{color:#ffc4c4;background:var(--bad-bg);border:1px solid var(--bad-line)}
+.tx-flag.warn{color:#ffd9a3;background:var(--warn-bg);border:1px solid var(--warn-line)}
+.tx-flag.ok{color:#a9e7c9;background:var(--ok-bg);border:1px solid var(--ok-line)}
+
+/* 점검 결과 표 */
+table.findings{width:100%;border-collapse:collapse;font-size:11.5px}
+table.findings th{color:#8fa0b6;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  text-align:left;padding:0 9px 8px;border-bottom:1px solid var(--border)}
+table.findings td{padding:9px;border-bottom:1px solid #1a2334;vertical-align:top}
+table.findings tr.row{cursor:pointer}
+table.findings tr.row:hover td{background:#151f30}
+table.findings tr.row.selected td{background:#1b2942}
+table.findings tr.ignored td{opacity:.42}
+table.findings .rule{font-family:Consolas,monospace;color:#a9c4e0;font-size:11px;white-space:nowrap}
+table.findings .where{color:#93a3b8;font-family:Consolas,monospace;font-size:10.5px}
+table.findings .what{color:#e0e9f5}
+table.findings .conf{color:#8a97a9;font-size:10.5px;white-space:nowrap}
+
+/* 우측 상세 */
+.detail-body{flex:1;overflow-y:auto;padding:12px}
+.detail-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.detail-title h3{margin:0;font-size:14.5px}
+.detail-path{color:var(--dim-2);font-family:Consolas,monospace;font-size:11px;margin-bottom:11px;overflow-wrap:anywhere}
+.detail-section{margin-bottom:12px}
+.detail-section h4{margin:0 0 6px;color:var(--dim);font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.detail-section p{margin:0 0 6px;color:#b8c5d7;font-size:12px;line-height:1.65}
+.pill-list{display:flex;flex-wrap:wrap;gap:4px}
+.pill{display:inline-flex;align-items:center;gap:5px;color:#cfdaea;background:#0c1320;border:1px solid var(--border);
+  border-radius:999px;padding:4px 9px;font-size:11px}
+.chain{display:flex;flex-direction:column;border-left:2px solid #2b3a52;margin-left:5px}
+.chain-step{position:relative;padding:6px 0 6px 16px;font-size:11.5px;color:#c3d0e1;line-height:1.6}
+.chain-step::before{content:"";position:absolute;left:-5px;top:12px;width:8px;height:8px;border-radius:50%;background:#3c5074}
+.chain-step.bad::before{background:var(--bad)}
+.chain-step.ok::before{background:var(--ok)}
+.chain-step .mono{color:#a9e7ff;font-size:11px}
+.chain-step .note{display:block;color:#7f8ea3;font-size:10.5px}
+.code-block{background:#0b1220;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.code-block pre{margin:0;padding:8px 0;font-family:Consolas,monospace;font-size:11px;line-height:1.6;overflow-x:auto}
+.code-line{display:flex;gap:10px;padding:0 11px;white-space:pre}
+.code-line.hit{background:#5a202655;box-shadow:inset 2px 0 0 var(--bad)}
+.code-line.hit-ok{background:#24456555;box-shadow:inset 2px 0 0 var(--accent)}
+.code-no{color:#4b5c74;min-width:26px;text-align:right}
+.detail-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+
+.ask-panel{display:flex;flex-direction:column;min-height:0}
+.ask-mode-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:8px 12px 0;flex:none}
+.ask-mode-tabs button{color:#8290a4;background:#0c1320;border:1px solid var(--border);border-radius:6px;padding:6px 5px;font-size:10px}
+.ask-mode-tabs button.active{color:#a9e7ff;border-color:#3e7695;background:#153044}
+.captured{margin:10px 12px;padding:9px;color:#a8b5c7;background:#0c1320;border:1px solid var(--border);
+  border-radius:7px;font-family:Consolas,monospace;font-size:10.5px;line-height:1.6;overflow-wrap:anywhere}
+.ask-panel textarea{display:block;width:calc(100% - 24px);height:74px;margin:0 12px 8px;resize:none;color:var(--text);
+  background:#0c1320;border:1px solid var(--border-2);border-radius:7px;padding:8px 10px;font-size:12px;line-height:1.55}
+.ask-actions{display:flex;gap:8px;margin:0 12px 12px}
+
+.notes{max-width:1620px;margin:26px auto 0;padding:0 20px 60px}
+.notes h2{font-size:18px;margin:0 0 6px}
+.notes .lead{color:var(--dim);font-size:13px;margin:0 0 16px;line-height:1.7}
+.note-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px}
+.note-card{background:#111827cc;border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.note-card h3{margin:0 0 8px;font-size:13.5px}
+.note-card p,.note-card li{color:#b3c1d4;font-size:12.5px;line-height:1.65;margin:0 0 6px}
+.note-card ul{margin:0;padding-left:17px}
+.note-card code{color:#a9e7ff;font-family:Consolas,monospace;font-size:11.5px}
+.note-card pre{margin:6px 0 0;padding:10px;background:#0b1220;border:1px solid var(--border);border-radius:8px;
+  color:#c6d4e6;font-family:Consolas,monospace;font-size:11px;line-height:1.6;overflow-x:auto}
+.note-card.ask{border-color:#7d5a2c;background:#231a10cc}
+.note-card.ask h3{color:#ffd9a3}
+.note-card.wide{grid-column:1/-1}
+.rule-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
+.rule-table th{color:#8fa0b6;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  text-align:left;padding:0 8px 7px;border-bottom:1px solid var(--border)}
+.rule-table td{padding:7px 8px;border-bottom:1px solid #1a2334;color:#b8c5d7;vertical-align:top}
+.rule-table td.id{font-family:Consolas,monospace;color:#a9c4e0;white-space:nowrap}
+.rule-table td.sevcol{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="app-header">
+    <div>
+      <div class="eyebrow">ASP.NET Core call explorer</div>
+      <h1>TraceLens<span class="mock-tag">목업 · 클릭 가능 · 데이터는 가짜</span></h1>
+    </div>
+    <div class="freshness-badge"><span class="freshness-dot"></span>최신 상태 · 14:32</div>
+    <div class="fake-form">
+      <input value="C:\repos\GameServer\GameServer.sln" readonly>
+      <button class="btn">찾아보기…</button>
+      <button class="btn primary">다시 분석</button>
+    </div>
+  </header>
+
+  <div class="mode-bar">
+    <div class="mode-switch" id="modeSwitch">
+      <button data-mode="callflow">호출 흐름</button>
+      <button data-mode="classmap">클래스 다이어그램</button>
+      <button data-mode="flowmap">전체 흐름도</button>
+      <button data-mode="startup">시작 흐름</button>
+      <button data-mode="db" class="active">DB 접근<span class="new-dot"></span></button>
+    </div>
+    <span class="mode-hint" id="modeHint"></span>
+    <div class="toolbar-extra" id="toolbarExtra"></div>
+  </div>
+
+  <div class="summary-line" id="summaryLine"></div>
+
+  <section class="workspace" id="workspace">
+    <aside class="panel side-panel">
+      <header><span id="sideTitle">진입점</span><small id="sideMeta"></small></header>
+      <div class="side-tabs" id="sideTabs">
+        <button data-tab="entries" class="active">진입점</button>
+        <button data-tab="datasources">데이터소스</button>
+        <button data-tab="tables">테이블</button>
+        <button data-tab="rules">점검</button>
+      </div>
+      <input class="side-search" id="sideSearch" placeholder="검색…">
+      <div class="side-list" id="sideList"></div>
+    </aside>
+
+    <div class="splitter" data-split="left" title="드래그해서 좌측 패널 폭 조절"></div>
+
+    <section class="panel graph-area">
+      <header><span id="graphTitle">DB 접근</span><small id="graphMeta"></small></header>
+      <div class="breadcrumb" id="crumbs"></div>
+      <div class="canvas-notice" id="notice" style="display:none"></div>
+      <div class="graph-shell" id="graphShell"></div>
+    </section>
+
+    <div class="splitter" data-split="right" title="드래그해서 우측 패널 폭 조절"></div>
+
+    <div class="right-column">
+      <section class="panel">
+        <header><span>선택한 항목</span><small id="detailKind"></small></header>
+        <div class="detail-body" id="detailBody"></div>
+      </section>
+      <section class="panel ask-panel">
+        <header><span>Claude에게 질문</span><small>MCP 직접 연동</small></header>
+        <div class="ask-mode-tabs">
+          <button>클립보드 복사</button>
+          <button class="active">MCP 직접 연동</button>
+          <button>에디터에서 열기</button>
+        </div>
+        <div class="captured" id="captured"></div>
+        <textarea id="askText"></textarea>
+        <div class="ask-actions">
+          <button class="btn primary">질문 보내기</button>
+          <button class="btn">컨텍스트 다시 잡기</button>
+        </div>
+      </section>
+    </div>
+  </section>
+</div>
+
+<section class="notes">
+  <h2>설계 메모 — 확정 전에 맞출 것</h2>
+  <p class="lead">
+    위 화면은 다섯 번째 보기 <b>“DB 접근”</b>의 목업이다. 기존 네 보기가 “코드가 서로를 어떻게 부르는가”를 본다면,
+    이 보기는 <b>“그 호출이 결국 어느 DB의 어느 테이블을 어떤 키로 건드리는가”</b>를 본다.
+    분석 대상 코드베이스는 <b>유저 데이터가 <code>userNo</code> 기준으로 8개 샤드에 흩어져 있고</b>, 계정·상점 같은 공통 데이터는 글로벌 DB에 있는
+    전형적인 게임 서버 형태를 가정했다.
+  </p>
+
+  <div class="note-grid">
+    <div class="note-card">
+      <h3>1. 이 보기가 답하는 질문</h3>
+      <ul>
+        <li>이 API 하나가 <b>몇 개의 DB·몇 개의 커넥션</b>을 여는가</li>
+        <li>샤드를 고른 키가 <b>어디서 온 값</b>인가(토큰 / 요청 본문 / 다른 유저의 번호)</li>
+        <li>고른 샤드와 <b>실제 쿼리 파라미터의 유저가 같은가</b> — 남의 샤드를 건드리는 코드가 있는가</li>
+        <li>한 트랜잭션이 <b>두 개 이상의 커넥션</b>에 걸쳐 있는가(샤드 DB + 로그 DB 등)</li>
+        <li>이 테이블을 바꾸면 <b>어느 코드가 영향</b>을 받는가(테이블 → 코드 역인덱스)</li>
+      </ul>
+    </div>
+
+    <div class="note-card">
+      <h3>2. 화면 구성</h3>
+      <ul>
+        <li><b>샤드 라우팅</b> — 진입점 하나를 골라 “요청 → 샤드 키 결정 → 커넥션 획득 → 쿼리 실행”을 단계로 세운다. 문제 지점만 색이 붙는다.</li>
+        <li><b>접근 지도</b> — 클래스 × 테이블 매트릭스. R/W/RW와 데이터소스가 한눈에 보이고, 규칙에 걸린 칸에 테두리가 생긴다.</li>
+        <li><b>트랜잭션</b> — 트랜잭션 경계 안에서 실행된 것들을 순서대로. 걸친 커넥션 수와 외부 호출(HTTP·Redis) 포함 여부가 핵심.</li>
+        <li><b>점검 결과</b> — 규칙에 걸린 항목 표. 심각도·확실도·무시 여부로 거른다.</li>
+      </ul>
+    </div>
+
+    <div class="note-card">
+      <h3>3. 판정의 근거를 항상 같이 보여준다</h3>
+      <p>
+        “이건 잘못됐다”만 띄우는 도구는 두 번째부터 안 믿게 된다. 그래서 우측 상세에는 항상
+        <b>샤드 키 출처 체인</b>(어느 파라미터가 어디서 흘러와 어떤 함수로 샤드를 골랐는지)과
+        그 판단이 <b>확실(대입을 끝까지 따라감)</b>인지 <b>추정(중간에 인터페이스·리플렉션으로 끊김)</b>인지를 같이 적는다.
+      </p>
+      <p>추정 항목은 기본 접힘으로 두고, “확실한 것만 보기” 토글로 소음을 줄인다.</p>
+    </div>
+
+    <div class="note-card">
+      <h3>4. 오탐을 관리하는 장치</h3>
+      <ul>
+        <li>랭킹처럼 <b>일부러 전 샤드를 도는</b> 코드가 있다. 항목마다 “의도된 것으로 표시”를 두고 결과를 <code>.tracelens/db-baseline.json</code>에 남긴다.</li>
+        <li>무시한 항목은 사라지지 않고 회색으로 남아, 나중에 코드가 바뀌면 다시 뜬다(라인 대신 심볼 기준으로 기억한다).</li>
+        <li>규칙 단위 끄기도 둔다 — 팀이 안 지키기로 한 규칙은 통째로 끈다.</li>
+      </ul>
+    </div>
+
+    <div class="note-card wide">
+      <h3>5. 점검 규칙 초안 — 무엇을 어디까지 정적으로 잡을 수 있나</h3>
+      <p>
+        아래가 목업에 넣은 규칙 목록이다. <b>“정적으로 확실”</b>은 Roslyn 심볼·데이터 흐름만으로 판정 가능한 것,
+        <b>“추정”</b>은 값이 런타임에 정해져서 힌트만 줄 수 있는 것이다. 추정 규칙은 결과에 확실도를 반드시 표시한다.
+      </p>
+      <table class="rule-table">
+        <thead><tr><th>규칙</th><th>내용</th><th>심각도</th><th>판정</th></tr></thead>
+        <tbody id="ruleTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="note-card wide">
+      <h3>6. 사내 DB 계층을 알려주는 설정 — 이게 없으면 아무것도 못 잡는다</h3>
+      <p>
+        “샤드를 고르는 함수”가 무엇인지는 프레임워크마다 다르다. Dapper·EF Core·자체 래퍼 중 무엇을 쓰는지,
+        커넥션을 어떤 팩토리로 여는지를 <code>tracelens.config.json</code>에 한 번 적어두면, 그다음부터는 자동으로 따라간다.
+        자동 인식이 실패하면 “DB 접근 지점을 하나도 못 찾았다”가 아니라 <b>“이 설정을 채워라”</b>를 화면에 띄운다.
+      </p>
+      <pre>"db": {
+  "connectionFactories": [
+    "GameServer.Data.IShardConnectionFactory.OpenAsync(int userNo)",   // 첫 인자가 샤드 키
+    "GameServer.Data.IGlobalConnectionFactory.OpenAsync()"
+  ],
+  "shardKeyParameters": ["userNo", "uid", "playerNo"],
+  "queryApis": [
+    "Dapper.SqlMapper.*",                       // Query/Execute/QueryFirst...
+    "GameServer.Data.DbExtensions.ExecProcAsync"
+  ],
+  "storedProcedurePrefix": "usp_",
+  "dataSources": {
+    "GameDb":        { "kind": "shard", "shardCount": 8, "shardBy": "userNo % 8" },
+    "GameDbReplica": { "kind": "shard", "shardCount": 8, "readOnly": true },
+    "GlobalDb":      { "kind": "single" },
+    "LogDb":         { "kind": "single", "writeOnly": true }
+  },
+  "schemaFiles": ["db/schema/*.sql"]            // 있으면 컬럼·인덱스까지 대조
+}</pre>
+    </div>
+
+    <div class="note-card">
+      <h3>7. 기존 보기와의 연결</h3>
+      <ul>
+        <li><b>호출 흐름 / 전체 흐름도</b> — DB에 닿는 메서드 노드에 데이터소스 색 배지(<span class="tag shard">S3</span> <span class="tag global">G</span>)를 단다. 진입점 목록에도 “이 API가 여는 커넥션 수”를 붙인다.</li>
+        <li><b>클래스 다이어그램</b> — 리포지터리 박스에 다루는 테이블 수를 표시하고, 관계 토글에 “DB 접근”을 하나 더 둔다(기본 꺼짐).</li>
+        <li><b>시작 흐름</b> — DbContext·커넥션 팩토리의 수명(Scoped/Singleton) 등록을 이미 보고 있으므로, <code>CONN-002</code>(Singleton 등록) 판정을 여기서 그대로 가져온다.</li>
+      </ul>
+    </div>
+
+    <div class="note-card">
+      <h3>8. 규모 제약(CLAUDE.md 1번)과의 관계</h3>
+      <p>
+        접근 지도는 클래스 다이어그램과 같은 “전체를 그리는” 화면이라 밀도 손잡이가 필요하다.
+        데이터소스 필터 · 테이블 검색 · “쓰기만 보기” · “규칙에 걸린 것만 보기” 네 가지를 손잡이로 둔다.
+        테이블이 200개를 넘으면 처음부터 <b>쓰기만 + 규칙에 걸린 것만</b>으로 켠다.
+      </p>
+    </div>
+
+    <div class="note-card ask">
+      <h3>확인이 필요한 것</h3>
+      <ul>
+        <li><b>DB 접근 방식</b>이 무엇인가 — Dapper인가, EF Core인가, 자체 래퍼인가, 저장 프로시저 위주인가? 인라인 SQL이면 문자열 상수를 파싱해 테이블을 뽑을 수 있지만, 프로시저 이름만 있으면 테이블 매트릭스는 <b>프로시저 매트릭스</b>가 된다.</li>
+        <li><b>샤드를 고르는 코드가 어떤 모양</b>인가 — <code>factory.Open(userNo)</code>처럼 인자로 넘기나, 미들웨어에서 <code>AsyncLocal</code>/컨텍스트에 담아두고 리포지터리가 꺼내 쓰나? 후자면 흐름 추적이 한 단계 더 필요하다.</li>
+        <li><b>샤드 규칙</b>이 <code>userNo % N</code>인가, 매핑 테이블 조회인가? 매핑 테이블이면 “어느 샤드”는 못 정하고 “샤드 키가 무엇인지”까지만 본다.</li>
+        <li>DDL(<code>schema.sql</code>)에 접근 가능한가? 있으면 컬럼 오타·인덱스 없는 조건까지 잡고, 없으면 <code>IDX-*</code> 규칙군은 빼야 한다.</li>
+        <li>가장 아픈 사고가 무엇이었나 — <b>남의 샤드 접근</b>인가, <b>커넥션 누수</b>인가, <b>N+1</b>인가? 규칙 우선순위를 그 순서로 만든다.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+<script>
+/* ------------------------------------------------------------------ 가짜 데이터 */
+
+var DS = {
+  shard:   {id:'shard',   name:'GameDb',        kind:'샤드 8개',  dot:'dot-shard',   tag:'shard',   desc:'유저 데이터 · userNo % 8', tables:6, access:41},
+  global:  {id:'global',  name:'GlobalDb',      kind:'단일',      dot:'dot-global',  tag:'global',  desc:'계정 · 상점 · 공지',      tables:4, access:18},
+  replica: {id:'replica', name:'GameDbReplica', kind:'읽기 전용', dot:'dot-replica', tag:'replica', desc:'샤드 읽기 복제본',        tables:3, access:7},
+  log:     {id:'log',     name:'LogDb',         kind:'쓰기 전용', dot:'dot-log',     tag:'log',     desc:'행동 로그',               tables:2, access:8},
+  cache:   {id:'cache',   name:'Redis',         kind:'캐시(참고)',dot:'dot-cache',   tag:'',        desc:'DB 아님 · 위치만 표시',   tables:0, access:11}
+};
+
+var RULES = [
+  {id:'SHARD-001', name:'샤드 키 없이 전 샤드 순회',        sev:'warn',     judge:'확실', desc:'샤드 키가 정해지지 않은 채 커넥션을 0..N-1로 돌면서 같은 쿼리를 실행한다. 의도된 집계일 수 있어 “의도된 것으로 표시”를 함께 둔다.'},
+  {id:'SHARD-002', name:'커넥션을 연 유저와 쿼리 대상 유저가 다름', sev:'critical', judge:'확실', desc:'userNo A로 커넥션을 열고 파라미터로 userNo B를 넘긴다. 샤드가 다르면 빈 결과이거나 남의 데이터를 건드린다.'},
+  {id:'SHARD-003', name:'한 트랜잭션이 여러 커넥션에 걸침',   sev:'critical', judge:'확실', desc:'트랜잭션 경계 안에서 서로 다른 커넥션이 열린다. 샤드 DB는 분산 트랜잭션이 없어 한쪽만 반영될 수 있다.'},
+  {id:'SHARD-004', name:'하드코딩된 샤드 번호',             sev:'warn',     judge:'확실', desc:'상수로 샤드 번호를 넘긴다. 운영 도구가 아니면 대부분 실수다.'},
+  {id:'SHARD-005', name:'샤드 키 출처를 검증하지 않음',       sev:'critical', judge:'확실', desc:'요청 본문·쿼리스트링에서 온 userNo를 인증 토큰의 값과 대조하지 않고 샤드 키로 쓴다.'},
+  {id:'TX-001',    name:'트랜잭션 안에서 외부 호출',          sev:'warn',     judge:'확실', desc:'커밋 전에 HTTP·Redis·파일 I/O를 부른다. 락 유지 시간이 외부 응답에 묶인다.'},
+  {id:'TX-002',    name:'커밋/롤백이 없는 경로',             sev:'warn',     judge:'추정', desc:'예외 경로에서 커밋도 롤백도 없이 스코프를 벗어난다. using 여부까지 따라가지만 분기가 복잡하면 추정으로 남긴다.'},
+  {id:'CONN-001',  name:'using 없이 연 커넥션·리더',         sev:'warn',     judge:'확실', desc:'IDisposable을 using/await using 없이 열고 Dispose 호출도 없다.'},
+  {id:'CONN-002',  name:'DbContext·커넥션이 Singleton 등록', sev:'critical', judge:'확실', desc:'시작 흐름에서 이미 읽은 DI 등록을 그대로 본다. 동시 요청이 한 커넥션을 공유한다.'},
+  {id:'RW-001',    name:'읽기 전용 커넥션에 쓰기',            sev:'critical', judge:'확실', desc:'readOnly로 표시한 데이터소스에서 INSERT/UPDATE/DELETE를 실행한다.'},
+  {id:'RW-002',    name:'단순 조회를 마스터로',              sev:'info',     judge:'추정', desc:'복제본으로 옮길 수 있는 읽기 전용 경로를 알려준다. 정합성 요구를 몰라 추정이다.'},
+  {id:'PERF-001',  name:'반복문 안 쿼리(N+1)',              sev:'warn',     judge:'확실', desc:'foreach/for 안에서 쿼리 실행 API를 부른다. 반복 횟수 상한을 알면 같이 적는다.'},
+  {id:'PERF-002',  name:'비동기 API를 .Result/.Wait()로 호출', sev:'warn',   judge:'확실', desc:'스레드풀을 막는다. 부하가 걸리면 커넥션 고갈로 이어진다.'},
+  {id:'SEC-001',   name:'문자열 결합으로 만든 SQL',          sev:'critical', judge:'확실', desc:'파라미터가 아닌 문자열 결합·보간으로 SQL을 만든다. 상수만 결합한 경우는 제외한다.'},
+  {id:'IDX-001',   name:'인덱스 없는 컬럼으로 조회',          sev:'info',     judge:'추정', desc:'schema.sql을 같이 읽을 때만. WHERE 조건 컬럼이 인덱스에 없으면 알려준다.'},
+  {id:'MAP-001',   name:'프로시저 파라미터 불일치',          sev:'info',     judge:'추정', desc:'DDL의 프로시저 정의와 코드가 넘기는 파라미터 개수·이름이 다르다.'}
+];
+
+function rule(id){ for (var i=0;i<RULES.length;i++) if (RULES[i].id===id) return RULES[i]; return {id:id,name:id,sev:'info',judge:'추정'}; }
+
+var FINDINGS = [
+  {
+    id:'F1', rule:'SHARD-005', entry:'item-use',
+    what:'요청 본문의 UserNo로 샤드를 고른다 — 토큰의 userNo와 대조하지 않는다',
+    where:'Api/Controllers/ItemController.cs:41', symbol:'GameServer.Api.ItemController.UseItem',
+    conf:'확실', ignored:false,
+    why:'토큰으로 인증은 하지만, 샤드 키는 인증 정보가 아니라 본문 값에서 온다. 남의 userNo를 넣으면 그 유저의 샤드가 열리고 이어지는 UPDATE가 그대로 실행된다.',
+    fix:'샤드 키는 항상 ctx.User의 userNo에서 가져오고, 본문에 userNo가 있으면 같은 값인지 확인한 뒤 다르면 400으로 끊는다.',
+    chain:[
+      {t:'ok',  h:'[Authorize] 필터가 토큰을 검증한다', m:'ctx.User.UserNo = 100342', n:'Api/Filters/AuthFilter.cs:33'},
+      {t:'bad', h:'그런데 샤드 키로 쓰는 값은 본문에서 왔다', m:'req.UserNo ← ItemUseRequest.UserNo ← [FromBody]', n:'Api/Contracts/ItemUseRequest.cs:9'},
+      {t:'bad', h:'두 값을 비교하는 코드가 경로 어디에도 없다', m:'ctx.User.UserNo 와 req.UserNo 비교 없음', n:'UseItem → ItemService.UseAsync 전 구간'},
+      {t:'bad', h:'그대로 커넥션 팩토리로 들어간다', m:'IShardConnectionFactory.OpenAsync(req.UserNo)', n:'Application/ItemService.cs:52'}
+    ],
+    code:[
+      {no:41, t:'public async Task<IActionResult> UseItem([FromBody] ItemUseRequest req)'},
+      {no:42, t:'{'},
+      {no:43, t:'    // 토큰은 검증하지만 req.UserNo 와 대조하지 않는다'},
+      {no:44, t:'    var result = await _itemService.UseAsync(req.UserNo, req.ItemId, req.Count);', hit:true},
+      {no:45, t:'    return Ok(result);'},
+      {no:46, t:'}'}
+    ],
+    ask:'ItemController.UseItem 이 요청 본문의 UserNo 로 샤드를 고른다. 토큰의 userNo 와 대조하는 코드가 이 경로 어딘가에 정말 없는지 확인하고, 있다면 어디인지 알려줘.'
+  },
+  {
+    id:'F2', rule:'SHARD-002', entry:'friend-list',
+    what:'내 샤드로 연 커넥션으로 친구(friendNo)의 프로필을 조회한다',
+    where:'Application/FriendService.cs:66', symbol:'GameServer.Application.FriendService.GetFriendProfiles',
+    conf:'확실', ignored:false,
+    why:'커넥션은 ctx.UserNo(내 번호)로 열렸는데 쿼리 파라미터는 friendNo다. friendNo % 8 이 내 샤드와 다르면 그 친구 데이터는 이 샤드에 없다 — 조용히 빈 값이 돌아오거나, 같은 번호를 쓰는 다른 유저 행에 맞는다.',
+    fix:'friendNo들을 샤드별로 묶어 각 샤드 커넥션에서 IN 조회로 한 번씩 부른다. 그러면 N+1(PERF-001)도 같이 없어진다.',
+    chain:[
+      {t:'ok',  h:'커넥션은 내 userNo로 열렸다', m:'OpenAsync(ctx.UserNo) → GameDb #3', n:'Application/FriendService.cs:58'},
+      {t:'bad', h:'루프 안 쿼리의 파라미터는 다른 유저다', m:'@user_no = friendNo', n:'Data/Shard/FriendRepository.cs:40'},
+      {t:'bad', h:'friendNo는 user_friend 조회 결과라 샤드가 제각각이다', m:'friendNo % 8 ≠ ctx.UserNo % 8 가능', n:'같은 커넥션을 그대로 재사용'}
+    ],
+    code:[
+      {no:64, t:'var profiles = new List<Profile>();'},
+      {no:65, t:'foreach (var friendNo in friendNos)'},
+      {no:66, t:'    profiles.Add(await _friendRepo.GetProfileAsync(conn, friendNo)); // conn = 내 샤드', hit:true},
+      {no:67, t:'return profiles;'}
+    ],
+    ask:'FriendService.GetFriendProfiles 가 내 샤드 커넥션으로 friendNo 를 조회한다. 친구가 다른 샤드일 때 실제로 어떤 결과가 나오는지와, 샤드별로 묶어 조회하도록 고치는 방법을 알려줘.'
+  },
+  {
+    id:'F3', rule:'SHARD-003', entry:'mail-receive',
+    what:'한 트랜잭션 안에서 GameDb 샤드와 LogDb 두 커넥션이 열린다',
+    where:'Application/MailService.cs:88', symbol:'GameServer.Application.MailService.ReceiveAllAsync',
+    conf:'확실', ignored:false,
+    why:'GameDb 트랜잭션이 커밋되기 전에 LogDb에 INSERT가 실행된다. GameDb 커밋이 실패하면 받은 적 없는 우편의 지급 로그만 남는다. 반대로 로그 INSERT가 실패하면 예외가 트랜잭션을 되돌린다.',
+    fix:'로그는 트랜잭션 밖으로 빼거나(커밋 성공 후 발행), 실패해도 무시되는 큐로 넘긴다.',
+    chain:[
+      {t:'ok',  h:'트랜잭션 시작', m:'await using var tx = await conn.BeginTransactionAsync()', n:'Application/MailService.cs:79 · GameDb #3'},
+      {t:'bad', h:'트랜잭션 안에서 다른 커넥션이 열린다', m:'ILogConnectionFactory.OpenAsync() → LogDb', n:'Application/MailService.cs:88'},
+      {t:'bad', h:'커밋은 GameDb 것 하나뿐', m:'tx.CommitAsync() — LogDb 쪽은 되돌릴 수단이 없다', n:'Application/MailService.cs:94'}
+    ],
+    code:[
+      {no:86, t:'    await _mailRepo.MarkReceivedAsync(conn, tx, userNo, mailIds);'},
+      {no:87, t:'    await _itemRepo.AddItemsAsync(conn, tx, userNo, rewards);'},
+      {no:88, t:'    await using var logConn = await _logFactory.OpenAsync();   // 다른 DB', hit:true},
+      {no:89, t:'    await _logRepo.WriteRewardLogAsync(logConn, userNo, rewards);', hit:true},
+      {no:90, t:'    await tx.CommitAsync();'}
+    ],
+    ask:'MailService.ReceiveAllAsync 가 GameDb 트랜잭션 안에서 LogDb 커넥션을 연다. 커밋 실패 시 남는 데이터 불일치를 정리하고, 로그를 트랜잭션 밖으로 빼는 안전한 순서를 제안해줘.'
+  },
+  {
+    id:'F4', rule:'CONN-002', entry:null,
+    what:'GameDbContext가 Singleton으로 등록되어 있다',
+    where:'Program.cs:37', symbol:'Program.<Main>$',
+    conf:'확실', ignored:false,
+    why:'DbContext는 스레드 안전하지 않다. 동시 요청이 한 인스턴스를 공유하면 “A second operation started on this context” 예외와 데이터 섞임이 생긴다.',
+    fix:'AddScoped로 바꾼다. 백그라운드 작업에서 쓰고 있었다면 IServiceScopeFactory로 스코프를 직접 만든다.',
+    chain:[
+      {t:'bad', h:'시작 흐름에서 읽은 등록', m:'services.AddSingleton<GameDbContext>()', n:'Program.cs:37'},
+      {t:'bad', h:'주입받는 곳', m:'ShardItemRepository, ShardMailRepository 외 4곳', n:'모두 Scoped 서비스'}
+    ],
+    code:[
+      {no:35, t:'builder.Services.AddScoped<IItemService, ItemService>();'},
+      {no:36, t:'builder.Services.AddScoped<IShardConnectionFactory, ShardConnectionFactory>();'},
+      {no:37, t:'builder.Services.AddSingleton<GameDbContext>();   // ← Scoped 여야 한다', hit:true},
+      {no:38, t:'builder.Services.AddSingleton<ILogConnectionFactory, LogConnectionFactory>();'}
+    ],
+    ask:'Program.cs:37 에서 GameDbContext 가 Singleton 으로 등록되어 있다. 이 인스턴스를 주입받는 곳들을 확인하고 Scoped 로 바꿀 때 깨지는 곳이 있는지 알려줘.'
+  },
+  {
+    id:'F5', rule:'RW-001', entry:'ranking-top',
+    what:'읽기 전용으로 표시한 GameDbReplica에서 UPDATE를 실행한다',
+    where:'Data/RankingRepository.cs:74', symbol:'GameServer.Data.RankingRepository.UpdateSnapshotAsync',
+    conf:'확실', ignored:false,
+    why:'설정에서 GameDbReplica는 readOnly다. 복제본에 쓰기를 하면 런타임 오류이거나, 더 나쁘게는 복제로 덮여 조용히 사라진다.',
+    fix:'스냅샷 갱신은 마스터 커넥션으로 연다. 조회 경로와 갱신 경로가 같은 팩토리를 쓰고 있어 생긴 실수로 보인다.',
+    chain:[
+      {t:'bad', h:'복제본 커넥션', m:'IReplicaConnectionFactory.OpenAsync() → GameDbReplica', n:'Data/RankingRepository.cs:70'},
+      {t:'bad', h:'쓰기 쿼리', m:'UPDATE ranking_snapshot SET ...', n:'Data/RankingRepository.cs:74'}
+    ],
+    code:[
+      {no:70, t:'await using var conn = await _replicaFactory.OpenAsync();'},
+      {no:74, t:'await conn.ExecuteAsync("UPDATE ranking_snapshot SET rank = @rank WHERE user_no = @userNo", p);', hit:true}
+    ],
+    ask:'RankingRepository.UpdateSnapshotAsync 가 읽기 전용 복제본 커넥션으로 UPDATE 를 실행한다. 이 경로가 실제로 호출되는지, 마스터 팩토리로 바꿀 때 영향 범위를 알려줘.'
+  },
+  {
+    id:'F6', rule:'SHARD-001', entry:'ranking-top',
+    what:'샤드 8개를 순회하며 같은 쿼리를 실행한다 (8회)',
+    where:'Application/RankingService.cs:31', symbol:'GameServer.Application.RankingService.BuildTop100Async',
+    conf:'확실', ignored:true,
+    why:'랭킹 집계라 전 샤드를 도는 것이 의도로 보인다. 다만 요청마다 8커넥션을 열고 있어, 캐시나 배치로 옮길 후보로는 남겨둔다.',
+    fix:'의도된 것으로 표시함 — 2026-08-31, “랭킹 집계는 전 샤드 순회가 맞다”.',
+    chain:[
+      {t:'ok', h:'의도된 것으로 표시된 항목', m:'.tracelens/db-baseline.json 에 기록', n:'심볼 기준이라 줄이 밀려도 유지된다'},
+      {t:'bad', h:'그래도 남겨두는 이유', m:'요청 1건 = 커넥션 8개', n:'캐시·배치로 옮길 후보'}
+    ],
+    code:[
+      {no:30, t:'for (var shard = 0; shard < ShardCount; shard++)'},
+      {no:31, t:'    top.AddRange(await _rankingRepo.LoadTopAsync(shard, 100));', hit:true}
+    ],
+    ask:'RankingService.BuildTop100Async 가 매 요청마다 8개 샤드를 순회한다. 캐시나 주기적 스냅샷으로 옮길 때의 설계안을 제안해줘.'
+  },
+  {
+    id:'F7', rule:'TX-001', entry:'mail-receive',
+    what:'트랜잭션 안에서 외부 HTTP 호출(재화 지급 API)을 기다린다',
+    where:'Application/MailService.cs:84', symbol:'GameServer.Application.MailService.ReceiveAllAsync',
+    conf:'확실', ignored:false,
+    why:'행 락을 잡은 채로 외부 응답을 기다린다. 상대가 느려지면 그대로 DB 커넥션이 고갈된다.',
+    fix:'지급 호출을 커밋 이후로 옮기거나, 먼저 호출하고 결과를 받아 트랜잭션 안에서는 DB만 만진다.',
+    chain:[
+      {t:'ok',  h:'트랜잭션 시작', m:'BeginTransactionAsync()', n:'MailService.cs:79'},
+      {t:'bad', h:'외부 호출', m:'await _billingClient.GrantAsync(...)  (HttpClient)', n:'MailService.cs:84 · 타임아웃 30초'}
+    ],
+    code:[
+      {no:83, t:'    // 커밋 전에 외부 API를 기다린다'},
+      {no:84, t:'    await _billingClient.GrantAsync(userNo, rewards);', hit:true},
+      {no:85, t:'    await _mailRepo.MarkReceivedAsync(conn, tx, userNo, mailIds);'}
+    ],
+    ask:'MailService.ReceiveAllAsync 의 트랜잭션 안에 있는 HttpClient 호출을 밖으로 빼려고 한다. 실패·중복 지급을 막는 순서를 제안해줘.'
+  },
+  {
+    id:'F8', rule:'PERF-001', entry:'friend-list',
+    what:'반복문 안에서 쿼리를 실행한다 (친구 수만큼, 최대 50회)',
+    where:'Application/FriendService.cs:66', symbol:'GameServer.Application.FriendService.GetFriendProfiles',
+    conf:'확실', ignored:false,
+    why:'친구 목록 조회 1회 + 프로필 조회 N회. 상한은 user_friend의 최대 50건이다.',
+    fix:'샤드별로 묶어 IN 조회 한 번씩. SHARD-002(F2)와 같은 자리라 한 번에 고쳐진다.',
+    chain:[
+      {t:'bad', h:'반복 구간', m:'foreach (var friendNo in friendNos)', n:'FriendService.cs:65'},
+      {t:'bad', h:'안에서 실행되는 쿼리', m:'SELECT ... FROM user_profile WHERE user_no = @user_no', n:'FriendRepository.cs:40'}
+    ],
+    code:[
+      {no:65, t:'foreach (var friendNo in friendNos)'},
+      {no:66, t:'    profiles.Add(await _friendRepo.GetProfileAsync(conn, friendNo));', hit:true}
+    ],
+    ask:'FriendService.GetFriendProfiles 의 N+1 을 샤드별 IN 조회로 바꾸는 코드를 제안해줘.'
+  },
+  {
+    id:'F9', rule:'CONN-001', entry:null,
+    what:'using 없이 연 커넥션 — Dispose 호출도 없다',
+    where:'Data/LegacyStatRepository.cs:22', symbol:'GameServer.Data.LegacyStatRepository.LoadAllAsync',
+    conf:'확실', ignored:false,
+    why:'예외가 나면 커넥션이 풀로 돌아가지 않는다. 이 메서드는 관리자 통계 화면에서 주기적으로 호출된다.',
+    fix:'await using 으로 감싼다.',
+    chain:[
+      {t:'bad', h:'열기만 하고 감싸지 않았다', m:'var conn = await _factory.OpenAsync();', n:'LegacyStatRepository.cs:22'},
+      {t:'bad', h:'메서드 안에 Dispose/Close 없음', m:'예외 경로에서 누수', n:'catch 블록에도 없음'}
+    ],
+    code:[
+      {no:22, t:'var conn = await _factory.OpenAsync();      // await using 이 아니다', hit:true},
+      {no:23, t:'var rows = await conn.QueryAsync<StatRow>(Sql.LoadAll);'},
+      {no:24, t:'return rows.ToList();'}
+    ],
+    ask:'LegacyStatRepository.LoadAllAsync 의 커넥션 누수를 고치고, 같은 패턴이 이 리포지터리에 더 있는지 확인해줘.'
+  },
+  {
+    id:'F10', rule:'PERF-002', entry:null,
+    what:'비동기 쿼리를 .Result로 기다린다',
+    where:'Application/ShopService.cs:48', symbol:'GameServer.Application.ShopService.Buy',
+    conf:'확실', ignored:false,
+    why:'스레드풀 스레드를 막는다. 구매는 이벤트 때 몰리는 경로라 커넥션 고갈로 이어지기 쉽다.',
+    fix:'메서드를 async로 바꾸고 await로 고친다. 호출부까지 async를 이어야 한다.',
+    chain:[
+      {t:'bad', h:'동기 대기', m:'_shopRepo.GetProductAsync(id).Result', n:'ShopService.cs:48'},
+      {t:'bad', h:'호출부', m:'ShopController.Buy — 이미 async 이라 이어붙이기 쉽다', n:'Api/Controllers/ShopController.cs:29'}
+    ],
+    code:[
+      {no:48, t:'var product = _shopRepo.GetProductAsync(productId).Result;', hit:true}
+    ],
+    ask:'ShopService.Buy 의 .Result 를 await 로 바꿀 때 함께 async 로 고쳐야 하는 호출부를 모두 알려줘.'
+  },
+  {
+    id:'F11', rule:'SEC-001', entry:null,
+    what:'문자열 보간으로 만든 SQL에 검색어가 그대로 들어간다',
+    where:'Data/NoticeRepository.cs:31', symbol:'GameServer.Data.NoticeRepository.SearchAsync',
+    conf:'확실', ignored:false,
+    why:'keyword는 관리자 화면 입력에서 온다. 상수 결합이 아니라 외부 값 결합이라 주입이 가능하다.',
+    fix:'파라미터로 넘긴다. LIKE는 @keyword 로 두고 와일드카드는 값 쪽에 붙인다.',
+    chain:[
+      {t:'bad', h:'외부 입력', m:'keyword ← AdminNoticeController.Search([FromQuery] string keyword)', n:'Api/Controllers/AdminNoticeController.cs:22'},
+      {t:'bad', h:'문자열 보간으로 SQL 구성', m:'$"... WHERE title LIKE \'%{keyword}%\'"', n:'NoticeRepository.cs:31'}
+    ],
+    code:[
+      {no:31, t:'var sql = $"SELECT * FROM notice WHERE title LIKE \'%{keyword}%\' ORDER BY id DESC";', hit:true},
+      {no:32, t:'return await conn.QueryAsync<Notice>(sql);'}
+    ],
+    ask:'NoticeRepository.SearchAsync 의 문자열 보간 SQL 을 파라미터 쿼리로 바꿔주고, 같은 패턴이 다른 리포지터리에도 있는지 확인해줘.'
+  },
+  {
+    id:'F12', rule:'TX-002', entry:null,
+    what:'예외 경로에서 커밋도 롤백도 하지 않는다',
+    where:'Application/InventoryService.cs:57', symbol:'GameServer.Application.InventoryService.MergeAsync',
+    conf:'추정', ignored:false,
+    why:'catch에서 로그만 남기고 반환한다. using 이 트랜잭션을 되돌리기는 하지만, 그 뒤 같은 커넥션으로 이어지는 쿼리가 있어 의도를 확신할 수 없다.',
+    fix:'catch에서 명시적으로 롤백하고 반환하거나, 커넥션을 새로 연다.',
+    chain:[
+      {t:'bad', h:'예외 경로', m:'catch (Exception ex) { _log.Error(ex); return false; }', n:'InventoryService.cs:57'},
+      {t:'ok',  h:'다만 using 이 있어 되돌기는 한다', m:'await using var tx = ...', n:'확신하지 못해 “추정”으로 남긴다'}
+    ],
+    code:[
+      {no:55, t:'catch (Exception ex)'},
+      {no:56, t:'{'},
+      {no:57, t:'    _log.Error(ex);   // 롤백/커밋 없이 반환', hit:true},
+      {no:58, t:'    return false;'},
+      {no:59, t:'}'}
+    ],
+    ask:'InventoryService.MergeAsync 의 catch 경로에서 트랜잭션이 실제로 어떻게 정리되는지 확인하고, 명시적 롤백이 필요한지 판단해줘.'
+  },
+  {
+    id:'F13', rule:'SHARD-004', entry:null,
+    what:'샤드 번호 3이 상수로 들어간다',
+    where:'Api/Controllers/DevToolController.cs:64', symbol:'GameServer.Api.DevToolController.DumpUser',
+    conf:'확실', ignored:false,
+    why:'개발 도구 컨트롤러라 의도일 수 있으나, 운영 빌드에도 라우트가 열려 있다.',
+    fix:'의도라면 규칙을 이 심볼에서 끄고, 아니라면 userNo에서 샤드를 계산한다. 운영 빌드에서 라우트를 막는 것이 먼저다.',
+    chain:[
+      {t:'bad', h:'상수 인자', m:'OpenShardAsync(3)', n:'DevToolController.cs:64'},
+      {t:'bad', h:'라우트가 조건 없이 열려 있다', m:'[HttpGet("dev/dump-user")]', n:'#if DEBUG 없음'}
+    ],
+    code:[
+      {no:64, t:'await using var conn = await _factory.OpenShardAsync(3);   // 샤드 상수', hit:true}
+    ],
+    ask:'DevToolController.DumpUser 가 샤드 3 을 상수로 연다. 운영 빌드에서 이 라우트가 노출되는지 확인하고 막는 방법을 알려줘.'
+  },
+  {
+    id:'F14', rule:'IDX-001', entry:'mail-receive',
+    what:'user_mail.expire_at 조건에 맞는 인덱스가 schema.sql에 없다',
+    where:'Data/Shard/MailRepository.cs:52', symbol:'GameServer.Data.Shard.MailRepository.LoadReceivableAsync',
+    conf:'추정', ignored:false,
+    why:'db/schema/user_mail.sql 의 인덱스는 (user_no), (user_no, state) 두 개다. expire_at 범위 조건은 user_no로 좁힌 뒤 필터가 된다 — 우편이 많은 유저에서만 느려진다.',
+    fix:'실제 계획은 DB에서 확인해야 한다. 이 도구는 “스키마에 없다”까지만 말한다.',
+    chain:[
+      {t:'bad', h:'조회 조건', m:'WHERE user_no = @user_no AND state = 0 AND expire_at > NOW()', n:'MailRepository.cs:52'},
+      {t:'ok',  h:'스키마의 인덱스', m:'PRIMARY(mail_id), KEY(user_no), KEY(user_no, state)', n:'db/schema/user_mail.sql:14'}
+    ],
+    code:[
+      {no:52, t:'const string Sql = "SELECT * FROM user_mail WHERE user_no=@user_no AND state=0 AND expire_at>NOW()";', hit:true}
+    ],
+    ask:'user_mail 의 expire_at 조건이 인덱스를 타지 못하는 것 같다. 현재 스키마에서 추가할 인덱스와 그 영향(쓰기 비용)을 정리해줘.'
+  }
+];
+
+function finding(id){ for (var i=0;i<FINDINGS.length;i++) if (FINDINGS[i].id===id) return FINDINGS[i]; return null; }
+function findingsOf(entryId){ var r=[]; for (var i=0;i<FINDINGS.length;i++) if (FINDINGS[i].entry===entryId) r.push(FINDINGS[i]); return r; }
+
+var FLOWS = [
+  {
+    id:'item-use', method:'POST', route:'/api/item/use', title:'ItemController.UseItem',
+    file:'Api/Controllers/ItemController.cs:41', conns:2, ds:['shard','log'],
+    stages:[
+      {label:'요청', cards:[
+        {title:'ItemController.UseItem(ItemUseRequest req)', sub:'[Authorize] · 토큰 userNo = ctx.User.UserNo', loc:'Api/Controllers/ItemController.cs:41'}
+      ]},
+      {label:'샤드 키', cards:[
+        {title:'샤드 키 = req.UserNo', tone:'bad', f:'F1',
+         sub:'요청 본문에서 온 값을 그대로 쓴다. 토큰의 userNo와 대조하는 코드가 없다.', loc:'Api/Contracts/ItemUseRequest.cs:9'}
+      ]},
+      {label:'커넥션', cards:[
+        {title:'IShardConnectionFactory.OpenAsync(userNo)', tags:['shard:GameDb #(userNo % 8)'],
+         sub:'샤드 번호는 런타임에 정해진다. 이 화면에서는 “키가 무엇인지”까지만 확정한다.', loc:'Data/Shard/ShardConnectionFactory.cs:28'}
+      ]},
+      {label:'트랜잭션', cards:[
+        {title:'BeginTransactionAsync()  ·  커넥션 1개', tone:'ok', tags:['tx:쿼리 3개'],
+         sub:'트랜잭션 안에서 열리는 다른 커넥션은 없다.', loc:'Application/ItemService.cs:60'}
+      ]},
+      {label:'쿼리', cards:[
+        {title:'user_item 차감', tags:['shard:GameDb','write:UPDATE'], loc:'Data/Shard/ItemRepository.cs:71',
+         sql:'<span class="kw">UPDATE</span> user_item <span class="kw">SET</span> count = count - <span class="par">@count</span>\n <span class="kw">WHERE</span> user_no = <span class="par">@user_no</span> <span class="kw">AND</span> item_id = <span class="par">@item_id</span> <span class="kw">AND</span> count &gt;= <span class="par">@count</span>'},
+        {title:'user_currency 지급', tags:['shard:GameDb','write:UPDATE'], loc:'Data/Shard/CurrencyRepository.cs:44',
+         sql:'<span class="kw">UPDATE</span> user_currency <span class="kw">SET</span> gold = gold + <span class="par">@gold</span> <span class="kw">WHERE</span> user_no = <span class="par">@user_no</span>'},
+        {title:'item_log 기록  ·  트랜잭션 밖', tags:['log:LogDb','write:INSERT'], loc:'Data/Log/LogRepository.cs:19',
+         sub:'커밋 이후에 실행된다 — SHARD-003에 걸리지 않는다.',
+         sql:'<span class="kw">INSERT INTO</span> item_log (user_no, item_id, delta, at) <span class="kw">VALUES</span> (<span class="par">@user_no</span>, <span class="par">@item_id</span>, <span class="par">@delta</span>, NOW())'}
+      ]}
+    ]
+  },
+  {
+    id:'friend-list', method:'GET', route:'/api/friend/list', title:'FriendController.List',
+    file:'Api/Controllers/FriendController.cs:27', conns:1, ds:['shard'],
+    stages:[
+      {label:'요청', cards:[
+        {title:'FriendController.List()', sub:'[Authorize] · 본문에 userNo 없음', loc:'Api/Controllers/FriendController.cs:27'}
+      ]},
+      {label:'샤드 키', cards:[
+        {title:'샤드 키 = ctx.User.UserNo', tone:'ok', sub:'인증 토큰에서 왔다. 검증된 출처다.', loc:'Application/FriendService.cs:58'}
+      ]},
+      {label:'커넥션', cards:[
+        {title:'OpenAsync(ctx.UserNo)  →  내 샤드', tags:['shard:GameDb'], sub:'이 커넥션 하나로 아래 쿼리가 전부 실행된다.', loc:'Application/FriendService.cs:58'}
+      ]},
+      {label:'쿼리', cards:[
+        {title:'친구 번호 목록', tags:['shard:GameDb','read:SELECT'], tone:'ok', loc:'Data/Shard/FriendRepository.cs:26',
+         sql:'<span class="kw">SELECT</span> friend_no <span class="kw">FROM</span> user_friend <span class="kw">WHERE</span> user_no = <span class="par">@user_no</span>'},
+        {title:'반복문 안에서 친구 프로필 조회 (최대 50회)', tone:'bad', f:'F2', tags:['shard:GameDb','read:SELECT'],
+         sub:'커넥션은 내 샤드인데 파라미터는 friendNo다 — 다른 샤드의 유저는 이 커넥션에 없다. N+1(PERF-001)도 같은 자리다.',
+         loc:'Application/FriendService.cs:66',
+         sql:'<span class="kw">SELECT</span> * <span class="kw">FROM</span> user_profile <span class="kw">WHERE</span> user_no = <span class="par">@user_no</span>   <span class="par">-- @user_no = friendNo</span>'}
+      ]}
+    ]
+  },
+  {
+    id:'mail-receive', method:'POST', route:'/api/mail/receive', title:'MailController.ReceiveAll',
+    file:'Api/Controllers/MailController.cs:33', conns:2, ds:['shard','log'],
+    stages:[
+      {label:'요청', cards:[
+        {title:'MailController.ReceiveAll()', sub:'[Authorize] · 우편 전체 수령', loc:'Api/Controllers/MailController.cs:33'}
+      ]},
+      {label:'샤드 키', cards:[
+        {title:'샤드 키 = ctx.User.UserNo', tone:'ok', sub:'토큰에서 왔다.', loc:'Application/MailService.cs:74'}
+      ]},
+      {label:'커넥션', cards:[
+        {title:'OpenAsync(userNo)  →  GameDb 샤드', tags:['shard:GameDb'], loc:'Application/MailService.cs:74'},
+        {title:'LogConnectionFactory.OpenAsync()  →  LogDb', tone:'bad', f:'F3', tags:['log:LogDb'],
+         sub:'GameDb 트랜잭션이 아직 커밋되지 않은 상태에서 열린다.', loc:'Application/MailService.cs:88'}
+      ]},
+      {label:'트랜잭션', cards:[
+        {title:'BeginTransactionAsync()  ·  커넥션 2개가 걸쳐 있다', tone:'bad', f:'F3', tags:['tx:쿼리 4개 · 외부 호출 1개'],
+         sub:'분산 트랜잭션이 없으므로 한쪽만 반영될 수 있다.', loc:'Application/MailService.cs:79'},
+        {title:'트랜잭션 안에서 HTTP 호출', tone:'warn', f:'F7', tags:['tx:HttpClient'],
+         sub:'_billingClient.GrantAsync — 타임아웃 30초 동안 행 락을 잡고 있는다.', loc:'Application/MailService.cs:84'}
+      ]},
+      {label:'쿼리', cards:[
+        {title:'받을 수 있는 우편 조회', tags:['shard:GameDb','read:SELECT'], tone:'warn', f:'F14',
+         sub:'expire_at 조건에 맞는 인덱스가 스키마에 없다.', loc:'Data/Shard/MailRepository.cs:52',
+         sql:'<span class="kw">SELECT</span> * <span class="kw">FROM</span> user_mail <span class="kw">WHERE</span> user_no = <span class="par">@user_no</span> <span class="kw">AND</span> state = 0 <span class="kw">AND</span> expire_at &gt; NOW()'},
+        {title:'수령 처리 · 아이템 지급', tags:['shard:GameDb','write:UPDATE'], loc:'Data/Shard/MailRepository.cs:88'},
+        {title:'지급 로그 기록  ·  트랜잭션 안', tags:['log:LogDb','write:INSERT'], tone:'bad', f:'F3', loc:'Data/Log/LogRepository.cs:31'}
+      ]}
+    ]
+  },
+  {
+    id:'ranking-top', method:'GET', route:'/api/ranking/top', title:'RankingController.Top',
+    file:'Api/Controllers/RankingController.cs:19', conns:9, ds:['shard','replica','global'],
+    stages:[
+      {label:'요청', cards:[
+        {title:'RankingController.Top()', sub:'익명 허용 · 상위 100명', loc:'Api/Controllers/RankingController.cs:19'}
+      ]},
+      {label:'샤드 키', cards:[
+        {title:'샤드 키 없음 — 0..7 순회', tone:'warn', f:'F6',
+         sub:'집계라 의도로 보인다. “의도된 것으로 표시”가 되어 있다.', loc:'Application/RankingService.cs:30'}
+      ]},
+      {label:'커넥션', cards:[
+        {title:'샤드 8개 × 1  +  복제본 1  =  9개', tags:['shard:GameDb ×8','replica:GameDbReplica'],
+         sub:'요청 1건이 커넥션 9개를 연다.', loc:'Application/RankingService.cs:30'}
+      ]},
+      {label:'쿼리', cards:[
+        {title:'샤드별 상위 100 조회 (8회)', tags:['shard:GameDb','read:SELECT'], loc:'Data/RankingRepository.cs:41',
+         sql:'<span class="kw">SELECT</span> user_no, score <span class="kw">FROM</span> user_profile <span class="kw">ORDER BY</span> score <span class="kw">DESC</span> <span class="kw">LIMIT</span> 100'},
+        {title:'스냅샷 갱신 — 읽기 전용 복제본에 UPDATE', tone:'bad', f:'F5', tags:['replica:GameDbReplica','write:UPDATE'],
+         sub:'설정에서 readOnly로 표시한 데이터소스다.', loc:'Data/RankingRepository.cs:74',
+         sql:'<span class="kw">UPDATE</span> ranking_snapshot <span class="kw">SET</span> rank = <span class="par">@rank</span> <span class="kw">WHERE</span> user_no = <span class="par">@user_no</span>'}
+      ]}
+    ]
+  },
+  {
+    id:'account-login', method:'POST', route:'/api/account/login', title:'AccountController.Login',
+    file:'Api/Controllers/AccountController.cs:24', conns:2, ds:['global','shard'],
+    stages:[
+      {label:'요청', cards:[
+        {title:'AccountController.Login(LoginRequest req)', sub:'익명 허용 · deviceId + 서명', loc:'Api/Controllers/AccountController.cs:24'}
+      ]},
+      {label:'글로벌 조회', cards:[
+        {title:'account 조회로 userNo를 얻는다', tone:'ok', tags:['global:GlobalDb','read:SELECT'], loc:'Data/Global/AccountRepository.cs:33',
+         sql:'<span class="kw">SELECT</span> user_no, state <span class="kw">FROM</span> account <span class="kw">WHERE</span> device_id = <span class="par">@device_id</span>'}
+      ]},
+      {label:'샤드 키', cards:[
+        {title:'샤드 키 = account.user_no', tone:'ok', sub:'DB에서 확인한 값이라 출처가 분명하다. 이 흐름이 모범 사례다.', loc:'Application/AccountService.cs:61'}
+      ]},
+      {label:'커넥션', cards:[
+        {title:'OpenAsync(userNo)  →  GameDb 샤드', tags:['shard:GameDb'], loc:'Application/AccountService.cs:62'}
+      ]},
+      {label:'쿼리', cards:[
+        {title:'유저 프로필 조회 · 마지막 접속 갱신', tone:'ok', tags:['shard:GameDb','read:SELECT','write:UPDATE'], loc:'Data/Shard/UserRepository.cs:29'}
+      ]}
+    ]
+  }
+];
+
+function flow(id){ for (var i=0;i<FLOWS.length;i++) if (FLOWS[i].id===id) return FLOWS[i]; return FLOWS[0]; }
+
+var TABLES = [
+  {name:'user_item',        ds:'shard'},
+  {name:'user_currency',    ds:'shard'},
+  {name:'user_mail',        ds:'shard'},
+  {name:'user_friend',      ds:'shard'},
+  {name:'user_profile',     ds:'shard'},
+  {name:'account',          ds:'global'},
+  {name:'shop_product',     ds:'global'},
+  {name:'notice',           ds:'global'},
+  {name:'ranking_snapshot', ds:'replica'},
+  {name:'item_log',         ds:'log'}
+];
+
+var MATRIX = [
+  {cls:'ShardItemRepository',   cells:{user_item:'RW', user_currency:'RW'}},
+  {cls:'ShardMailRepository',   cells:{user_mail:'RW', user_item:'W'},        flags:{user_mail:'F14'}},
+  {cls:'FriendRepository',      cells:{user_friend:'R', user_profile:'R'},    flags:{user_profile:'F2'}},
+  {cls:'RankingRepository',     cells:{user_profile:'R', ranking_snapshot:'RW'}, flags:{ranking_snapshot:'F5', user_profile:'F6'}},
+  {cls:'AccountRepository',     cells:{account:'RW', user_profile:'RW'}},
+  {cls:'ShopRepository',        cells:{shop_product:'R', user_currency:'W'}},
+  {cls:'NoticeRepository',      cells:{notice:'R'},                            flags:{notice:'F11'}},
+  {cls:'LogRepository',         cells:{item_log:'W'}},
+  {cls:'LegacyStatRepository',  cells:{user_profile:'R'},                      flags:{user_profile:'F9'}}
+];
+
+var TXS = [
+  {
+    id:'tx-mail', name:'MailService.ReceiveAllAsync', loc:'Application/MailService.cs:79', tone:'bad',
+    steps:[
+      {k:'conn',   t:'커넥션 열기 — GameDb 샤드', m:'OpenAsync(userNo)'},
+      {k:'',       t:'BeginTransactionAsync()', m:'IsolationLevel 기본값'},
+      {k:'query',  t:'SELECT user_mail (받을 수 있는 우편)', m:'MailRepository.cs:52'},
+      {k:'ext',    t:'HTTP — _billingClient.GrantAsync()', m:'타임아웃 30초 · TX-001'},
+      {k:'query',  t:'UPDATE user_mail (수령 처리)', m:'MailRepository.cs:88'},
+      {k:'conn',   t:'커넥션 열기 — LogDb', m:'다른 데이터소스 · SHARD-003'},
+      {k:'query',  t:'INSERT item_log', m:'LogRepository.cs:31'},
+      {k:'commit', t:'CommitAsync() — GameDb 것만', m:'LogDb 쓰기는 되돌릴 수단이 없다'}
+    ],
+    flags:[
+      {t:'bad',  x:'커넥션 2개(GameDb 샤드 · LogDb)에 걸쳐 있다 — SHARD-003', f:'F3'},
+      {t:'warn', x:'커밋 전에 외부 HTTP 응답을 30초까지 기다린다 — TX-001', f:'F7'}
+    ]
+  },
+  {
+    id:'tx-item', name:'ItemService.UseAsync', loc:'Application/ItemService.cs:60', tone:'ok',
+    steps:[
+      {k:'conn',   t:'커넥션 열기 — GameDb 샤드', m:'OpenAsync(userNo)'},
+      {k:'',       t:'BeginTransactionAsync()', m:''},
+      {k:'query',  t:'UPDATE user_item (차감)', m:'조건부 UPDATE로 음수 방지'},
+      {k:'query',  t:'UPDATE user_currency (지급)', m:''},
+      {k:'commit', t:'CommitAsync()', m:'커넥션 1개 · 외부 호출 없음'},
+      {k:'query',  t:'INSERT item_log — 커밋 이후', m:'트랜잭션 밖이라 걸리지 않는다'}
+    ],
+    flags:[{t:'ok', x:'커넥션 1개, 외부 호출 없음, 커밋 이후 로깅 — 이 모양이 기준이다'}]
+  },
+  {
+    id:'tx-inv', name:'InventoryService.MergeAsync', loc:'Application/InventoryService.cs:41', tone:'warn',
+    steps:[
+      {k:'conn',   t:'커넥션 열기 — GameDb 샤드', m:'OpenAsync(userNo)'},
+      {k:'',       t:'BeginTransactionAsync()', m:'await using'},
+      {k:'query',  t:'SELECT / UPDATE user_item (3회)', m:''},
+      {k:'',       t:'catch (Exception) — 로그만 남기고 return', m:'커밋·롤백 없음 · TX-002'}
+    ],
+    flags:[{t:'warn', x:'예외 경로에 명시적 커밋/롤백이 없다 — using이 되돌리기는 하지만 확신할 수 없어 “추정”이다', f:'F12'}]
+  }
+];
+
+/* ------------------------------------------------------------------ 상태 */
+
+var state = {
+  tab:'entries',
+  sub:'route',
+  entry:'item-use',
+  sel:{kind:'finding', id:'F1'},
+  onlyCertain:false,
+  showIgnored:true,
+  sevFilter:'all'
+};
+
+var $ = function(id){ return document.getElementById(id); };
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function sevLabel(s){ return s==='critical'?'치명':s==='warn'?'경고':s==='info'?'정보':'정상'; }
+function sevPill(s){ return '<span class="sev '+s+'">'+sevLabel(s)+'</span>'; }
+
+function visibleFindings(){
+  var out=[];
+  for (var i=0;i<FINDINGS.length;i++){
+    var f=FINDINGS[i], r=rule(f.rule);
+    if (state.onlyCertain && f.conf==='추정') continue;
+    if (!state.showIgnored && f.ignored) continue;
+    if (state.sevFilter!=='all' && r.sev!==state.sevFilter) continue;
+    out.push(f);
+  }
+  return out;
+}
+
+function counts(){
+  var c={critical:0,warn:0,info:0,ignored:0};
+  for (var i=0;i<FINDINGS.length;i++){
+    var f=FINDINGS[i];
+    if (f.ignored){ c.ignored++; continue; }
+    c[rule(f.rule).sev]++;
+  }
+  return c;
+}
+
+/* ------------------------------------------------------------------ 상단 */
+
+function renderTop(){
+  $('modeHint').textContent = 'DB에 닿는 모든 경로를 데이터소스·샤드 기준으로 세우고, 잘못 쓰인 곳을 규칙으로 잡는다.';
+  var subs=[['route','샤드 라우팅'],['map','접근 지도'],['tx','트랜잭션'],['check','점검 결과']];
+  var h='';
+  for (var i=0;i<subs.length;i++)
+    h+='<button class="chipbtn'+(state.sub===subs[i][0]?' active':'')+'" data-sub="'+subs[i][0]+'">'+subs[i][1]+'</button>';
+  h+='<span class="sepline"></span>';
+  h+='<button class="chipbtn'+(state.onlyCertain?' active':'')+'" data-toggle="onlyCertain">확실한 것만</button>';
+  h+='<button class="chipbtn'+(state.showIgnored?' active':'')+'" data-toggle="showIgnored">무시 항목 표시</button>';
+  h+='<span class="sepline"></span><button class="chipbtn">스키마 대조 켬</button>';
+  $('toolbarExtra').innerHTML=h;
+
+  var c=counts();
+  $('summaryLine').innerHTML =
+    '데이터소스 <b>4</b> · 샤드 <b>8</b> · DB 접근 지점 <b>63</b> · 테이블 <b>10</b> · 프로시저 <b>12</b> · 트랜잭션 <b>9</b>'
+    + ' &nbsp;·&nbsp; 점검 ' + sevPill('critical') + ' <b>' + c.critical + '</b> '
+    + sevPill('warn') + ' <b>' + c.warn + '</b> ' + sevPill('info') + ' <b>' + c.info + '</b> '
+    + '<span class="sev muted">무시 ' + c.ignored + '</span>';
+}
+
+/* ------------------------------------------------------------------ 좌측 */
+
+function renderSide(){
+  var tabs=$('sideTabs').children;
+  for (var i=0;i<tabs.length;i++) tabs[i].className = (tabs[i].getAttribute('data-tab')===state.tab)?'active':'';
+  var h='', i;
+
+  if (state.tab==='entries'){
+    $('sideTitle').textContent='진입점'; $('sideMeta').textContent='5개 · DB에 닿는 것만';
+    for (i=0;i<FLOWS.length;i++){
+      var fl=FLOWS[i], fs=findingsOf(fl.id), worst='ok';
+      for (var j=0;j<fs.length;j++){ var s=rule(fs[j].rule).sev; if (fs[j].ignored) continue; if (s==='critical') worst='critical'; else if (s==='warn'&&worst!=='critical') worst='warn'; }
+      var dsTags='';
+      for (var k=0;k<fl.ds.length;k++) dsTags+='<span class="ds-dot '+DS[fl.ds[k]].dot+'"></span>';
+      h+='<button class="side-item'+(state.entry===fl.id&&state.sub==='route'?' selected':'')+'" data-entry="'+fl.id+'">'
+        +'<span class="http '+fl.method.toLowerCase()+'">'+fl.method+'</span>'
+        +'<span class="grow">'+esc(fl.route)+'<span class="sub">'+esc(fl.title)+' · 커넥션 '+fl.conns+'</span></span>'
+        +dsTags+(worst==='ok'?'':' '+sevPill(worst))+'</button>';
+    }
+  } else if (state.tab==='datasources'){
+    $('sideTitle').textContent='데이터소스'; $('sideMeta').textContent='tracelens.config.json';
+    var order=['shard','global','replica','log','cache'];
+    for (i=0;i<order.length;i++){
+      var d=DS[order[i]];
+      h+='<button class="side-item'+(state.sel.kind==='ds'&&state.sel.id===d.id?' selected':'')+'" data-ds="'+d.id+'">'
+        +'<span class="ds-dot '+d.dot+'"></span>'
+        +'<span class="grow">'+esc(d.name)+'<span class="sub">'+esc(d.kind)+' · '+esc(d.desc)+'</span></span>'
+        +'<span class="count">'+d.access+'</span></button>';
+    }
+  } else if (state.tab==='tables'){
+    $('sideTitle').textContent='테이블 · 프로시저'; $('sideMeta').textContent='10개 · 코드에서 발견';
+    for (i=0;i<TABLES.length;i++){
+      var t=TABLES[i], users=[];
+      for (var m=0;m<MATRIX.length;m++) if (MATRIX[m].cells[t.name]) users.push(MATRIX[m].cls);
+      h+='<button class="side-item'+(state.sel.kind==='table'&&state.sel.id===t.name?' selected':'')+'" data-table="'+t.name+'">'
+        +'<span class="ds-dot '+DS[t.ds].dot+'"></span>'
+        +'<span class="grow">'+esc(t.name)+'<span class="sub">'+DS[t.ds].name+' · 사용 '+users.length+'곳</span></span></button>';
+    }
+  } else {
+    $('sideTitle').textContent='점검 규칙'; $('sideMeta').textContent='16개 중 걸린 것';
+    var byRule={};
+    for (i=0;i<FINDINGS.length;i++){ var f=FINDINGS[i]; (byRule[f.rule]=byRule[f.rule]||[]).push(f); }
+    var groups=[['critical','치명'],['warn','경고'],['info','정보']];
+    for (var g=0;g<groups.length;g++){
+      var wrote=false;
+      for (i=0;i<RULES.length;i++){
+        var r=RULES[i];
+        if (r.sev!==groups[g][0] || !byRule[r.id]) continue;
+        if (!wrote){ h+='<div class="side-group">'+groups[g][1]+'</div>'; wrote=true; }
+        h+='<button class="side-item'+(state.sel.kind==='rule'&&state.sel.id===r.id?' selected':'')+'" data-rule="'+r.id+'">'
+          +'<span class="grow"><span class="mono" style="color:#a9c4e0;font-size:11px">'+r.id+'</span>'
+          +'<span class="sub">'+esc(r.name)+'</span></span>'
+          +'<span class="count">'+byRule[r.id].length+'</span></button>';
+      }
+    }
+    h+='<div class="side-group">걸리지 않은 규칙</div>';
+    for (i=0;i<RULES.length;i++){
+      if (byRule[RULES[i].id]) continue;
+      h+='<button class="side-item" data-rule="'+RULES[i].id+'" style="opacity:.5">'
+        +'<span class="grow"><span class="mono" style="font-size:11px">'+RULES[i].id+'</span>'
+        +'<span class="sub">'+esc(RULES[i].name)+'</span></span><span class="count">0</span></button>';
+    }
+  }
+  $('sideList').innerHTML=h;
+}
+
+/* ------------------------------------------------------------------ 가운데 */
+
+function tagHtml(spec){
+  var p=spec.split(':'), cls=p[0], text=p.length>1?p[1]:p[0];
+  return '<span class="tag '+cls+'">'+esc(text)+'</span>';
+}
+
+function renderCrumbs(){
+  var h='', fl;
+  if (state.sub==='route'){
+    fl=flow(state.entry);
+    h='<button>DB 접근</button><span class="breadcrumb-separator">›</span><button>샤드 라우팅</button>'
+      +'<span class="breadcrumb-separator">›</span><span class="current">'+fl.method+' '+esc(fl.route)+'</span>';
+  } else if (state.sub==='map'){
+    h='<button>DB 접근</button><span class="breadcrumb-separator">›</span><span class="current">접근 지도 · 클래스 × 테이블</span>'
+      +'<span style="margin-left:auto;display:flex;gap:5px">'
+      +'<button class="chipbtn">쓰기만</button><button class="chipbtn">걸린 것만</button><button class="chipbtn active">전체</button></span>';
+  } else if (state.sub==='tx'){
+    h='<button>DB 접근</button><span class="breadcrumb-separator">›</span><span class="current">트랜잭션 3개</span>';
+  } else {
+    h='<button>DB 접근</button><span class="breadcrumb-separator">›</span><span class="current">점검 결과</span>'
+      +'<span style="margin-left:auto;display:flex;gap:5px">';
+    var fs=[['all','전체'],['critical','치명'],['warn','경고'],['info','정보']];
+    for (var i=0;i<fs.length;i++)
+      h+='<button class="chipbtn'+(state.sevFilter===fs[i][0]?' active':'')+'" data-sev="'+fs[i][0]+'">'+fs[i][1]+'</button>';
+    h+='</span>';
+  }
+  $('crumbs').innerHTML=h;
+}
+
+function renderNotice(){
+  var n=$('notice');
+  if (state.sub==='map'){
+    n.style.display='block';
+    n.innerHTML='테이블 10개 · 접근 클래스 9개라 전부 그렸다. 200개를 넘으면 “쓰기만 + 걸린 것만”으로 시작한다.';
+  } else if (state.sub==='route' && state.entry==='ranking-top'){
+    n.style.display='block';
+    n.innerHTML='이 진입점은 요청 1건에 커넥션 9개를 연다. 전 샤드 순회는 “의도된 것으로 표시”되어 경고에서 빠져 있다.';
+  } else n.style.display='none';
+}
+
+function renderRoute(){
+  var fl=flow(state.entry), h='';
+  h+='<div class="route-head"><span class="http '+fl.method.toLowerCase()+'">'+fl.method+'</span>'
+    +'<h3>'+esc(fl.route)+'</h3><span class="route-path">'+esc(fl.file)+'</span>'
+    +'<span style="margin-left:auto;display:flex;gap:5px;align-items:center">';
+  for (var d=0;d<fl.ds.length;d++) h+='<span class="tag '+DS[fl.ds[d]].tag+'">'+DS[fl.ds[d]].name+'</span>';
+  h+='<span class="tag">커넥션 '+fl.conns+'</span></span></div>';
+
+  for (var i=0;i<fl.stages.length;i++){
+    var st=fl.stages[i];
+    h+='<div class="stage"><div class="stage-label">'+esc(st.label)+'</div><div class="stage-cards">';
+    for (var j=0;j<st.cards.length;j++){
+      var c=st.cards[j], f=c.f?finding(c.f):null;
+      var tone=c.tone||'';
+      if (f && f.ignored) tone='';
+      var selected=(f && state.sel.kind==='finding' && state.sel.id===f.id) ? ' selected' : '';
+      h+='<button class="card '+tone+selected+'"'+(f?' data-finding="'+f.id+'"':'')+'>';
+      h+='<div class="card-top"><span class="card-title">'+esc(c.title)+'</span>';
+      if (c.tags) for (var t=0;t<c.tags.length;t++) h+=tagHtml(c.tags[t]);
+      if (f) h+= f.ignored ? '<span class="sev muted">무시됨 · '+f.rule+'</span>' : '<span class="sev '+rule(f.rule).sev+'">'+f.rule+'</span>';
+      h+='</div>';
+      if (c.sub) h+='<div class="card-sub">'+esc(c.sub)+'</div>';
+      if (c.sql) h+='<div class="sql">'+c.sql+'</div>';
+      if (c.loc) h+='<div class="loc">'+esc(c.loc)+'</div>';
+      h+='</button>';
+    }
+    h+='</div></div>';
+    if (i<fl.stages.length-1) h+='<div class="arrow">↓</div>';
+  }
+  return h;
+}
+
+function renderMap(){
+  var h='<div class="matrix-wrap"><table class="matrix"><thead><tr><th style="min-width:190px">클래스 · 테이블</th>';
+  for (var t=0;t<TABLES.length;t++)
+    h+='<th>'+esc(TABLES[t].name)+'<small>'+DS[TABLES[t].ds].name+'</small></th>';
+  h+='</tr></thead><tbody>';
+  for (var r=0;r<MATRIX.length;r++){
+    var row=MATRIX[r];
+    h+='<tr><th>'+esc(row.cls)+'</th>';
+    for (t=0;t<TABLES.length;t++){
+      var v=row.cells[TABLES[t].name];
+      if (!v){ h+='<td>·</td>'; continue; }
+      var fid=row.flags&&row.flags[TABLES[t].name];
+      var cls='cell '+v.toLowerCase()+(fid?' flag':'');
+      h+='<td>'+(fid?'<button class="'+cls+'" data-finding="'+fid+'" title="'+esc(rule(finding(fid).rule).name)+'">'+v+'</button>'
+                    :'<span class="'+cls+'">'+v+'</span>')+'</td>';
+    }
+    h+='</tr>';
+  }
+  h+='</tbody></table></div>';
+  h+='<div class="matrix-legend"><span><span class="cell r">R</span> 읽기</span><span><span class="cell w">W</span> 쓰기</span>'
+    +'<span><span class="cell rw">RW</span> 둘 다</span><span><span class="cell r flag">R</span> 규칙에 걸린 칸 — 누르면 상세로</span>'
+    +'<span>열 머리 아래 회색 글씨가 데이터소스다.</span></div>';
+  return h;
+}
+
+function renderTx(){
+  var h='';
+  for (var i=0;i<TXS.length;i++){
+    var tx=TXS[i];
+    h+='<div class="tx-card '+tx.tone+'"><div class="tx-head"><span class="name">'+esc(tx.name)+'</span>'
+      +'<span class="loc">'+esc(tx.loc)+'</span></div><div class="tx-steps">';
+    for (var s=0;s<tx.steps.length;s++)
+      h+='<div class="tx-step '+tx.steps[s].k+'">'+esc(tx.steps[s].t)
+        +(tx.steps[s].m?'<span class="meta">'+esc(tx.steps[s].m)+'</span>':'')+'</div>';
+    h+='</div>';
+    for (var f=0;f<tx.flags.length;f++){
+      var fg=tx.flags[f];
+      h+='<div class="tx-flag '+fg.t+'">'+esc(fg.x)
+        +(fg.f?' <button class="btn sm" data-finding="'+fg.f+'" style="margin-left:6px">상세</button>':'')+'</div>';
+    }
+    h+='</div>';
+  }
+  return h;
+}
+
+function renderCheck(){
+  var list=visibleFindings();
+  var h='<table class="findings"><thead><tr><th>규칙</th><th>심각도</th><th>내용</th><th>위치</th><th>확실도</th></tr></thead><tbody>';
+  for (var i=0;i<list.length;i++){
+    var f=list[i], r=rule(f.rule);
+    h+='<tr class="row'+(f.ignored?' ignored':'')+(state.sel.kind==='finding'&&state.sel.id===f.id?' selected':'')+'" data-finding="'+f.id+'">'
+      +'<td class="rule">'+f.rule+'</td>'
+      +'<td>'+(f.ignored?'<span class="sev muted">무시됨</span>':sevPill(r.sev))+'</td>'
+      +'<td class="what">'+esc(f.what)+'</td>'
+      +'<td class="where">'+esc(f.where)+'</td>'
+      +'<td class="conf">'+f.conf+'</td></tr>';
+  }
+  h+='</tbody></table>';
+  if (!list.length) h='<div class="panel-message" style="color:#8290a4;padding:20px">거른 조건에 맞는 항목이 없다.</div>';
+  return h;
+}
+
+function renderCenter(){
+  renderCrumbs(); renderNotice();
+  var titles={route:'샤드 라우팅', map:'접근 지도', tx:'트랜잭션', check:'점검 결과'};
+  $('graphTitle').textContent='DB 접근 · '+titles[state.sub];
+  $('graphMeta').textContent = state.sub==='route' ? flow(state.entry).title
+    : state.sub==='map' ? '클래스 9 × 테이블 10'
+    : state.sub==='tx' ? '트랜잭션 3개' : visibleFindings().length+'건';
+  $('graphShell').innerHTML =
+    state.sub==='route' ? renderRoute()
+    : state.sub==='map' ? renderMap()
+    : state.sub==='tx' ? renderTx() : renderCheck();
+}
+
+/* ------------------------------------------------------------------ 우측 */
+
+function codeBlock(f){
+  var h='<div class="code-block"><pre>';
+  for (var i=0;i<f.code.length;i++){
+    var l=f.code[i];
+    h+='<div class="code-line'+(l.hit?(rule(f.rule).sev==='info'?' hit-ok':' hit'):'')+'">'
+      +'<span class="code-no">'+l.no+'</span><span>'+esc(l.t)+'</span></div>';
+  }
+  return h+'</pre></div>';
+}
+
+function renderFindingDetail(f){
+  var r=rule(f.rule), h='';
+  $('detailKind').textContent='점검 항목 · '+f.rule;
+  h+='<div class="detail-title">'+(f.ignored?'<span class="sev muted">무시됨</span>':sevPill(r.sev))
+    +'<h3>'+esc(r.name)+'</h3></div>';
+  h+='<div class="detail-path">'+esc(f.symbol)+'<br>'+esc(f.where)+'</div>';
+  h+='<div class="detail-section"><h4>무엇이 걸렸나</h4><p>'+esc(f.what)+'</p></div>';
+  h+='<div class="detail-section"><h4>판정 근거 <span style="color:#7f8ea3;font-weight:600">· '+f.conf+'</span></h4><div class="chain">';
+  for (var i=0;i<f.chain.length;i++){
+    var c=f.chain[i];
+    h+='<div class="chain-step '+(c.t||'')+'">'+esc(c.h)
+      +'<span class="note mono">'+esc(c.m)+'</span>'
+      +'<span class="note">'+esc(c.n)+'</span></div>';
+  }
+  h+='</div></div>';
+  h+='<div class="detail-section"><h4>왜 문제인가</h4><p>'+esc(f.why)+'</p></div>';
+  h+='<div class="detail-section"><h4>코드</h4>'+codeBlock(f)+'</div>';
+  h+='<div class="detail-section"><h4>제안</h4><p>'+esc(f.fix)+'</p></div>';
+  h+='<div class="detail-actions">'
+    +'<button class="btn sm">코드 패널에서 열기</button>'
+    +'<button class="btn sm">호출 흐름에서 보기</button>'
+    +(f.ignored?'<button class="btn sm">무시 해제</button>':'<button class="btn sm">의도된 것으로 표시</button>')
+    +'<button class="btn sm">이 규칙 끄기</button></div>';
+  $('detailBody').innerHTML=h;
+  $('captured').innerHTML='파일: '+esc(f.where.split(':')[0])+'<br>라인: '+esc(f.where.split(':')[1])
+    +'<br>심볼: '+esc(f.symbol)+'<br>규칙: '+f.rule+' ('+r.name+')';
+  $('askText').value=f.ask;
+}
+
+function renderEntryDetail(fl){
+  var fs=findingsOf(fl.id), h='';
+  $('detailKind').textContent='진입점';
+  h+='<div class="detail-title"><span class="http '+fl.method.toLowerCase()+'">'+fl.method+'</span><h3>'+esc(fl.route)+'</h3></div>';
+  h+='<div class="detail-path">'+esc(fl.title)+'<br>'+esc(fl.file)+'</div>';
+  h+='<div class="detail-section"><h4>데이터소스</h4><div class="pill-list">';
+  for (var i=0;i<fl.ds.length;i++) h+='<span class="pill"><span class="ds-dot '+DS[fl.ds[i]].dot+'"></span>'+DS[fl.ds[i]].name+'</span>';
+  h+='<span class="pill">커넥션 '+fl.conns+'개</span></div></div>';
+  h+='<div class="detail-section"><h4>점검 결과 '+fs.length+'건</h4>';
+  if (!fs.length) h+='<p>걸린 규칙이 없다.</p>';
+  for (i=0;i<fs.length;i++)
+    h+='<div style="margin-bottom:6px"><button class="btn sm" data-finding="'+fs[i].id+'">'+fs[i].rule+'</button> '
+      +'<span style="color:#b8c5d7;font-size:11.5px">'+esc(fs[i].what)+'</span></div>';
+  h+='</div>';
+  h+='<div class="detail-actions"><button class="btn sm">호출 흐름으로 열기</button><button class="btn sm">전체 흐름도에서 보기</button></div>';
+  $('detailBody').innerHTML=h;
+  $('captured').innerHTML='진입점: '+fl.method+' '+esc(fl.route)+'<br>파일: '+esc(fl.file)+'<br>커넥션: '+fl.conns+'개';
+  $('askText').value=fl.method+' '+fl.route+' 가 여는 DB 커넥션과 트랜잭션 경계를 정리하고, 줄일 수 있는 부분이 있는지 알려줘.';
+}
+
+function renderTableDetail(name){
+  var t=null, i;
+  for (i=0;i<TABLES.length;i++) if (TABLES[i].name===name) t=TABLES[i];
+  var h='';
+  $('detailKind').textContent='테이블';
+  h+='<div class="detail-title"><span class="ds-dot '+DS[t.ds].dot+'"></span><h3>'+esc(t.name)+'</h3></div>';
+  h+='<div class="detail-path">'+DS[t.ds].name+' · '+DS[t.ds].kind+'</div>';
+  h+='<div class="detail-section"><h4>이 테이블을 쓰는 코드</h4>';
+  for (i=0;i<MATRIX.length;i++){
+    var v=MATRIX[i].cells[name];
+    if (!v) continue;
+    var fid=MATRIX[i].flags&&MATRIX[i].flags[name];
+    h+='<div style="margin-bottom:6px;font-size:11.5px;color:#c3d0e1">'
+      +'<span class="cell '+v.toLowerCase()+'">'+v+'</span> '+esc(MATRIX[i].cls)
+      +(fid?' <button class="btn sm" data-finding="'+fid+'">'+finding(fid).rule+'</button>':'')+'</div>';
+  }
+  h+='</div>';
+  h+='<div class="detail-section"><h4>스키마</h4><p>db/schema/'+esc(t.name)+'.sql 을 함께 읽어 컬럼·인덱스를 대조한다. '
+    +'스키마 파일을 설정하지 않으면 이 항목과 IDX 규칙은 표시되지 않는다.</p></div>';
+  h+='<div class="detail-actions"><button class="btn sm">이 테이블을 쓰는 흐름만 보기</button><button class="btn sm">DDL 열기</button></div>';
+  $('detailBody').innerHTML=h;
+  $('captured').innerHTML='테이블: '+esc(t.name)+'<br>데이터소스: '+DS[t.ds].name;
+  $('askText').value=t.name+' 테이블을 읽고 쓰는 코드를 모두 찾아, 컬럼을 추가할 때 고쳐야 할 곳을 정리해줘.';
+}
+
+function renderDsDetail(id){
+  var d=DS[id], h='';
+  $('detailKind').textContent='데이터소스';
+  h+='<div class="detail-title"><span class="ds-dot '+d.dot+'"></span><h3>'+esc(d.name)+'</h3></div>';
+  h+='<div class="detail-path">'+esc(d.kind)+' · '+esc(d.desc)+'</div>';
+  h+='<div class="detail-section"><h4>설정</h4><div class="code-block"><pre>'
+    +'<div class="code-line"><span>"'+d.name+'": { "kind": "'+(id==='shard'?'shard':'single')+'"'
+    +(id==='shard'?', "shardCount": 8, "shardBy": "userNo % 8"':'')
+    +(id==='replica'?', "readOnly": true':'')+(id==='log'?', "writeOnly": true':'')+' }</span></div>'
+    +'</pre></div></div>';
+  h+='<div class="detail-section"><h4>접근 지점</h4><p>코드에서 '+d.access+'곳이 이 데이터소스를 연다. 테이블 '+d.tables+'개.</p></div>';
+  h+='<div class="detail-actions"><button class="btn sm">이 데이터소스만 보기</button><button class="btn sm">설정 열기</button></div>';
+  $('detailBody').innerHTML=h;
+  $('captured').innerHTML='데이터소스: '+d.name+'<br>종류: '+d.kind;
+  $('askText').value=d.name+' 을 여는 코드들이 커넥션 수명을 어떻게 관리하는지 확인해줘.';
+}
+
+function renderRuleDetail(id){
+  var r=rule(id), h='', hits=[];
+  for (var i=0;i<FINDINGS.length;i++) if (FINDINGS[i].rule===id) hits.push(FINDINGS[i]);
+  $('detailKind').textContent='규칙';
+  h+='<div class="detail-title">'+sevPill(r.sev)+'<h3>'+esc(r.id)+'</h3></div>';
+  h+='<div class="detail-path">'+esc(r.name)+' · 판정 '+r.judge+'</div>';
+  h+='<div class="detail-section"><h4>규칙 설명</h4><p>'+esc(r.desc)+'</p></div>';
+  h+='<div class="detail-section"><h4>걸린 항목 '+hits.length+'건</h4>';
+  if (!hits.length) h+='<p>이 코드베이스에서는 걸린 항목이 없다.</p>';
+  for (i=0;i<hits.length;i++)
+    h+='<div style="margin-bottom:6px"><button class="btn sm" data-finding="'+hits[i].id+'">'+esc(hits[i].where)+'</button></div>';
+  h+='</div><div class="detail-actions"><button class="btn sm">이 규칙 끄기</button></div>';
+  $('detailBody').innerHTML=h;
+  $('captured').innerHTML='규칙: '+r.id+'<br>'+r.name;
+  $('askText').value=r.id+'('+r.name+') 규칙에 걸린 코드들을 한 번에 고치는 방법을 정리해줘.';
+}
+
+function renderDetail(){
+  var s=state.sel;
+  if (s.kind==='finding') renderFindingDetail(finding(s.id));
+  else if (s.kind==='entry') renderEntryDetail(flow(s.id));
+  else if (s.kind==='table') renderTableDetail(s.id);
+  else if (s.kind==='ds') renderDsDetail(s.id);
+  else if (s.kind==='rule') renderRuleDetail(s.id);
+}
+
+function renderAll(){ renderTop(); renderSide(); renderCenter(); renderDetail(); }
+
+/* ------------------------------------------------------------------ 이벤트 */
+
+document.addEventListener('click', function(e){
+  var el=e.target.closest ? e.target.closest('[data-finding],[data-entry],[data-table],[data-ds],[data-rule],[data-sub],[data-tab],[data-toggle],[data-sev],[data-mode]') : null;
+  if (!el) return;
+  var v;
+  if ((v=el.getAttribute('data-mode'))){
+    if (v!=='db'){ alert('목업에서는 “DB 접근” 보기만 그려 두었다. 나머지 네 보기는 기존 화면 그대로다.'); }
+    return;
+  }
+  if ((v=el.getAttribute('data-finding'))){ state.sel={kind:'finding',id:v}; renderAll(); return; }
+  if ((v=el.getAttribute('data-entry'))){ state.entry=v; state.sub='route'; state.sel={kind:'entry',id:v}; renderAll(); return; }
+  if ((v=el.getAttribute('data-table'))){ state.sel={kind:'table',id:v}; renderAll(); return; }
+  if ((v=el.getAttribute('data-ds'))){ state.sel={kind:'ds',id:v}; renderAll(); return; }
+  if ((v=el.getAttribute('data-rule'))){ state.sel={kind:'rule',id:v}; renderAll(); return; }
+  if ((v=el.getAttribute('data-sub'))){ state.sub=v; renderAll(); return; }
+  if ((v=el.getAttribute('data-tab'))){ state.tab=v; renderSide(); return; }
+  if ((v=el.getAttribute('data-sev'))){ state.sevFilter=v; renderAll(); return; }
+  if ((v=el.getAttribute('data-toggle'))){ state[v]=!state[v]; renderAll(); return; }
+});
+
+/* 스플리터 드래그 */
+(function(){
+  var ws=$('workspace'), drag=null;
+  ws.addEventListener('pointerdown', function(e){
+    var s=e.target.closest('.splitter'); if (!s) return;
+    drag={side:s.getAttribute('data-split'), x:e.clientX,
+          w:parseInt(getComputedStyle(ws).getPropertyValue(s.getAttribute('data-split')==='left'?'--col-left':'--col-right'),10)};
+    s.classList.add('dragging'); document.body.classList.add('resizing'); s.setPointerCapture(e.pointerId);
+  });
+  ws.addEventListener('pointermove', function(e){
+    if (!drag) return;
+    var d=e.clientX-drag.x, next=drag.side==='left'?drag.w+d:drag.w-d;
+    next=Math.max(200,Math.min(620,next));
+    ws.style.setProperty(drag.side==='left'?'--col-left':'--col-right', next+'px');
+  });
+  ws.addEventListener('pointerup', function(){
+    drag=null; document.body.classList.remove('resizing');
+    var els=ws.querySelectorAll('.splitter'); for (var i=0;i<els.length;i++) els[i].classList.remove('dragging');
+  });
+})();
+
+/* 아래 설계 메모의 규칙 표 */
+(function(){
+  var h='';
+  for (var i=0;i<RULES.length;i++){
+    var r=RULES[i];
+    h+='<tr><td class="id">'+r.id+'<br><span style="color:#8a97a9">'+esc(r.name)+'</span></td>'
+      +'<td>'+esc(r.desc)+'</td><td class="sevcol">'+sevPill(r.sev)+'</td>'
+      +'<td class="sevcol">'+(r.judge==='확실'?'<span class="sev ok">정적으로 확실</span>':'<span class="sev info">추정</span>')+'</td></tr>';
+  }
+  $('ruleTableBody').innerHTML=h;
+})();
+
+renderAll();
+</script>
+</body>
+</html>
