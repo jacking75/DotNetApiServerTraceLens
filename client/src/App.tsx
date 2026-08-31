@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { analyzeTarget, getEntryPoints, getGraph, getNamespaces } from './api/client'
+import { analyzeTarget, getEntryPoints, getGraph, getNamespaces, loadSavedGraph } from './api/client'
 import { AskPanel, type AskContext } from './components/AskPanel'
 import { Breadcrumb, type BreadcrumbItem } from './components/Breadcrumb'
 import { ClassDiagram } from './components/ClassDiagram'
@@ -196,9 +196,25 @@ export default function App() {
   }, [])
 
   // 새로고침해도 서버가 들고 있는 마지막 분석 결과로 화면을 되살린다.
+  // 서버가 재시작돼 메모리가 비어 있으면(run.ps1 재실행 등), 기억해 둔 경로의 저장된 분석 결과를 재분석 없이 조용히 불러온다.
   useEffect(() => {
-    void loadGraphData().catch(() => undefined)
-  }, [loadGraphData])
+    void (async () => {
+      try {
+        await loadGraphData()
+        return
+      } catch {
+        // GraphStore가 비어 있다. 아래에서 저장된 파일을 찾아본다.
+      }
+      if (!solutionPath.trim()) return
+      try {
+        const nextSummary = await loadSavedGraph(solutionPath.trim())
+        const nextGraph = await loadGraphData()
+        applyAnalyzedGraph(nextGraph, nextSummary)
+      } catch {
+        // 저장된 분석 결과도 없으면(첫 실행 등) 분석 전 상태로 그대로 둔다.
+      }
+    })()
+  }, [loadGraphData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * E-10 대규모 솔루션 기본값. 클래스가 많으면 멤버를 접고 의존을 끈 상태로 시작한다.
@@ -217,6 +233,19 @@ export default function App() {
     }))
   }, [graph, autoTuned])
 
+  /** 분석·불러오기 공통 후처리. D-7 재분석 후에도 보고 있던 보기와 선택을 유지한다(사라진 id만 정리한다). */
+  const applyAnalyzedGraph = useCallback((nextGraph: GraphDocument, nextSummary: AnalyzeSummary) => {
+    setSummary(nextSummary)
+    setSelection((current) => (current && selectionExists(nextGraph, current) ? current : null))
+    setFlowEntryId((current) => (current && nextGraph.nodes.some((node) => node.id === current) ? current : null))
+    setCallFlowEntry((current) => {
+      if (!current) return null
+      return nextGraph.entryPoints.find((item) => item.nodeId === current.nodeId) ?? null
+    })
+    setFocusStack((current) => current.filter((id) => nextGraph.nodes.some((node) => node.id === id)))
+    setFreshnessRevision((value) => value + 1)
+  }, [])
+
   const analyze = async () => {
     if (!solutionPath.trim()) return
     setBusy(true)
@@ -224,18 +253,25 @@ export default function App() {
     try {
       const nextSummary = await analyzeTarget(solutionPath.trim())
       const nextGraph = await loadGraphData()
-      setSummary(nextSummary)
-      // D-7 재분석 후에도 보고 있던 보기와 선택을 유지한다. 사라진 id만 정리한다.
-      setSelection((current) => (current && selectionExists(nextGraph, current) ? current : null))
-      setFlowEntryId((current) => (current && nextGraph.nodes.some((node) => node.id === current) ? current : null))
-      setCallFlowEntry((current) => {
-        if (!current) return null
-        return nextGraph.entryPoints.find((item) => item.nodeId === current.nodeId) ?? null
-      })
-      setFocusStack((current) => current.filter((id) => nextGraph.nodes.some((node) => node.id === id)))
-      setFreshnessRevision((value) => value + 1)
+      applyAnalyzedGraph(nextGraph, nextSummary)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '분석에 실패했다.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 다시 분석하지 않고, 이전에 저장한 `.tracelens/graph.json`을 그대로 불러온다. */
+  const loadSaved = async () => {
+    if (!solutionPath.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      const nextSummary = await loadSavedGraph(solutionPath.trim())
+      const nextGraph = await loadGraphData()
+      applyAnalyzedGraph(nextGraph, nextSummary)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '저장된 분석 결과를 불러오지 못했다.')
     } finally {
       setBusy(false)
     }
@@ -498,6 +534,15 @@ export default function App() {
           />
           <button type="button" className="browse" onClick={() => setPickerOpen(true)} disabled={busy}>
             찾아보기…
+          </button>
+          <button
+            type="button"
+            className="browse"
+            title="다시 분석하지 않고, 이전에 저장한 분석 결과를 그대로 불러온다."
+            disabled={busy || !solutionPath.trim()}
+            onClick={() => void loadSaved()}
+          >
+            불러오기
           </button>
           <button type="submit" className="primary" disabled={busy || !solutionPath.trim()}>
             {busy ? '처리 중…' : '분석'}

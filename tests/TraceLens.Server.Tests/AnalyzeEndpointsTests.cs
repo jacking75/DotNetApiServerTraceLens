@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using TraceLens.Analyzer;
 using TraceLens.Analyzer.Models;
@@ -30,6 +31,56 @@ public sealed class AnalyzeEndpointsTests
         Assert.Equal(previousTime, response.PreviousAnalyzedAt);
         Assert.Equal(currentTime, response.AnalyzedAt);
         Assert.Same(currentGraph, graphStore.Current);
+    }
+
+    [Fact]
+    public async Task LoadSavedAsync_ReadsGraphJsonWithoutReanalyzing()
+    {
+        var solutionDirectory = Path.Combine(Path.GetTempPath(), "tracelens-load-test-" + Guid.NewGuid().ToString("N"));
+        var solutionPath = Path.Combine(solutionDirectory, "Fixture.sln");
+        var tracelensDirectory = Path.Combine(solutionDirectory, ".tracelens");
+        Directory.CreateDirectory(tracelensDirectory);
+        try
+        {
+            var savedAt = DateTimeOffset.Parse("2026-08-11T18:00:00+09:00");
+            var savedGraph = CreateGraph(savedAt) with { SolutionPath = solutionPath };
+            await File.WriteAllTextAsync(
+                Path.Combine(tracelensDirectory, "graph.json"),
+                JsonSerializer.Serialize(savedGraph, GraphDocument.JsonOptions));
+            var graphStore = new GraphStore();
+
+            var result = await AnalyzeEndpoints.LoadSavedAsync(
+                new AnalyzeRequest(solutionPath),
+                graphStore,
+                CancellationToken.None);
+
+            var valueResult = Assert.IsAssignableFrom<IValueHttpResult>(result);
+            var response = Assert.IsType<AnalyzeResponse>(valueResult.Value);
+            Assert.Equal(savedAt, response.AnalyzedAt);
+            Assert.Null(response.PreviousAnalyzedAt);
+            Assert.Equal(savedAt, graphStore.Current?.AnalyzedAt);
+        }
+        finally
+        {
+            Directory.Delete(solutionDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LoadSavedAsync_ReturnsNotFound_WhenNoSavedGraphExists()
+    {
+        var solutionDirectory = Path.Combine(Path.GetTempPath(), "tracelens-load-missing-" + Guid.NewGuid().ToString("N"));
+        var solutionPath = Path.Combine(solutionDirectory, "Fixture.sln");
+        var graphStore = new GraphStore();
+
+        var result = await AnalyzeEndpoints.LoadSavedAsync(
+            new AnalyzeRequest(solutionPath),
+            graphStore,
+            CancellationToken.None);
+
+        var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status404NotFound, statusResult.StatusCode);
+        Assert.Null(graphStore.Current);
     }
 
     private static GraphDocument CreateGraph(DateTimeOffset analyzedAt) => new(

@@ -33,6 +33,15 @@ export function analyzeTarget(targetPath: string): Promise<AnalyzeSummary> {
   })
 }
 
+/** 다시 분석하지 않고, 이전에 저장한 `.tracelens/graph.json`을 그대로 불러온다. 저장된 파일이 없으면 실패한다. */
+export function loadSavedGraph(targetPath: string): Promise<AnalyzeSummary> {
+  return request('/api/analyze/load', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ solutionPath: targetPath }),
+  })
+}
+
 /** 분석 대상을 고르기 위해 로컬 디렉터리 목록을 읽는다. path를 비우면 드라이브 목록을 돌려준다. */
 export function browsePath(path?: string): Promise<BrowseResponse> {
   const query = path ? `?${new URLSearchParams({ path }).toString()}` : ''
