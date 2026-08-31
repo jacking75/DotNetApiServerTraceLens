@@ -80,6 +80,7 @@ const graph: GraphDocument = {
   ],
   edges: [{ from: 'App.Api.OrdersController.Create', to: 'App.Core.OrderService.CreateAsync' }],
   fileHashes: {},
+  startupFlow: null,
 }
 
 const relations = deriveRelations(graph.classes, collapseEdgesToClasses(graph))

@@ -18,6 +18,7 @@ public sealed class TraceLensAnalyzer(
     SolutionScanner solutionScanner,
     CallGraphWalker callGraphWalker,
     SnapshotHasher snapshotHasher,
+    StartupFlowScanner startupFlowScanner,
     ILogger<TraceLensAnalyzer> logger) : ITraceLensAnalyzer
 {
     public async Task<AnalysisResult> AnalyzeAsync(string targetPath, CancellationToken cancellationToken = default)
@@ -59,6 +60,7 @@ public sealed class TraceLensAnalyzer(
             solutionDirectory,
             nodes.Select(node => node.File).Concat(scan.Classes.Select(item => item.File)),
             cancellationToken);
+        var startupFlow = await startupFlowScanner.ScanAsync(loaded, config, solutionDirectory, cancellationToken);
 
         var document = new GraphDocument(
             GraphDocument.CurrentSchemaVersion,
@@ -70,7 +72,8 @@ public sealed class TraceLensAnalyzer(
             edges,
             fileHashes)
         {
-            RootDirectory = solutionDirectory
+            RootDirectory = solutionDirectory,
+            StartupFlow = startupFlow
         };
         var outputDirectory = Path.Combine(solutionDirectory, ".tracelens");
         Directory.CreateDirectory(outputDirectory);

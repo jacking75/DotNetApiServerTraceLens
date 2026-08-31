@@ -7,8 +7,9 @@ import { DetailPanel, type DetailActions } from './components/DetailPanel'
 import { FlowDiagram } from './components/FlowDiagram'
 import { FreshnessBadge } from './components/FreshnessBadge'
 import { PathPicker } from './components/PathPicker'
-import { EntryPointList, FlowSidePanel, NamespacePanel } from './components/SidePanels'
+import { EntryPointList, FlowSidePanel, NamespacePanel, StartupFlowSidePanel } from './components/SidePanels'
 import { Splitter } from './components/Splitter'
+import { StartupFlowView } from './components/StartupFlowView'
 import { ViewToolbar } from './components/ViewToolbar'
 import {
   buildClassDiagram,
@@ -20,6 +21,7 @@ import {
 } from './graph/classDiagram'
 import { buildEntryFlow, buildEntryMap } from './graph/flowMap'
 import { collapseEdgesToClasses, deriveRelations } from './graph/relations'
+import { findStartupStep } from './graph/startupFlow'
 import { getDrilldownWindow, getInitialWindow } from './graph/windowing'
 import {
   defaultColumns,
@@ -438,6 +440,10 @@ export default function App() {
       return crumbs
     }
 
+    if (viewMode === 'startup') {
+      return [{ key: 'startup', label: '시작 흐름' }]
+    }
+
     const crumbs: BreadcrumbItem[] = [{ key: 'map', label: '전체 진입점 지도' }]
     if (flowEntryId) {
       const entry = entryPoints.find((item) => item.nodeId === flowEntryId)
@@ -455,6 +461,10 @@ export default function App() {
 
     if (viewMode === 'classmap') {
       if (index === 0) setClassMap((current) => ({ ...current, focusOnly: false }))
+      return
+    }
+
+    if (viewMode === 'startup') {
       return
     }
 
@@ -483,6 +493,20 @@ export default function App() {
           { label: '심볼', value: item.id },
         ],
         clipboardText: `파일: ${item.file}\n라인: ${item.startLine}-${item.endLine}\n심볼: ${item.id}`,
+      }
+    }
+
+    if (selection.type === 'startupStep') {
+      const step = findStartupStep(graph, selection.key)
+      if (!step) return null
+      return {
+        nodeId: null,
+        lines: [
+          { label: '파일', value: step.file },
+          { label: '라인', value: `${step.line}` },
+          { label: '심볼', value: step.label },
+        ],
+        clipboardText: `파일: ${step.file}\n라인: ${step.line}\n심볼: ${step.label}`,
       }
     }
 
@@ -531,9 +555,13 @@ export default function App() {
       : '솔루션을 분석해야 한다'
     : viewMode === 'flowmap'
       ? flowView?.meta ?? '솔루션을 분석해야 한다'
-      : callFlowWindow
-        ? `${callFlowWindow.nodes.length} nodes · ${callFlowWindow.edges.length} edges`
-        : '진입점을 선택해야 한다'
+      : viewMode === 'startup'
+        ? graph?.startupFlow
+          ? `서비스 등록 ${graph.startupFlow.serviceSteps.length}개 · 미들웨어 ${graph.startupFlow.middlewareSteps.length}개`
+          : '솔루션을 분석해야 한다'
+        : callFlowWindow
+          ? `${callFlowWindow.nodes.length} nodes · ${callFlowWindow.edges.length} edges`
+          : '진입점을 선택해야 한다'
 
   return (
     <main>
@@ -629,11 +657,15 @@ export default function App() {
       <section className="workspace" ref={workspaceRef}>
         <aside className="panel side-panel">
           <header>
-            <span>{viewMode === 'classmap' ? '네임스페이스' : '진입점'}</span>
+            <span>{viewMode === 'classmap' ? '네임스페이스' : viewMode === 'startup' ? '시작 흐름' : '진입점'}</span>
             <small>
               {viewMode === 'classmap'
                 ? `${namespaces.length - hiddenNamespaces.size}/${namespaces.length} 표시`
-                : `${entryPoints.length}개`}
+                : viewMode === 'startup'
+                  ? graph?.startupFlow
+                    ? `${graph.startupFlow.serviceSteps.length + graph.startupFlow.middlewareSteps.length}단계`
+                    : ''
+                  : `${entryPoints.length}개`}
             </small>
           </header>
           {viewMode === 'callflow' && (
@@ -685,6 +717,11 @@ export default function App() {
               }}
             />
           )}
+          {viewMode === 'startup' && (
+            graph?.startupFlow
+              ? <StartupFlowSidePanel flow={graph.startupFlow} />
+              : <div className="panel-message">솔루션을 분석하면 시작 흐름이 표시된다.</div>
+          )}
         </aside>
 
         <Splitter
@@ -696,7 +733,15 @@ export default function App() {
 
         <section className="panel graph-area">
           <header>
-            <span>{viewMode === 'classmap' ? 'Class diagram' : viewMode === 'flowmap' ? 'Flow map' : 'Call flow'}</span>
+            <span>
+              {viewMode === 'classmap'
+                ? 'Class diagram'
+                : viewMode === 'flowmap'
+                  ? 'Flow map'
+                  : viewMode === 'startup'
+                    ? 'Startup flow'
+                    : 'Call flow'}
+            </span>
             <small>{graphMeta}</small>
           </header>
           <Breadcrumb items={breadcrumbs} onNavigate={navigateBreadcrumb} />
@@ -741,8 +786,16 @@ export default function App() {
               />
             </Suspense>
           )}
+          {viewMode === 'startup' && graph?.startupFlow && (
+            <StartupFlowView
+              flow={graph.startupFlow}
+              selection={selection}
+              onSelect={(key) => setSelection({ type: 'startupStep', key })}
+            />
+          )}
           {((viewMode === 'classmap' && !classDiagram) ||
-            (viewMode === 'flowmap' && !flowView)) && (
+            (viewMode === 'flowmap' && !flowView) ||
+            (viewMode === 'startup' && !graph?.startupFlow)) && (
             <div className="diagram-wrap"><div className="graph-shell"><div className="panel-message">솔루션을 분석하면 여기에 그려진다.</div></div></div>
           )}
         </section>
@@ -759,7 +812,15 @@ export default function App() {
             <header>
               <span>선택한 항목</span>
               <small>
-                {selection?.type === 'class' ? '클래스' : selection?.type === 'method' ? '메서드' : selection?.type === 'namespace' ? '네임스페이스' : ''}
+                {selection?.type === 'class'
+                  ? '클래스'
+                  : selection?.type === 'method'
+                    ? '메서드'
+                    : selection?.type === 'namespace'
+                      ? '네임스페이스'
+                      : selection?.type === 'startupStep'
+                        ? '시작 흐름 단계'
+                        : ''}
               </small>
             </header>
             <DetailPanel
@@ -782,6 +843,7 @@ export default function App() {
 function selectionExists(graph: GraphDocument, selection: Selection): boolean {
   if (selection.type === 'class') return graph.classes.some((item) => item.id === selection.key)
   if (selection.type === 'namespace') return graph.classes.some((item) => item.namespace === selection.key)
+  if (selection.type === 'startupStep') return findStartupStep(graph, selection.key) !== undefined
   return graph.nodes.some((node) => node.id === selection.key) ||
     graph.classes.some((item) => item.members.some((member) => memberKey(item.id, member) === selection.key))
 }

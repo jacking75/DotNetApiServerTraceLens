@@ -53,6 +53,7 @@ const graph: GraphDocument = {
     { from: 'D', to: 'F' },
   ],
   fileHashes: {},
+  startupFlow: null,
 }
 
 describe('포커스 기반 윈도잉', () => {

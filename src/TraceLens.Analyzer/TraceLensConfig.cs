@@ -20,6 +20,9 @@ public enum AnalysisScope
 /// <param name="IncludeInterfaces">
 /// 인터페이스 선언도 <c>classes</c>에 넣을지 여부. 끄면 스키마 v3까지의 동작(인터페이스 제외)으로 돌아간다.
 /// </param>
+/// <param name="IncludeStartupFlow">
+/// Program.cs를 훑어 DI 등록·미들웨어 파이프라인("시작 흐름")을 수집할지 여부. 끄면 그 보기가 빈 상태로 남는다.
+/// </param>
 public sealed record TraceLensConfig(
     IReadOnlyList<string> EntryPointAttributes,
     IReadOnlyList<KindRule> KindRules,
@@ -28,7 +31,8 @@ public sealed record TraceLensConfig(
     AnalysisScope AnalysisScope,
     bool IncludeObjectCreation,
     bool IncludeMembers,
-    bool IncludeInterfaces)
+    bool IncludeInterfaces,
+    bool IncludeStartupFlow)
 {
     public static TraceLensConfig Default { get; } = new(
         ["HttpGet", "HttpPost", "HttpPut", "HttpDelete", "HttpPatch"],
@@ -43,6 +47,7 @@ public sealed record TraceLensConfig(
         8,
         ["System", "Microsoft", "Swashbuckle"],
         AnalysisScope.Solution,
+        true,
         true,
         true,
         true);
@@ -75,7 +80,10 @@ public sealed record TraceLensConfig(
                 : Default.IncludeMembers,
             root.TryGetProperty("includeInterfaces", out var includeInterfaces)
                 ? includeInterfaces.GetBoolean()
-                : Default.IncludeInterfaces);
+                : Default.IncludeInterfaces,
+            root.TryGetProperty("includeStartupFlow", out var includeStartupFlow)
+                ? includeStartupFlow.GetBoolean()
+                : Default.IncludeStartupFlow);
     }
 
     private static AnalysisScope? ReadAnalysisScope(JsonElement root) =>

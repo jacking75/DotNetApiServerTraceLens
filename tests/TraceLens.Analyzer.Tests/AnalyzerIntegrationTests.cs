@@ -289,6 +289,54 @@ public sealed class AnalyzerIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task AnalyzeAsync_CollectsStartupFlowFromProgramCs()
+    {
+        var logs = new ConcurrentQueue<string>();
+        await using var provider = CreateProvider(logs);
+
+        var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
+        var flow = result.Graph.StartupFlow;
+
+        Assert.NotNull(flow);
+        Assert.Equal("FixtureApp/Program.cs", flow!.ProgramFile);
+
+        // builder.Services: AddControllers(설정) → AddScoped 두 번(등록) → AddFixtureServices(확장 메서드, 하위에 AddSingleton 하나).
+        Assert.Equal(4, flow.ServiceSteps.Count);
+        Assert.Equal(StartupStepKind.Configuration, flow.ServiceSteps[0].Kind);
+        Assert.Equal("AddControllers()", flow.ServiceSteps[0].Label);
+
+        var orderServiceStep = flow.ServiceSteps[1];
+        Assert.Equal(StartupStepKind.Registration, orderServiceStep.Kind);
+        Assert.Equal("IOrderService", orderServiceStep.ServiceType);
+        Assert.Equal("FixtureApp.Services.IOrderService", orderServiceStep.ServiceTypeId);
+        Assert.Equal("OrderService", orderServiceStep.ImplementationType);
+        Assert.Equal("FixtureApp.Services.OrderService", orderServiceStep.ImplementationTypeId);
+        Assert.Equal(StartupLifetime.Scoped, orderServiceStep.Lifetime);
+        Assert.Equal("IOrderService → OrderService", orderServiceStep.Label);
+
+        var repositoryStep = flow.ServiceSteps[2];
+        Assert.Equal("IOrderRepository", repositoryStep.ServiceType);
+        Assert.Equal(StartupLifetime.Scoped, repositoryStep.Lifetime);
+
+        // Program.cs가 아닌 ServiceRegistration.cs 안의 AddSingleton까지 따라 들어가야 한다.
+        var extensionStep = flow.ServiceSteps[3];
+        Assert.Equal(StartupStepKind.ExtensionCall, extensionStep.Kind);
+        Assert.Equal("AddFixtureServices()", extensionStep.Label);
+        var nested = Assert.Single(extensionStep.Children);
+        Assert.Equal(StartupStepKind.Registration, nested.Kind);
+        Assert.Equal("INotificationService", nested.ServiceType);
+        Assert.Equal("NotificationService", nested.ImplementationType);
+        Assert.Equal(StartupLifetime.Singleton, nested.Lifetime);
+        Assert.Contains("ServiceRegistration.cs", nested.File);
+
+        // app: MapControllers() → Run().
+        Assert.Equal(2, flow.MiddlewareSteps.Count);
+        Assert.Equal("MapControllers()", flow.MiddlewareSteps[0].Label);
+        Assert.Equal(StartupStepKind.Middleware, flow.MiddlewareSteps[0].Kind);
+        Assert.Equal("Run()", flow.MiddlewareSteps[1].Label);
+    }
+
     private static ServiceProvider CreateProvider(ConcurrentQueue<string> logs)
     {
         var services = new ServiceCollection();

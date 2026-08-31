@@ -26,7 +26,7 @@
 
 ```json
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "solutionPath": "C:\\repos\\MyApp\\MyApp.sln",
   "rootDirectory": "C:\\repos\\MyApp",
   "analyzedAt": "2026-08-08T14:20:00+09:00",
@@ -108,6 +108,35 @@
   "fileHashes": {
     "Controllers/OrdersController.cs": "sha256:9f1c...",
     "Services/OrderService.cs": "sha256:2ab0..."
+  },
+  "startupFlow": {
+    "programFile": "Program.cs",
+    "serviceSteps": [
+      { "kind": "Configuration", "label": "AddControllers()", "serviceType": null, "serviceTypeId": null,
+        "implementationType": null, "implementationTypeId": null, "lifetime": null,
+        "file": "Program.cs", "line": 6, "children": [] },
+      { "kind": "Registration", "label": "IOrderService → OrderService",
+        "serviceType": "IOrderService", "serviceTypeId": "MyApp.Application.Abstractions.IOrderService",
+        "implementationType": "OrderService", "implementationTypeId": "MyApp.Services.OrderService",
+        "lifetime": "Scoped", "file": "Program.cs", "line": 7, "children": [] },
+      { "kind": "ExtensionCall", "label": "AddAppServices()", "serviceType": null, "serviceTypeId": null,
+        "implementationType": null, "implementationTypeId": null, "lifetime": null,
+        "file": "Program.cs", "line": 8,
+        "children": [
+          { "kind": "Registration", "label": "INotificationService → NotificationService",
+            "serviceType": "INotificationService", "serviceTypeId": "MyApp.Services.INotificationService",
+            "implementationType": "NotificationService", "implementationTypeId": "MyApp.Services.NotificationService",
+            "lifetime": "Singleton", "file": "ServiceRegistration.cs", "line": 9, "children": [] }
+        ] }
+    ],
+    "middlewareSteps": [
+      { "kind": "Middleware", "label": "MapControllers()", "serviceType": null, "serviceTypeId": null,
+        "implementationType": null, "implementationTypeId": null, "lifetime": null,
+        "file": "Program.cs", "line": 12, "children": [] },
+      { "kind": "Middleware", "label": "Run()", "serviceType": null, "serviceTypeId": null,
+        "implementationType": null, "implementationTypeId": null, "lifetime": null,
+        "file": "Program.cs", "line": 13, "children": [] }
+    ]
   }
 }
 ```
@@ -125,6 +154,14 @@
 `member.typeIds`와 `baseTypeId`/`interfaceIds`는 **솔루션 안에 선언된 타입만** 담는다(제네릭 인자와 배열 원소까지 재귀로 훑는다). `baseTypeName`/`interfaceNames`는 솔루션 밖 타입이어도 표시용 이름을 남긴다. `interfaceIds`는 직접 구현만 담는다 — `AllInterfaces`를 쓰면 상위 인터페이스까지 선이 중복으로 그려지기 때문이다.
 
 **하위 호환**: v3 이하로 저장된 문서를 읽으면 `members`는 빈 배열, `baseTypeId`/`baseTypeName`은 null, `interfaceIds`/`interfaceNames`/`parameterTypes`는 빈 배열, `typeKind`는 `"Class"`, `accessibility`는 `"Public"`, `returnType`은 빈 문자열로 채운다(Analyzer 모델의 기본값과 클라이언트 `normalizeGraph`가 함께 보장한다). 클라이언트는 `members`가 전부 비어 있으면 "다시 분석해야 클래스 다이어그램을 그릴 수 있다"고 안내한다.
+
+**`startupFlow`(v5)**는 Program.cs 하나를 소스 순서대로 훑어 만드는 "시작 흐름"이다. `serviceSteps`는 `builder.Services` 계열 호출(DI 등록·설정), `middlewareSteps`는 `app` 계열 호출(미들웨어·라우팅)을 담는다. `kind`는 `Registration | Configuration | ExtensionCall | Middleware`다.
+
+- `Registration`은 `AddScoped`/`AddSingleton`/`AddTransient`(`TryAdd*` 포함)의 제네릭 오버로드에서 뽑는다. `AddScoped<TService, TImpl>()`이면 `serviceType`/`implementationType` 둘 다, `AddScoped<TImpl>()`(자기 등록)이면 `implementationType`만 채운다. `lifetime`은 메서드 이름에서 뽑는다.
+- `ExtensionCall`은 솔루션 안에 정의된 확장 메서드(예: `AddAppServices()`) 호출이다. 그 메서드 본문에서 찾은 같은 계열 호출을 `children`에 소스 순서대로 담는다(순환·5단계 넘는 중첩은 방어한다).
+- `Configuration`/`Middleware`는 그 외 호출을 코드 그대로(`메서드명(문자열 인자)` 형태)로 남긴다.
+- `serviceTypeId`/`implementationTypeId`는 그 타입이 솔루션 안에 있으면 `classes[].id`와 같은 값이라 클래스 다이어그램으로 바로 이어갈 수 있다. 없으면 null이다.
+- Program.cs를 찾지 못했거나(구식 `Startup.cs` 등) `includeStartupFlow: false`면 `startupFlow` 전체가 null이다. v4 이하 문서를 읽어도 null로 채운다.
 
 `solutionPath`는 사용자가 고른 분석 대상 파일이다. `.sln`뿐 아니라 `.csproj`도 올 수 있다.
 `rootDirectory`는 노드/클래스의 상대 경로, 신선도 확인, `.tracelens` 출력의 기준 디렉터리다. `.sln`을 고르면 솔루션 디렉터리이고, `.csproj`를 고르면 그 프로젝트와 참조 프로젝트를 모두 담는 공통 상위 디렉터리다(드라이브 루트까지 올라가야 하면 프로젝트 디렉터리를 그대로 쓴다). 스키마 v2 이하로 저장된 그래프에는 이 값이 없으므로 읽을 때 `solutionPath`의 디렉터리로 되돌린다.
@@ -155,7 +192,8 @@
   "analysisScope": "solution",
   "includeObjectCreation": true,
   "includeMembers": true,
-  "includeInterfaces": true
+  "includeInterfaces": true,
+  "includeStartupFlow": true
 }
 ```
 
@@ -175,6 +213,8 @@
 `includeMembers`(기본 `true`)는 클래스 다이어그램용 멤버 수집 여부다. 끄면 `classes[].members`가 빈 배열이 되어 `graph.json`이 줄어드는 대신 UML 박스가 이름만 남는다(상속·구현 정보는 그대로 남아 관계도는 계속 그려진다). 이 저장소 자체를 분석한 실측으로는 클래스 83개·멤버 397개에서 수집 자체는 5~18ms이고 `graph.json`이 283KB → 450KB로 커진다.
 
 `includeInterfaces`(기본 `true`)는 인터페이스 선언을 `classes`에 넣을지다. 끄면 인터페이스가 목록에서 빠지고, 그에 따라 구현 관계(`interfaceIds`)도 함께 빈다.
+
+`includeStartupFlow`(기본 `true`)는 Program.cs를 훑어 `startupFlow`(DI 등록·미들웨어 파이프라인)를 수집할지다. 끄면 "시작 흐름" 보기가 "솔루션을 분석해야 한다"로 빈 채 남는다.
 
 ### 0.5 API 계약 (TraceLens.Server)
 

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useMemo } from 'react'
 import { classMembers, memberKey, memberSign, shortenNamespace, stereotypeOf } from '../graph/classDiagram'
 import { relationLabels, type ClassRelation, type RelationType } from '../graph/relations'
+import { findStartupStep } from '../graph/startupFlow'
 import type {
   EntryPoint,
   GraphClass,
@@ -70,7 +71,69 @@ export function DetailPanel({
           actions={actions}
         />
       )}
+      {selection.type === 'startupStep' && (
+        <StartupStepDetail graph={graph} stepKey={selection.key} actions={actions} />
+      )}
     </div>
+  )
+}
+
+const startupKindLabels: Record<string, string> = {
+  Registration: 'DI 등록',
+  Configuration: '설정 호출',
+  ExtensionCall: '확장 메서드',
+  Middleware: '미들웨어',
+}
+
+/** 시작 흐름 한 단계의 상세. 등록이면 서비스/구현체 타입으로 바로 이동할 수 있다. */
+function StartupStepDetail({
+  graph,
+  stepKey,
+  actions,
+}: {
+  graph: GraphDocument
+  stepKey: string
+  actions: DetailActions
+}) {
+  const step = findStartupStep(graph, stepKey)
+  if (!step) return <div className="panel-message">이 단계는 마지막 분석 결과에 없다.</div>
+
+  return (
+    <>
+      <div className="detail-title"><h3>{step.label}</h3></div>
+      <div className="detail-path">{step.file}:{step.line}</div>
+      <dl className="kv">
+        <dt>종류</dt>
+        <dd>{startupKindLabels[step.kind] ?? step.kind}</dd>
+        {step.lifetime && <><dt>수명</dt><dd>{step.lifetime}</dd></>}
+      </dl>
+
+      <div className="detail-section">
+        <h4>소스</h4>
+        <Suspense fallback={<div className="panel-message">소스를 불러오는 중이다.</div>}>
+          <SourceView
+            target={{ file: step.file, startLine: step.line, endLine: step.line }}
+            height={160}
+            emptyMessage="소스를 불러오는 중이다."
+          />
+        </Suspense>
+      </div>
+
+      {(step.serviceTypeId || step.implementationTypeId) && (
+        <div className="detail-section detail-actions">
+          {step.serviceTypeId && (
+            <button type="button" className="btn sm" onClick={() => actions.onShowInDiagram(step.serviceTypeId!)}>
+              {step.serviceType} 클래스에서 보기
+            </button>
+          )}
+          {step.implementationTypeId && (
+            <button type="button" className="btn sm" onClick={() => actions.onShowInDiagram(step.implementationTypeId!)}>
+              {step.implementationType} 클래스에서 보기
+            </button>
+          )}
+        </div>
+      )}
+    </>
   )
 }
 

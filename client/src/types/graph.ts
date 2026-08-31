@@ -95,6 +95,32 @@ export interface EntryPoint {
   route: string
 }
 
+/** 시작 흐름 한 단계의 종류. */
+export type StartupStepKind = 'Registration' | 'Configuration' | 'ExtensionCall' | 'Middleware'
+
+export type StartupLifetime = 'Scoped' | 'Singleton' | 'Transient'
+
+/** Program.cs(또는 그 확장 메서드) 안의 한 단계. `children`은 ExtensionCall일 때만 채워진다. */
+export interface StartupStep {
+  kind: StartupStepKind
+  label: string
+  serviceType: string | null
+  serviceTypeId: string | null
+  implementationType: string | null
+  implementationTypeId: string | null
+  lifetime: StartupLifetime | null
+  file: string
+  line: number
+  children: StartupStep[]
+}
+
+/** Program.cs를 분석한 시작 흐름. Program.cs를 찾지 못했으면(구식 Startup.cs 등) null이다. */
+export interface StartupFlowDocument {
+  programFile: string
+  serviceSteps: StartupStep[]
+  middlewareSteps: StartupStep[]
+}
+
 export interface GraphDocument {
   schemaVersion: number
   /** 분석 대상으로 고른 파일 경로(.sln 또는 .csproj). */
@@ -107,6 +133,8 @@ export interface GraphDocument {
   nodes: GraphNode[]
   edges: GraphEdge[]
   fileHashes: Record<string, string>
+  /** v5부터 있다. v4 이하 문서를 읽으면 null이다. */
+  startupFlow: StartupFlowDocument | null
 }
 
 /** 그래프 창의 종류. 지금은 호출 흐름 보기만 이 창을 쓴다. */
@@ -121,14 +149,15 @@ export interface GraphWindow {
   branchNodeIds: Set<string>
 }
 
-/** 상단 보기 전환 툴바가 고르는 세 가지 보기. */
-export type ViewMode = 'callflow' | 'classmap' | 'flowmap'
+/** 상단 보기 전환 툴바가 고르는 네 가지 보기. */
+export type ViewMode = 'callflow' | 'classmap' | 'flowmap' | 'startup'
 
-/** 선택 대상. 클래스 다이어그램은 세 종류를 모두 다룬다. */
+/** 선택 대상. 클래스 다이어그램은 앞 세 종류를, 시작 흐름은 startupStep을 다룬다. */
 export type Selection =
   | { type: 'class'; key: string }
   | { type: 'method'; key: string }
   | { type: 'namespace'; key: string }
+  | { type: 'startupStep'; key: string }
 
 export interface AnalyzeSummary {
   entryPointCount: number

@@ -16,9 +16,10 @@ public sealed record GraphDocument(
 {
     /// <summary>
     /// v4에서 <c>classes</c>에 타입 메타·상속·구현·멤버가, <c>nodes</c>에 접근제한자·반환타입·파라미터 타입이 들어갔다.
+    /// v5에서 Program.cs를 분석한 <see cref="StartupFlow"/>(DI 등록·미들웨어 파이프라인)가 추가됐다.
     /// v3 이하로 저장된 문서를 읽으면 새 필드는 각 모델의 기본값(빈 목록·null·Class)으로 채워진다.
     /// </summary>
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     private readonly IReadOnlyList<GraphClass> classes = Classes ?? [];
     private readonly string? rootDirectory;
@@ -40,6 +41,9 @@ public sealed record GraphDocument(
         get => string.IsNullOrEmpty(rootDirectory) ? Path.GetDirectoryName(SolutionPath) ?? string.Empty : rootDirectory;
         init => rootDirectory = value;
     }
+
+    /// <summary>Program.cs를 분석한 시작 흐름(DI 등록·미들웨어 파이프라인). 찾지 못했거나 v4 이하 문서면 null이다.</summary>
+    public StartupFlowDocument? StartupFlow { get; init; }
 
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {

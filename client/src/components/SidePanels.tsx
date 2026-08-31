@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { shortenNamespace } from '../graph/classDiagram'
-import type { EntryPoint, GraphClass, GraphNamespaceSummary, Selection } from '../types/graph'
+import { countByLifetime, countSteps } from '../graph/startupFlow'
+import type { EntryPoint, GraphClass, GraphNamespaceSummary, Selection, StartupFlowDocument } from '../types/graph'
 import { kindColors } from './kindColors'
 
 interface EntryPointListProps {
@@ -225,6 +226,29 @@ export function FlowSidePanel({
           ))}
         </div>
       ))}
+    </div>
+  )
+}
+
+/** 시작 흐름의 좌측 패널. Program.cs 위치와 단계 요약만 보여준다(타임라인 자체는 가운데에 있다). */
+export function StartupFlowSidePanel({ flow }: { flow: StartupFlowDocument }) {
+  const lifetimeCounts = useMemo(() => countByLifetime(flow.serviceSteps), [flow])
+  const total = useMemo(() => countSteps(flow), [flow])
+
+  return (
+    <div className="side-list">
+      <div className="side-group">Program.cs</div>
+      <div className="panel-message tight" title={flow.programFile}>{flow.programFile}</div>
+
+      <div className="side-group">전체 단계</div>
+      <div className="panel-message tight">{total}개</div>
+
+      <div className="side-group">서비스 등록 ({flow.serviceSteps.length})</div>
+      <div className="panel-message tight">
+        Scoped {lifetimeCounts.scoped} · Singleton {lifetimeCounts.singleton} · Transient {lifetimeCounts.transient}
+      </div>
+
+      <div className="side-group">미들웨어 파이프라인 ({flow.middlewareSteps.length})</div>
     </div>
   )
 }

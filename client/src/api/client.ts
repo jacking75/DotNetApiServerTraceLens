@@ -77,14 +77,15 @@ export async function getGraph(): Promise<GraphDocument> {
 }
 
 /**
- * 스키마 v3 이하로 저장된 그래프를 읽었을 때 v4에서 추가된 필드를 기본값으로 채운다.
- * 화면 코드가 `members`/`interfaceIds`의 존재를 매번 확인하지 않아도 되게 하는 것이 목적이다.
+ * 옛 스키마로 저장된 그래프를 읽었을 때 이후 버전에서 추가된 필드를 기본값으로 채운다.
+ * 화면 코드가 `members`/`interfaceIds`/`startupFlow`의 존재를 매번 확인하지 않아도 되게 하는 것이 목적이다.
  */
 export function normalizeGraph(graph: GraphDocument): GraphDocument {
-  if (graph.schemaVersion >= 4) return graph
+  const withStartupFlow: GraphDocument = { ...graph, startupFlow: graph.startupFlow ?? null }
+  if (withStartupFlow.schemaVersion >= 4) return withStartupFlow
   return {
-    ...graph,
-    classes: (graph.classes ?? []).map((item): GraphClass => ({
+    ...withStartupFlow,
+    classes: (withStartupFlow.classes ?? []).map((item): GraphClass => ({
       ...item,
       typeKind: item.typeKind ?? 'Class',
       isAbstract: item.isAbstract ?? false,
@@ -95,7 +96,7 @@ export function normalizeGraph(graph: GraphDocument): GraphDocument {
       interfaceNames: item.interfaceNames ?? [],
       members: item.members ?? [],
     })),
-    nodes: (graph.nodes ?? []).map((item): GraphNode => ({
+    nodes: (withStartupFlow.nodes ?? []).map((item): GraphNode => ({
       ...item,
       accessibility: item.accessibility ?? 'Public',
       returnType: item.returnType ?? '',

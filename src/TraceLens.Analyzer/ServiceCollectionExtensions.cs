@@ -13,5 +13,6 @@ public static class ServiceCollectionExtensions
         .AddScoped<SolutionScanner>()
         .AddScoped<CallGraphWalker>()
         .AddScoped<SnapshotHasher>()
+        .AddScoped<StartupFlowScanner>()
         .AddScoped<ITraceLensAnalyzer, TraceLensAnalyzer>();
 }

@@ -18,12 +18,14 @@ const modes: Array<{ mode: ViewMode; label: string }> = [
   { mode: 'callflow', label: '호출 흐름' },
   { mode: 'classmap', label: '클래스 다이어그램' },
   { mode: 'flowmap', label: '전체 흐름도' },
+  { mode: 'startup', label: '시작 흐름' },
 ]
 
 const hints: Record<ViewMode, string> = {
   callflow: '진입점에서 분기 지점까지만 그리고 ⊕ 노드를 눌러 한 단계씩 파고든다.',
   classmap: '솔루션 전체 클래스를 관계 방향에 따라 층을 나눠 그린다.',
   flowmap: '모든 진입점과 그 아래 클래스 흐름이다. 라우트 줄을 누르면 그 진입점의 전 구간으로 들어간다.',
+  startup: 'Program.cs를 훑어 API 서버가 시작될 때까지 어떤 객체를 등록하고 어떻게 연결하는지 순서대로 보여준다.',
 }
 
 export function ViewToolbar({

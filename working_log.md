@@ -1,3 +1,14 @@
+## 2026-08-31 15:55 KST - "시작 흐름" 보기 추가 (Program.cs의 DI 등록·미들웨어 파이프라인)
+
+- 상단 메뉴에 "전체 흐름도" 옆 네 번째 탭으로 "시작 흐름"을 추가했다. CLAUDE.md 설계 제약 2번("DI 관계는 그래프로 안 보여준다")에 예외를 명시해 두고 진행했다(사용자 확인).
+- Analyzer에 `StartupFlowScanner`를 추가했다. Program.cs를 찾아(`CreateBuilder` 힌트) `builder.Services`/`app` 계열 호출만 소스 순서대로 골라내고, 솔루션 안에 정의된 확장 메서드(`AddFixtureServices()` 등)는 그 본문까지 따라 들어가 하위 단계로 펼친다(최대 깊이 5, 순환 방지). `AddScoped`/`AddSingleton`/`AddTransient`(`TryAdd*` 포함)는 서비스→구현체(수명 포함)로, 그 외 `AddXxx()`/`UseXxx()`/`MapXxx()`는 코드 그대로 남긴다.
+- 구현 중 실제 버그 두 개를 실사용 코드(이 저장소 자체의 Program.cs)로 잡아냈다: (1) `WebApplication.CreateBuilder(args)`처럼 타입 자체를 거치는 정적 호출이 `GetTypeInfo`에서 그 타입 자신을 리시버로 오인식해 미들웨어로 잘못 분류됨 — 심볼 종류(NamedType/Namespace)로 먼저 걸러 고쳤다. (2) `services.AddScoped<A>().AddScoped<B>()...` 같은 체이닝 호출은 SpanStart가 전부 같아서(모두 `services`에서 시작) 정렬이 뒤집힘 — 메서드 이름 토큰 위치로 정렬하도록 고쳤다.
+- 스키마를 v5로 올려 `GraphDocument.StartupFlow`를 추가했다(v4 이하는 null로 채운다). `tracelens.config.json`에 `includeStartupFlow`(기본 true) 추가.
+- 클라이언트: `StartupFlowView`(타임라인 두 단 — 서비스 등록/미들웨어 파이프라인, 확장 메서드는 접혀 있다가 클릭하면 펼침), 좌측 요약 패널(Program.cs 경로·수명별 개수), 상세 패널에 `startupStep` 선택 케이스(소스 미리보기 + "OO 클래스에서 보기" 버튼으로 클래스 다이어그램까지 연결), Ask 패널 캡처 컨텍스트까지 한 세트로 연결했다.
+- .NET 테스트 1개 추가(픽스처의 Program.cs+확장 메서드 케이스), 서버 19개·Analyzer 10개·Mcp 1개 전체 통과. 클라이언트는 `tsc -b`(주의: `tsc --noEmit -p tsconfig.json`은 `files:[]`라 아무것도 안 검사한다 — `tsconfig.app.json`을 써야 한다)로 실제 타입 오류 2건(테스트 픽스처에 `startupFlow` 필드 누락)을 잡아 고쳤고, 26개 테스트·빌드 통과.
+- 브라우저로 이 저장소 자체(TraceLens.sln, Program.cs 21문·확장 메서드 6개 포함 42단계)를 분석해 확인: 체이닝된 `ServiceCollectionExtensions.AddTraceLensAnalyzer()`의 10개 `AddScoped`가 소스 순서 그대로 나오고, 중첩 라우트 그룹(`api.MapGroup("/api").MapAnalyzeEndpoints()` 등)도 하위 단계로 정확히 펼쳐졌다. 단계를 클릭하면 소스 미리보기·Ask 패널이 뜨고, 등록 단계의 "OO 클래스에서 보기"를 누르면 클래스 다이어그램의 해당 클래스로 정확히 이동했다.
+- task.md 0장에 v5 스키마(`startupFlow` 필드 설명·예시 JSON)와 `includeStartupFlow` 설정을 반영했다.
+
 ## 2026-08-31 15:08 KST - 저장/불러오기를 사용자가 고르는 파일 기반으로 다시 구현
 
 - 사용자 피드백: 직전 "불러오기"는 주소창의 솔루션 경로에서 `.tracelens/graph.json` 위치를 자동으로 유추하는 방식이었는데, 실제로 원한 것은 "분석 후 원하는 위치에 파일로 저장 → 그 파일을 직접 골라 불러오기"였다. 저장 파일에는 분석 내용과 분석에 쓴 소스코드 위치(솔루션 경로)가 함께 있어야 한다는 요구도 있었다.
