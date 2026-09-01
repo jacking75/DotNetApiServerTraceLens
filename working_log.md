@@ -1,3 +1,9 @@
+## 2026-09-01 17:54 KST - 매뉴얼의 "Claude Code 전용" 오해 소지 문구 정리
+
+- Codex CLI 안내를 넣었는데도 히어로 소개문·"Claude에게 질문하기" 헤딩·개요 문단·요구사항 목록이 여전히 "Claude Code에게 질의하는 도구"처럼 읽혀 전체적으로 Claude Code만 되는 것처럼 보인다는 지적을 받아 고쳤다.
+- 히어로/개요/요약 카드/섹션 헤딩·TOC를 "AI 코딩 에이전트(Claude Code·Codex CLI 등)"로 일반화했다. 다만 실제 UI에 박힌 패널 라벨("Claude에게 질문")은 화면과 다르게 적으면 안 되므로 그대로 두고, 대신 "패널 이름과 달리 Claude Code에만 묶여 있지 않다"고 명시했다.
+- 클립보드 방식은 원래 어떤 에이전트로도 쓸 수 있다는 점을, "MCP 직접 연동" 버튼은 Claude Code 전용이라는 점(코드 사실)을 각각 더 분명히 대비시켰다. 요구사항 목록에 Codex CLI 항목도 나란히 추가했다.
+
 ## 2026-09-01 17:45 KST - 매뉴얼에 배포용 빌드·Codex CLI 안내 추가
 
 - "빌드와 실행"에 "소스 없이 빌드 결과만 배포·실행할 때" 절을 새로 넣었다. `npm run build`(wwwroot에 결과 반영) → `dotnet publish src/TraceLens.Server -c Release -o publish` → `publish\TraceLens.Server.exe`(또는 `dotnet publish\TraceLens.Server.dll`) 실행까지, 소스·Node.js 없이 그 폴더 하나로 도는 과정을 정리했다. 포트는 `Program.cs`에 고정된 `127.0.0.1:25011`이라는 점, 게시 후에도 재분석은 그대로 필요하다는 점, MCP 등록 경로를 게시 폴더 기준으로 다시 잡아야 한다는 점을 함께 적었다. `TraceLens.Server.csproj`(Sdk.Web, wwwroot 자동 포함)와 `Program.cs`의 `UseUrls` 하드코딩을 직접 확인해서 맞췄다.

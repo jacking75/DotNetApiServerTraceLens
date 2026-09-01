@@ -438,8 +438,8 @@
   <h1>TraceLens 사용 설명서</h1>
   <p class="lead">
     ASP.NET Core Web API 코드베이스의 호출 흐름을 그래프로 탐색하고,
-    선택한 코드 위치를 Claude Code에게 곧바로 질의하는 로컬 개발 도구다.
-    이 문서는 빌드·실행부터 여섯 가지 보기, Claude 연동, 실제 사용 시나리오까지를 다룬다.
+    선택한 코드 위치를 AI 코딩 에이전트(Claude Code · Codex CLI 등)에게 곧바로 질의하는 로컬 개발 도구다.
+    이 문서는 빌드·실행부터 여섯 가지 보기, AI 에이전트 연동, 실제 사용 시나리오까지를 다룬다.
   </p>
   <div class="meta">최종 갱신 2026-09-01 · 로컬 전용 도구 — 서버와 MCP 연동은 항상 localhost에서만 동작한다</div>
 </header>
@@ -448,7 +448,7 @@
   <div class="summary-card"><div class="num">01</div><h3>명령 하나로 실행</h3><p><code>.\run.ps1</code> 하나면 빌드부터 실행까지 끝난다.</p></div>
   <div class="summary-card"><div class="num">02</div><h3>여섯 가지 보기</h3><p>호출 흐름·클래스 다이어그램·전체 흐름도·시작 흐름·DB·캐시·미들웨어.</p></div>
   <div class="summary-card"><div class="num">03</div><h3>클릭하면 실제 코드</h3><p>어떤 보기에서든 클릭한 자리의 소스가 옆 패널에 바로 뜬다.</p></div>
-  <div class="summary-card"><div class="num">04</div><h3>Claude에게 바로 질문</h3><p>클립보드 · MCP 직접 연동 · 에디터 열기, 세 가지 방식.</p></div>
+  <div class="summary-card"><div class="num">04</div><h3>AI 에이전트에게 바로 질문</h3><p>클립보드 · MCP 직접 연동 · 에디터 열기, 세 가지 방식.</p></div>
 </div>
 
 <div class="page">
@@ -473,7 +473,7 @@
       <a class="sub" href="#view-startup">시작 흐름</a>
       <a class="sub" href="#view-data">DB · 캐시</a>
       <a class="sub" href="#view-middleware">미들웨어</a>
-      <a href="#ask">Claude에게 질문하기</a>
+      <a href="#ask">AI 에이전트에게 질문하기</a>
       <a href="#scenarios">사용 시나리오</a>
       <a href="#reference">더 알아보기</a>
     </nav>
@@ -488,7 +488,7 @@
         실제 메서드 호출 흐름을 그래프로 보여준다. 코드베이스 전체가 어떻게 생겼는지 보고 싶으면
         클래스 다이어그램이나 전체 흐름도로 전환한다. 어느 보기에서든 박스나 멤버 줄을 클릭하면
         그 위치의 실제 소스 코드가 옆에 뜨고, 질문을 입력하면 파일 경로·라인 범위·심볼명이 자동으로
-        캡처되어 Claude Code에게 전달된다.
+        캡처되어 AI 코딩 에이전트에게 전달된다. Claude Code와 Codex CLI 모두 이 방식으로 쓸 수 있다.
       </p>
 
       <div class="callout note">
@@ -527,7 +527,8 @@
       <ul>
         <li>.NET 8 이상 SDK</li>
         <li>Node.js 20 이상</li>
-        <li>Claude Code CLI — Ask 패널의 <b>MCP 직접 연동</b> 모드를 쓸 경우에만 필요</li>
+        <li>Claude Code CLI — Ask 패널의 <b>MCP 직접 연동</b> 버튼을 쓸 경우에만 필요(이 버튼은 Claude Code 전용이다)</li>
+        <li>Codex CLI — 위 버튼과는 별개로, TraceLens.Mcp를 Codex CLI 세션에 직접 등록해서 쓰고 싶을 때(<a href="#ask-mcp">MCP 직접 연동</a> 참고)</li>
       </ul>
 
       <h3 class="sub-h" id="build-prod">정식으로 쓸 때 — 명령 하나</h3>
@@ -948,18 +949,21 @@ npm run dev</code></pre>
     </section>
 
     <section class="doc-section" id="ask">
-      <h2>Claude Code에게 질문하기</h2>
+      <h2>AI 에이전트에게 질문하기</h2>
       <p class="section-desc">
         어느 보기에서든 클래스·메서드·네임스페이스·점검 항목·미들웨어 단계 등을 선택하면 오른쪽 아래
-        <b>Claude에게 질문</b> 패널에 파일 경로·라인 범위·심볼명이 자동으로 채워진다. 질문을 적고
-        세 가지 방식 중 하나로 보낸다.
+        <b>Claude에게 질문</b> 패널(화면에 있는 실제 이름이다)에 파일 경로·라인 범위·심볼명이 자동으로
+        채워진다. 질문을 적고 세 가지 방식 중 하나로 보낸다. 패널 이름과 달리 <b>Claude Code에만 묶여
+        있지 않다</b> — 클립보드는 어떤 AI 코딩 에이전트로도 붙여넣어 쓰고, MCP로 그래프를 조회하는
+        것도 Claude Code와 Codex CLI 모두 등록해서 쓸 수 있다(아래 참고).
       </p>
 
       <h3 class="sub-h" id="ask-clipboard">클립보드</h3>
       <p>
-        캡처된 컨텍스트 + 질문을 클립보드에 복사한다. Claude Code 터미널을 이미 열어 두고 작업 중이면
-        붙여넣기만 하면 된다. <b>어떤 선택에도</b> 쓸 수 있는 유일한 방식이다(다른 두 모드는 실행
-        가능한 노드가 있어야 한다).
+        캡처된 컨텍스트 + 질문을 클립보드에 복사한다. Claude Code든 Codex CLI든, 지금 쓰고 있는 AI
+        코딩 에이전트의 터미널·채팅창을 열어 두고 있으면 붙여넣기만 하면 된다 — 특정 CLI에 묶이지
+        않는, <b>어떤 선택에도</b> 쓸 수 있는 유일한 방식이다(다른 두 모드는 실행 가능한 노드가 있어야
+        한다).
       </p>
 
       <h3 class="sub-h" id="ask-mcp">MCP 직접 연동</h3>
