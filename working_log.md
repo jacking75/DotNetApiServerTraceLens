@@ -1,3 +1,10 @@
+## 2026-09-01 17:10 KST - docs/manual.html 사용 설명서 신규 작성
+
+- 개발·정식 사용 빌드 방법, 화면 구성, 여섯 가지 보기, Claude Code 연동(클립보드·MCP 직접 연동·에디터), `tracelens.config.json` 설정, 신선도·재분석, 저장·불러오기, 9가지 사용 시나리오를 담은 자체 완결형 HTML 매뉴얼을 새로 만들었다. README.md·mcp-setup.md·App.tsx·AskEndpoints.cs·TraceLensConfig.cs·DataAccessOptions.cs 등을 직접 읽어 내용을 정확히 맞췄다(예: 에디터 열기가 VS Code `code --goto`와 `vscode://` 폴백을 쓴다는 것, MCP 직접 연동은 별도 등록 없이 요청마다 `.tracelens/mcp.json`을 만든다는 것).
+- 스크린샷이 다시 낡지 않도록 실제 화면 사진 대신 앱의 다크 테마를 흉내 낸 CSS/SVG 목업(보기 전환 탭, 3분할 레이아웃, 관계선 범례, 신선도 배지 상태)을 직접 그려 넣었다. 라이트/다크 테마 모두 지원.
+- 로컬 HTTP 서버로 띄워 브라우저에서 목차 스크롤 하이라이트, 코드 블록, 표, 시나리오 카드, 다크 모드까지 직접 확인했다.
+- README.md 맨 위에 매뉴얼 링크를 추가해 찾기 쉽게 했다.
+
 ## 2026-09-01 14:54 KST - 오래된 스크린샷 4장 삭제
 
 - `docs/screenshots/*.jpg`(callflow·classmap·flowmap·flowmap-entry)가 지금 프로그램과 같은지 확인해달라는 요청에, 상단 보기 전환 툴바를 근거로 비교했다. 스크린샷은 모두 5단계(커밋 483bac2) 직후에 찍혀 탭이 "호출 흐름·클래스 다이어그램·전체 흐름도" 3개뿐인데, 이후 "시작 흐름"(cc8bb84)·"DB·캐시"·"미들웨어"(19483f4) 보기가 추가되어 지금은 탭이 6개다. 예전 스크린샷으로 확정되어 삭제했다.
