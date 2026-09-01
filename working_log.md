@@ -1,3 +1,9 @@
+## 2026-09-01 14:50 KST - docs 목업 4종 삭제, 스크린샷은 유지
+
+- 구현 전 단계에서 만든 인터랙티브 목업 4개(`concept-mockup.html`, `structure-view-mockup.html`, `db-view-mockup.html`, `middleware-view-mockup.html`)를 삭제했다. 실제 구현이 끝나 더 이상 참고할 필요가 없다는 사용자 판단에 따랐다.
+- `docs/screenshots/*.jpg` 4장은 README 본문(호출 흐름·클래스 다이어그램·전체 흐름도·진입점 흐름 설명)에 실제로 쓰이고 있어 남겨뒀다. `docs/mcp-setup.md`도 살아있는 설정 가이드라 그대로 뒀다.
+- README.md의 "현재 개발 단계" 절(삭제된 task.md·task2.md·task3.md 참조)과 목업 파일을 소개하던 "설계 배경" 절을 함께 정리했다.
+
 ## 2026-09-01 14:44 KST - 단계별 task 문서(task.md·task2.md·task3.md) 삭제
 
 - 1~6단계 구현이 모두 끝나 더 이상 참고할 일이 없다는 사용자 판단에 따라 세 문서를 저장소에서 삭제했다(`git rm`).
