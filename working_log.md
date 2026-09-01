@@ -1,3 +1,11 @@
+## 2026-09-01 18:25 KST - README와 docs 문서를 한국어·영어 두 버전으로 분리
+
+- 기존 README.md(한국어)를 README_kr.md로 옮기고, README.md는 영어로 새로 썼다. 두 파일 맨 위에 서로를 가리키는 언어 전환 링크(`*English · [한국어](README_kr.md)*` / `*[English](README.md) · 한국어*`)를 달았다.
+- `docs/manual.html`(한국어)도 `docs/manual_kr.html`로 옮기고 `docs/manual.html`을 영어로 새로 썼다. `docs/mcp-setup.md`도 같은 방식으로 `docs/mcp-setup_kr.md`(한국어)와 영어 `docs/mcp-setup.md`로 나눴다. 두 HTML 문서에는 화면 오른쪽 위에 고정된 언어 전환 배지(`.lang-switch`)를 추가했다.
+- TraceLens 앱 UI 자체는 한국어 전용(탭 버튼·"Claude에게 질문" 패널 이름 등)이라, 영어 매뉴얼에서 실제 화면을 흉내 낸 목업(탭 스트립, 3분할 레이아웃, 신선도 배지)은 그대로 한국어 문구를 유지하고 "실제 화면 문구를 그대로 보여준다"는 안내를 붙였다. 반면 설명 산문·표·시나리오는 전부 영어로 옮기고, 클릭해야 하는 버튼은 "Save (저장)"처럼 영어 이름 옆에 실제 한국어 문구를 병기했다.
+- 각 언어 버전 안의 상호 참조(README ↔ docs/manual*.html ↔ docs/mcp-setup*.md)를 서로 같은 언어끼리 가리키도록 전부 맞췄다(예: README_kr.md는 docs/manual_kr.html을 가리키고, README.md는 docs/manual.html을 가리킨다). CLAUDE.md는 이번 범위에서 제외했다(한국어 전용으로 남김, "더 알아보기"에 그렇게 표시).
+- 브라우저로 양쪽 다 띄워 언어 전환 링크 왕복, 목업 렌더링, 표 레이아웃을 확인했다.
+
 ## 2026-09-01 18:04 KST - README.md 오류·누락 정리
 
 - "여섯 가지 보기" 인트로에 "시작 흐름"이 이름만 나오고 정작 설명 절이 통째로 빠져 있었다(호출 흐름 → 클래스 다이어그램 → 전체 흐름도 → DB·캐시 순으로 바로 넘어감). CLAUDE.md·docs/manual.html과 맞춰 "### 시작 흐름" 절을 새로 채워 넣었다.

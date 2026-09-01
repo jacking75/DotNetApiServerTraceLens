@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TraceLens 사용 설명서</title>
+<title>TraceLens User Guide</title>
 <style>
   :root {
     --bg: #f6f6fb;
@@ -429,220 +429,251 @@
     .view-grid { grid-template-columns: 1fr; }
     .hero h1 { font-size: 27px; }
   }
+
+  .lang-switch {
+    position: fixed;
+    top: 14px;
+    right: 16px;
+    z-index: 10;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--accent-text);
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 5px 12px;
+    border-radius: 999px;
+    box-shadow: var(--shadow);
+    text-decoration: none;
+  }
+  .lang-switch:hover { background: var(--accent-soft); }
 </style>
 </head>
 <body>
 
+<a class="lang-switch" href="manual_kr.html">한국어</a>
 <header class="hero">
   <span class="eyebrow">ASP.NET CORE CALL EXPLORER</span>
-  <h1>TraceLens 사용 설명서</h1>
+  <h1>TraceLens User Guide</h1>
   <p class="lead">
-    ASP.NET Core Web API 코드베이스의 호출 흐름을 그래프로 탐색하고,
-    선택한 코드 위치를 AI 코딩 에이전트(Claude Code · Codex CLI 등)에게 곧바로 질의하는 로컬 개발 도구다.
-    이 문서는 빌드·실행부터 여섯 가지 보기, AI 에이전트 연동, 실제 사용 시나리오까지를 다룬다.
+    A local development tool that lets you explore an ASP.NET Core Web API codebase's call flow
+    as a graph, and ask an AI coding agent (Claude Code, Codex CLI, etc.) about any selected code
+    location right away. This document covers building and running the tool, all six views, AI
+    agent integration, and real usage scenarios.
   </p>
-  <div class="meta">최종 갱신 2026-09-01 · 로컬 전용 도구 — 서버와 MCP 연동은 항상 localhost에서만 동작한다</div>
+  <div class="meta">Last updated 2026-09-01 · Local-only tool — the server and MCP integration always run on localhost only</div>
 </header>
 
 <div class="summary-grid">
-  <div class="summary-card"><div class="num">01</div><h3>명령 하나로 실행</h3><p><code>.\run.ps1</code> 하나면 빌드부터 실행까지 끝난다.</p></div>
-  <div class="summary-card"><div class="num">02</div><h3>여섯 가지 보기</h3><p>호출 흐름·클래스 다이어그램·전체 흐름도·시작 흐름·DB·캐시·미들웨어.</p></div>
-  <div class="summary-card"><div class="num">03</div><h3>클릭하면 실제 코드</h3><p>어떤 보기에서든 클릭한 자리의 소스가 옆 패널에 바로 뜬다.</p></div>
-  <div class="summary-card"><div class="num">04</div><h3>AI 에이전트에게 바로 질문</h3><p>클립보드 · MCP 직접 연동 · 에디터 열기, 세 가지 방식.</p></div>
+  <div class="summary-card"><div class="num">01</div><h3>Run with one command</h3><p><code>.\run.ps1</code> builds and runs everything.</p></div>
+  <div class="summary-card"><div class="num">02</div><h3>Six views</h3><p>Call Flow · Class Diagram · Flow Map · Startup Flow · Data Access · Middleware.</p></div>
+  <div class="summary-card"><div class="num">03</div><h3>Click for real code</h3><p>Click anywhere in any view and the source shows up right next to it.</p></div>
+  <div class="summary-card"><div class="num">04</div><h3>Ask an AI agent directly</h3><p>Three ways: clipboard · MCP Direct · open in editor.</p></div>
 </div>
 
 <div class="page">
   <details class="toc" open>
-    <summary>목차</summary>
+    <summary>Contents</summary>
     <nav id="toc-nav">
-      <a href="#overview">개요</a>
-      <a href="#build">빌드와 실행</a>
-      <a class="sub" href="#build-dev">개발할 때</a>
-      <a class="sub" href="#build-prod">정식으로 쓸 때</a>
-      <a class="sub" href="#build-publish">빌드 결과만 배포·실행</a>
-      <a class="sub" href="#build-manual">스크립트 없이 실행</a>
-      <a href="#layout">화면 구성</a>
-      <a href="#target">분석 대상과 설정</a>
+      <a href="#overview">Overview</a>
+      <a href="#build">Build &amp; run</a>
+      <a class="sub" href="#build-dev">While developing</a>
+      <a class="sub" href="#build-prod">For everyday use</a>
+      <a class="sub" href="#build-publish">Build output only</a>
+      <a class="sub" href="#build-manual">Running without the script</a>
+      <a href="#layout">Screen layout</a>
+      <a href="#target">Analysis target &amp; config</a>
       <a class="sub" href="#target-config">tracelens.config.json</a>
-      <a href="#freshness">신선도 · 재분석</a>
-      <a href="#saveload">저장 · 불러오기</a>
-      <a href="#views">여섯 가지 보기</a>
-      <a class="sub" href="#view-callflow">호출 흐름</a>
-      <a class="sub" href="#view-classmap">클래스 다이어그램</a>
-      <a class="sub" href="#view-flowmap">전체 흐름도</a>
-      <a class="sub" href="#view-startup">시작 흐름</a>
-      <a class="sub" href="#view-data">DB · 캐시</a>
-      <a class="sub" href="#view-middleware">미들웨어</a>
-      <a href="#ask">AI 에이전트에게 질문하기</a>
-      <a href="#scenarios">사용 시나리오</a>
-      <a href="#reference">더 알아보기</a>
+      <a href="#freshness">Freshness &amp; re-analysis</a>
+      <a href="#saveload">Save &amp; load</a>
+      <a href="#views">Six views</a>
+      <a class="sub" href="#view-callflow">Call Flow</a>
+      <a class="sub" href="#view-classmap">Class Diagram</a>
+      <a class="sub" href="#view-flowmap">Flow Map</a>
+      <a class="sub" href="#view-startup">Startup Flow</a>
+      <a class="sub" href="#view-data">Data Access</a>
+      <a class="sub" href="#view-middleware">Middleware</a>
+      <a href="#ask">Asking an AI agent</a>
+      <a href="#scenarios">Usage scenarios</a>
+      <a href="#reference">Learn more</a>
     </nav>
   </details>
 
   <main>
 
     <section class="doc-section" id="overview">
-      <h2>개요</h2>
+      <h2>Overview</h2>
       <p class="section-desc">
-        TraceLens는 HTTP 엔드포인트(진입점)부터 시작해서 컨트롤러 → 서비스 → 리포지토리로 이어지는
-        실제 메서드 호출 흐름을 그래프로 보여준다. 코드베이스 전체가 어떻게 생겼는지 보고 싶으면
-        클래스 다이어그램이나 전체 흐름도로 전환한다. 어느 보기에서든 박스나 멤버 줄을 클릭하면
-        그 위치의 실제 소스 코드가 옆에 뜨고, 질문을 입력하면 파일 경로·라인 범위·심볼명이 자동으로
-        캡처되어 AI 코딩 에이전트에게 전달된다. Claude Code와 Codex CLI 모두 이 방식으로 쓸 수 있다.
+        TraceLens shows the real method call flow as a graph, starting from an HTTP endpoint
+        (entry point) and moving from controller → service → repository. Switch to the class
+        diagram or the flow map to see how the whole codebase is shaped. In any view, clicking a
+        box or a member row brings up the actual source at that location, and typing a question
+        automatically captures the file path, line range, and symbol name and hands them to an AI
+        coding agent. Both Claude Code and Codex CLI can be used this way.
       </p>
 
       <div class="callout note">
-        <strong>왜 만들었나.</strong> 큰 ASP.NET Core 코드베이스를 새로 파악하거나 다른 사람에게 설명할 때,
-        코드를 눈으로 따라가며 구조를 재구성하는 데 시간이 많이 든다. 기존 아키텍처 다이어그램 도구들은
-        "그 노드를 클릭하면 실제 코드가 보이고, 그 자리에서 바로 AI 에이전트에게 물어볼 수 있는" 흐름까지는
-        지원하지 않는다.
+        <strong>Why this exists.</strong> Getting your head around a large ASP.NET Core codebase,
+        or explaining one to someone else, usually means reconstructing its structure by eye —
+        which takes a long time. Existing architecture-diagram tools don't support the flow of
+        "click a node, see the real code, and ask an AI agent about it right there."
       </div>
 
       <div class="callout warn">
-        <strong>로컬 전용.</strong> 그래프 서버와 MCP 연동은 <code>localhost</code>에서만 동작한다. 원격에서
-        접근하게 만들거나 인증 없이 외부 바인딩을 허용하는 설정은 없다. 이 도구는 개발자 개인 머신에서
-        분석 대상 솔루션을 여는 용도로만 쓴다.
+        <strong>Local only.</strong> The graph server and MCP integration only run on
+        <code>localhost</code>. There's no option to make it reachable remotely, and no setting
+        that allows external binding without authentication. This tool is meant to open an
+        analysis target solution on a developer's own machine, nothing more.
       </div>
 
-      <h3 class="sub-h">여섯 가지 보기 한눈에</h3>
+      <h3 class="sub-h">The six views at a glance</h3>
       <div class="view-grid">
-        <div class="view-card"><span class="tag">호출 흐름</span><h4>진입점 하나를 단계식으로</h4><p>라우트 하나를 골라 분기 지점까지 그리고, ⊕ 노드를 눌러 한 단계씩 파고든다.</p></div>
-        <div class="view-card"><span class="tag">클래스 다이어그램</span><h4>솔루션 전체를 UML로</h4><p>모든 타입을 상속·구현·연관·의존 관계로 한 캔버스에 그린다.</p></div>
-        <div class="view-card"><span class="tag">전체 흐름도</span><h4>진입점 지도 → 전 구간 흐름</h4><p>모든 라우트를 지도로 보고, 하나를 골라 메서드 단위 전 구간으로 들어간다.</p></div>
-        <div class="view-card"><span class="tag">시작 흐름</span><h4>Program.cs 순서 그대로</h4><p>DI 등록과 미들웨어 파이프라인을 소스 순서대로 타임라인으로 보여준다.</p></div>
-        <div class="view-card"><span class="tag">DB · 캐시</span><h4>보상 처리 점검</h4><p>트랜잭션 없이 쓰는 경로에서 실패하면 무엇이 되돌려지지 않는지 격자로 본다.</p></div>
-        <div class="view-card"><span class="tag">미들웨어</span><h4>요청/응답 구간과 단락</h4><p>요청이 무엇을 통과하고 어디서 끊기는지, 끊긴 뒤 무엇이 더 실행되는지 본다.</p></div>
+        <div class="view-card"><span class="tag">Call Flow</span><h4>One entry point, step by step</h4><p>Pick a route, draw up to the branch point, then click ⊕ nodes to dig deeper one step at a time.</p></div>
+        <div class="view-card"><span class="tag">Class Diagram</span><h4>The whole solution as UML</h4><p>Draws every type on one canvas via inheritance, implementation, association, and dependency.</p></div>
+        <div class="view-card"><span class="tag">Flow Map</span><h4>Entry-point map → full path</h4><p>See every route on a map, then pick one to enter its full, method-level path.</p></div>
+        <div class="view-card"><span class="tag">Startup Flow</span><h4>Program.cs, in order</h4><p>Shows DI registrations and the middleware pipeline as a timeline, in source order.</p></div>
+        <div class="view-card"><span class="tag">Data Access</span><h4>Compensation checking</h4><p>Shows, as a grid, what doesn't get undone when a transaction-free write path fails.</p></div>
+        <div class="view-card"><span class="tag">Middleware</span><h4>Request/response sections &amp; short-circuits</h4><p>Shows what a request passes through, where it can get cut off, and what still runs afterward.</p></div>
       </div>
     </section>
 
     <section class="doc-section" id="build">
-      <h2>빌드와 실행</h2>
+      <h2>Build &amp; run</h2>
       <p class="section-desc">
-        평소 도구를 쓸 때(정식 사용)와 TraceLens 자체를 고칠 때(개발) 실행 방식이 다르다. 이 둘은
-        <code>run.ps1</code> 하나로 처리한다. 소스 트리 없이 빌드 결과물만 옮겨 실행하고 싶다면
-        <code>dotnet publish</code>를 따로 쓴다.
+        Everyday use (running the tool as-is) and development (changing TraceLens itself) run
+        differently. Both are handled by <code>run.ps1</code>. If you want to move just the build
+        output around without the source tree, use <code>dotnet publish</code> separately.
       </p>
 
-      <h4 class="mini-h">요구사항</h4>
+      <h4 class="mini-h">Requirements</h4>
       <ul>
-        <li>.NET 8 이상 SDK</li>
-        <li>Node.js 20 이상</li>
-        <li>Claude Code CLI — Ask 패널의 <b>MCP 직접 연동</b> 버튼을 쓸 경우에만 필요(이 버튼은 Claude Code 전용이다)</li>
-        <li>Codex CLI — 위 버튼과는 별개로, TraceLens.Mcp를 Codex CLI 세션에 직접 등록해서 쓰고 싶을 때(<a href="#ask-mcp">MCP 직접 연동</a> 참고)</li>
+        <li>.NET 8 SDK or later</li>
+        <li>Node.js 20 or later</li>
+        <li>Claude Code CLI — only needed for the Ask panel's <b>MCP Direct</b> button (this button is Claude Code-only)</li>
+        <li>Codex CLI — separate from the button above, needed only if you want to register TraceLens.Mcp directly in a Codex CLI session (see <a href="#ask-mcp">MCP Direct</a>)</li>
       </ul>
 
-      <h3 class="sub-h" id="build-prod">정식으로 쓸 때 — 명령 하나</h3>
-      <p>클라이언트를 프로덕션 빌드해서 서버 하나로 UI와 API를 함께 서빙한다. 평소 도구를 쓸 때 쓰는 방법이다.</p>
+      <h3 class="sub-h" id="build-prod">For everyday use — one command</h3>
+      <p>Builds the client for production and serves both the UI and the API from a single server. This is what you'll normally use.</p>
       <pre><code>git clone &lt;repo-url&gt; tracelens
 cd tracelens
 
 .\run.ps1</code></pre>
       <p>
-        클라이언트 의존성 설치 → 서버 빌드 → 클라이언트 프로덕션 빌드까지 순서대로 끝내고 서버를 띄운다.
-        빌드 결과는 <code>src/TraceLens.Server/wwwroot</code>로 들어가므로 브라우저에서
-        <code>http://127.0.0.1:25011</code> 하나만 열면 된다(준비되면 자동으로 열린다). 종료는
-        <span class="kbd">Ctrl</span>+<span class="kbd">C</span>.
+        It installs client dependencies → builds the server → builds the client for production,
+        in that order, then starts the server. The build output goes into
+        <code>src/TraceLens.Server/wwwroot</code>, so all you need is
+        <code>http://127.0.0.1:25011</code> in a browser (opens automatically once ready). Stop
+        with <span class="kbd">Ctrl</span>+<span class="kbd">C</span>.
       </p>
 
-      <h3 class="sub-h" id="build-publish">소스 없이 빌드 결과만 배포·실행할 때</h3>
+      <h3 class="sub-h" id="build-publish">Deploying and running just the build output, without source</h3>
       <p>
-        <code>run.ps1</code>과 <code>dotnet run</code>은 실행할 때마다 소스 트리와 .NET SDK가 있어야 한다.
-        빌드 결과물만 다른 폴더나 다른 PC로 옮겨서 그대로 실행하고 싶다면(소스를 공유하지 않는 팀원 PC,
-        배포용 폴더 등) <code>dotnet publish</code>로 독립 실행 가능한 폴더를 만든다.
+        <code>run.ps1</code> and <code>dotnet run</code> both need the source tree and the .NET
+        SDK present every time you run them. If you want to move only the build output to another
+        folder or another machine and run it as-is (a teammate's PC where you don't want to share
+        source, a deployment folder, etc.), use <code>dotnet publish</code> to produce a
+        self-contained folder.
       </p>
-      <pre><code># 1. 프론트엔드를 먼저 프로덕션 빌드한다 (결과가 wwwroot로 들어가야 publish에 포함된다)
+      <pre><code># 1. Build the frontend for production first (output must land in wwwroot to be included in publish)
 cd client
 npm install
 npm run build
 cd ..
 
-# 2. 서버를 publish 폴더로 게시한다
+# 2. Publish the server to a publish folder
 dotnet publish src/TraceLens.Server -c Release -o publish</code></pre>
       <p>
-        결과는 <code>-o</code>로 지정한 폴더(위 예시는 저장소 루트의 <code>publish/</code>)에 통째로
-        떨어진다. <code>TraceLens.Server.exe</code>(Windows) / <code>TraceLens.Server.dll</code>, 참조
-        프로젝트(TraceLens.Analyzer · TraceLens.Mcp)까지 포함한 종속 파일, 그리고 방금 빌드한 React
-        결과물이 든 <code>wwwroot/</code>가 함께 들어간다 — <b>소스 코드나 Node.js 없이</b> 이 폴더
-        하나만으로 동작한다. 다만 기본 게시는 self-contained가 아니라 프레임워크 종속 방식이라, 실행할
-        PC에 .NET 8 런타임은 설치되어 있어야 한다.
+        Everything lands in the folder you pointed <code>-o</code> at (the repo-root
+        <code>publish/</code> in the example above): <code>TraceLens.Server.exe</code> (Windows) /
+        <code>TraceLens.Server.dll</code>, the dependent files including the referenced projects
+        (TraceLens.Analyzer · TraceLens.Mcp), and the <code>wwwroot/</code> folder holding the
+        React build you just made — <b>this one folder runs on its own, with no source code or
+        Node.js needed</b>. The default publish is framework-dependent rather than
+        self-contained, though, so the .NET 8 runtime still needs to be installed on the machine
+        you run it on.
       </p>
-      <pre><code># 3. 실행 (Windows)
+      <pre><code># 3. Run it (Windows)
 .\publish\TraceLens.Server.exe
 
-# 또는 dll을 dotnet으로 직접 실행
+# or run the dll directly with dotnet
 dotnet .\publish\TraceLens.Server.dll</code></pre>
       <p>
-        포트는 소스(<code>Program.cs</code>)에 <code>http://127.0.0.1:25011</code>로 고정되어 있어 게시본도
-        똑같은 주소로 뜬다. 브라우저에서 <code>http://127.0.0.1:25011</code>을 열면 된다. 종료는
-        <span class="kbd">Ctrl</span>+<span class="kbd">C</span> 또는 콘솔 창 닫기.
+        The port is hardcoded to <code>http://127.0.0.1:25011</code> in the source
+        (<code>Program.cs</code>), so the published build comes up at the same address. Open
+        <code>http://127.0.0.1:25011</code> in a browser. Stop with
+        <span class="kbd">Ctrl</span>+<span class="kbd">C</span> or by closing the console window.
       </p>
       <div class="callout warn">
-        <strong>재분석은 여전히 필요하다.</strong> "빌드된 것을 쓴다"는 TraceLens 도구 자체를 배포판으로
-        쓴다는 뜻이지, 분석 대상 솔루션까지 미리 구워 둔다는 뜻은 아니다. 분석 대상 코드가 바뀌면 이
-        게시본에서도 화면 상단의 <b>분석</b> · <b>다시 분석</b>은 그대로 눌러야 한다.
+        <strong>Re-analysis is still required.</strong> "Using the build output" means running
+        TraceLens itself as a distributable — it doesn't mean the analysis target solution has
+        been baked in ahead of time. If the analyzed code changes, you still need to press
+        <b>Analyze</b> · <b>Re-analyze</b> at the top of the screen in this published build too.
       </div>
       <p class="text-soft">
-        MCP 연동(<a href="#ask-mcp">MCP 직접 연동</a>, <code>docs/mcp-setup.md</code>)에서
-        <code>TraceLens.Mcp.dll</code> 경로를 등록해 썼다면, 게시 폴더의 경로로 다시 등록해야 한다 —
-        게시 전에는 보통 <code>bin/Debug/net8.0/TraceLens.Mcp.dll</code>을 가리키고 있었을 것이다.
-        TraceLens.Mcp도 같은 방식으로 게시하려면 <code>dotnet publish src/TraceLens.Mcp -c Release -o publish-mcp</code>를
-        따로 실행한다.
+        If you had registered a path to <code>TraceLens.Mcp.dll</code> for MCP integration
+        (<a href="#ask-mcp">MCP Direct</a>, <code>docs/mcp-setup.md</code>), you'll need to
+        re-register it with the published folder's path — before publishing it was probably
+        pointing at <code>bin/Debug/net8.0/TraceLens.Mcp.dll</code>. To publish TraceLens.Mcp the
+        same way, run <code>dotnet publish src/TraceLens.Mcp -c Release -o publish-mcp</code>
+        separately.
       </p>
 
-      <h3 class="sub-h" id="build-dev">개발할 때 — 프론트엔드를 고치면서 확인</h3>
-      <p>API 서버(25011)와 Vite 개발 서버(25012)를 함께 띄운다. 클라이언트 코드를 고치면서 HMR(Hot Module Replacement)로 즉시 확인할 때 쓴다.</p>
+      <h3 class="sub-h" id="build-dev">While developing — editing the frontend and checking your changes</h3>
+      <p>Runs the API server (25011) and the Vite dev server (25012) together. Use this while editing client code, to check changes instantly via HMR (Hot Module Replacement).</p>
       <pre><code>.\run.ps1 -Dev</code></pre>
       <p>
-        브라우저는 <code>http://localhost:25012</code>로 열리고, 이 개발 서버가 <code>/api</code> 요청을
-        백그라운드의 API 서버(25011)로 프록시한다. <span class="kbd">Ctrl</span>+<span class="kbd">C</span>로
-        종료하면 백그라운드 API 서버까지 함께 정리된다.
+        The browser opens at <code>http://localhost:25012</code>, and this dev server proxies
+        <code>/api</code> requests to the background API server (25011). Stopping with
+        <span class="kbd">Ctrl</span>+<span class="kbd">C</span> cleans up the background API
+        server too.
       </p>
 
-      <h4 class="mini-h">그 밖의 옵션</h4>
+      <h4 class="mini-h">Other options</h4>
       <table>
-        <tr><th>옵션</th><th>동작</th></tr>
-        <tr><td><code>-SkipBuild</code></td><td>빌드를 건너뛰고 이미 빌드된 결과로 바로 실행한다. 코드를 안 건드리고 재기동만 할 때.</td></tr>
-        <tr><td><code>-NoBrowser</code></td><td>브라우저를 자동으로 열지 않는다.</td></tr>
-        <tr><td><code>-Dev -SkipBuild</code></td><td>이미 <code>dotnet build</code>를 해 둔 상태에서 개발 서버만 다시 띄운다.</td></tr>
+        <tr><th>Option</th><th>Behavior</th></tr>
+        <tr><td><code>-SkipBuild</code></td><td>Skips the build and runs the existing build output right away. Use when you haven't touched the code and just want to restart.</td></tr>
+        <tr><td><code>-NoBrowser</code></td><td>Doesn't open a browser automatically.</td></tr>
+        <tr><td><code>-Dev -SkipBuild</code></td><td>Restarts only the dev server, assuming <code>dotnet build</code> has already been run.</td></tr>
       </table>
 
-      <h3 class="sub-h" id="build-manual">스크립트 없이 직접 실행</h3>
-      <p>백엔드와 프론트엔드를 따로따로 다룰 때(예: 서버만 디버거로 붙여서 실행할 때) 쓴다.</p>
-      <pre><code># 백엔드
+      <h3 class="sub-h" id="build-manual">Running directly, without the script</h3>
+      <p>Use this when handling the backend and frontend separately (for example, attaching a debugger to just the server).</p>
+      <pre><code># Backend
 dotnet build
 dotnet run --project src/TraceLens.Server
 
-# 프론트엔드 (다른 터미널에서)
+# Frontend (in another terminal)
 cd client
 npm install
 npm run dev</code></pre>
 
       <div class="callout tip">
-        <strong>팁.</strong> TraceLens.Mcp를 쓰려면(아래 <a href="#ask-mcp">MCP 직접 연동</a> 참고) 전체 솔루션을
-        먼저 <code>dotnet build TraceLens.sln</code>으로 빌드해 둬야 한다. <code>run.ps1</code>이 이미 이 과정을
-        포함하므로 보통은 신경 쓸 필요가 없다.
+        <strong>Tip.</strong> To use TraceLens.Mcp (see <a href="#ask-mcp">MCP Direct</a> below),
+        the whole solution needs to be built first with
+        <code>dotnet build TraceLens.sln</code>. <code>run.ps1</code> already does this, so you
+        usually don't need to think about it.
       </div>
     </section>
 
     <section class="doc-section" id="layout">
-      <h2>화면 구성</h2>
+      <h2>Screen layout</h2>
       <p class="section-desc">
-        상단 바 → 보기 전환 탭 → 분석 요약 줄 → 3분할 워크스페이스 순서로 구성된다. 어느 보기로
-        바꿔도 이 틀은 그대로 유지된다.
+        The screen is structured as: top bar → view-switch tabs → analysis summary line →
+        three-pane workspace. This frame stays the same no matter which view you switch to.
       </p>
 
-      <h4 class="mini-h">상단 바</h4>
+      <h4 class="mini-h">Top bar</h4>
       <ul>
-        <li><b>경로 입력란</b> — 분석할 <code>.sln</code> 또는 <code>.csproj</code> 절대 경로를 직접 입력한다.</li>
-        <li><b>찾아보기…</b> — 서버가 로컬 디렉터리를 훑어주는 폴더 선택 대화상자를 연다(<a href="#target">아래</a> 참고).</li>
-        <li><b>불러오기</b> — 전에 <b>저장</b>해 둔 분석 결과 JSON 파일을 골라 그대로 불러온다. 다시 분석하지 않는다.</li>
-        <li><b>저장</b> — 지금 분석 결과를 파일로 내려받는다(<a href="#saveload">저장 · 불러오기</a> 참고).</li>
-        <li><b>분석</b> — 입력한 경로를 Roslyn으로 분석해서 그래프를 새로 만든다.</li>
-        <li><b>신선도 배지</b> — 마지막 분석 시점과 현재 코드가 같은지 보여준다(<a href="#freshness">신선도 · 재분석</a> 참고).</li>
+        <li><b>Path field</b> — type the absolute path of the <code>.sln</code> or <code>.csproj</code> to analyze.</li>
+        <li><b>Browse… (찾아보기…)</b> — opens a folder-browse dialog backed by the server scanning local directories (see <a href="#target">below</a>).</li>
+        <li><b>Load (불러오기)</b> — picks a previously <b>saved</b> analysis-result JSON file and loads it as-is. Does not re-analyze.</li>
+        <li><b>Save (저장)</b> — downloads the current analysis result as a file (see <a href="#saveload">Save &amp; load</a>).</li>
+        <li><b>Analyze (분석)</b> — runs Roslyn over the entered path and builds a fresh graph.</li>
+        <li><b>Freshness badge</b> — shows whether the code still matches the last analysis (see <a href="#freshness">Freshness &amp; re-analysis</a>).</li>
       </ul>
 
       <div class="app-frame">
-        <div class="frame-label">상단 바 + 보기 전환 탭</div>
+        <div class="frame-label">Top bar + view-switch tabs — the app's UI is Korean-only, so this mockup shows the real on-screen labels</div>
         <div class="tabstrip">
           <div class="tab active">호출 흐름</div>
           <div class="tab">클래스 다이어그램</div>
@@ -653,100 +684,108 @@ npm run dev</code></pre>
         </div>
       </div>
 
-      <h4 class="mini-h">분석 요약 줄</h4>
+      <h4 class="mini-h">Analysis summary line</h4>
       <p>
-        탭 바로 아래에 진입점·네임스페이스·클래스(인터페이스 수 포함)·멤버·메서드·호출 엣지 개수와
-        그래프 파일 크기·분석 소요 시간이 한 줄로 뜬다. 점검(치명·경고·정보) 항목이 있으면 색이 있는
-        숫자로 함께 표시된다.
+        Right below the tab bar, one line shows the counts of entry points · namespaces · classes
+        (including interface count) · members · methods · call edges, along with the graph file
+        size and how long analysis took. If there are findings (critical/warning/info), their
+        counts appear alongside in color.
       </p>
 
-      <h4 class="mini-h">3분할 워크스페이스</h4>
+      <h4 class="mini-h">Three-pane workspace</h4>
       <p>
-        왼쪽은 보기에 따라 바뀌는 목록(진입점 · 네임스페이스 · 데이터소스 등), 가운데는 그래프/다이어그램
-        캔버스, 오른쪽은 <b>선택한 항목의 상세</b>와 <b>Claude에게 질문</b> 패널이다. 패널 사이 경계선은
-        드래그해서 폭을 바꾸고, 더블클릭하면 기본값으로 돌아온다. 창을 키우면 가운데 캔버스가 그만큼
-        넓게 쓰인다.
+        The left pane holds a list that changes with the view (entry points · namespaces · data
+        sources, etc.), the center pane is the graph/diagram canvas, and the right pane holds
+        <b>the selected item's detail</b> and the <b>Ask</b> panel. Drag the dividers between
+        panes to resize (double-click to reset); the center canvas gets more room as you widen the
+        window.
       </p>
 
       <div class="app-frame">
-        <div class="frame-label">3분할 레이아웃 개념도</div>
+        <div class="frame-label">Three-pane layout, conceptually</div>
         <div class="layout-mock">
           <div class="pane">
-            <div class="pane-title">왼쪽 · 목록</div>
-            <div class="pane-desc">진입점 / 네임스페이스 / 데이터소스 / 파이프라인 단계 등 보기에 따라 바뀐다.</div>
+            <div class="pane-title">Left · list</div>
+            <div class="pane-desc">Entry points / namespaces / data sources / pipeline steps, etc. — changes with the view.</div>
           </div>
           <div class="pane">
-            <div class="pane-title">가운데 · 캔버스</div>
+            <div class="pane-title">Center · canvas</div>
             <div class="pane-desc">
               <span class="node-box">OrdersController.Create</span>
               <span class="node-box teal">OrderService.CreateAsync</span>
               <span class="node-box teal">NotificationService.NotifyAsync</span>
-              <br>클릭하면 오른쪽 상세 패널이 갱신된다.
+              <br>Clicking updates the detail panel on the right.
             </div>
           </div>
           <div class="pane">
-            <div class="pane-title">오른쪽 · 상세 + 질문</div>
-            <div class="pane-desc">선택한 항목의 시그니처·소스·관계, 그 아래 Claude에게 질문 패널이 이어진다.</div>
+            <div class="pane-title">Right · detail + ask</div>
+            <div class="pane-desc">The selected item's signature/source/relationships, followed by the Ask panel below.</div>
           </div>
         </div>
       </div>
     </section>
 
     <section class="doc-section" id="target">
-      <h2>분석 대상 지정과 설정</h2>
+      <h2>Analysis target &amp; configuration</h2>
       <p class="section-desc">
-        솔루션(<code>.sln</code>)과 프로젝트(<code>.csproj</code>) 모두 분석 대상으로 지정할 수 있다.
+        Both a solution (<code>.sln</code>) and a project (<code>.csproj</code>) can be pointed at
+        as an analysis target.
       </p>
       <ul>
-        <li><b>솔루션(.sln)을 고르면</b> 솔루션에 포함된 모든 프로젝트를 분석한다.</li>
-        <li><b>프로젝트(.csproj)를 고르면</b> 그 프로젝트와 그 프로젝트가 참조하는 프로젝트만 분석한다.
-          큰 솔루션에서 관심 있는 서비스 하나만 빠르게 볼 때 유용하다.</li>
+        <li><b>Pointing at a solution (.sln)</b> analyzes every project it contains.</li>
+        <li><b>Pointing at a project (.csproj)</b> analyzes only that project and the projects it
+          references — useful for quickly looking at just the service you care about inside a
+          large solution.</li>
       </ul>
       <p>
-        <b>찾아보기…</b> 버튼은 브라우저의 파일 선택창 대신 서버가 로컬 디렉터리를 훑어 보여주는
-        전용 대화상자를 연다(브라우저 파일 선택창은 절대 경로를 알려주지 않기 때문이다). 폴더를 눌러
-        들어가고, <code>.sln</code>/<code>.csproj</code> 파일을 눌러 고른 뒤 <b>선택</b>을 누르거나
-        더블클릭한다. <b>↑ 상위</b>로 되돌아가고, <span class="kbd">Esc</span>로 닫는다.
+        The <b>Browse…</b> button opens a dedicated dialog backed by the server scanning local
+        directories, instead of the browser's own file picker (which doesn't expose absolute
+        paths). Click into folders to navigate, click a <code>.sln</code>/<code>.csproj</code>
+        file to select it, then press <b>Select</b> or double-click. <b>↑ Up</b> goes to the
+        parent folder, and <span class="kbd">Esc</span> closes the dialog.
       </p>
 
       <h3 class="sub-h" id="target-config">tracelens.config.json</h3>
       <p>
-        분석 대상 솔루션 루트(<code>.sln</code>이 있는 폴더)에 <code>tracelens.config.json</code>을 두면
-        분석 방식을 조정할 수 있다. 파일이 없으면 아래 기본값 그대로 동작하므로, 특별히 손볼 게 없다면
-        굳이 만들 필요는 없다.
+        Placing a <code>tracelens.config.json</code> at the root of the analysis target solution
+        (the folder containing the <code>.sln</code>) lets you tune how analysis runs. Without
+        one, it behaves exactly per the defaults below, so there's no need to create one unless
+        you have something specific to adjust.
       </p>
       <table>
-        <tr><th>필드</th><th>기본값</th><th>설명</th></tr>
-        <tr><td><code>entryPointAttributes</code></td><td>HttpGet · HttpPost · HttpPut · HttpDelete · HttpPatch</td><td>이 특성이 붙은 메서드를 HTTP 진입점으로 본다.</td></tr>
-        <tr><td><code>kindRules</code></td><td>Controller · Repository · Validator · Infra · Service · Db 6종</td><td>클래스 이름 접미사·베이스 타입으로 클래스 종류를 판정하는 규칙.</td></tr>
-        <tr><td><code>maxCallDepth</code></td><td>8</td><td>호출 그래프를 따라가는 최대 깊이.</td></tr>
-        <tr><td><code>excludeNamespacePrefixes</code></td><td>System · Microsoft · Swashbuckle</td><td>이 접두사로 시작하는 네임스페이스는 분석에서 뺀다.</td></tr>
-        <tr><td><code>analysisScope</code></td><td><code>"Solution"</code></td><td><code>"Solution"</code>(전체) 또는 <code>"EntryPoints"</code>(진입점에서 도달 가능한 것만).</td></tr>
-        <tr><td><code>includeObjectCreation</code></td><td>true</td><td><code>new X()</code>도 호출 그래프에 포함할지.</td></tr>
-        <tr><td><code>includeMembers</code></td><td>true</td><td>클래스 다이어그램용 필드·메서드 멤버 수집 여부.</td></tr>
-        <tr><td><code>includeInterfaces</code></td><td>true</td><td>인터페이스 선언을 클래스 목록에 포함할지.</td></tr>
-        <tr><td><code>includeStartupFlow</code></td><td>true</td><td>"시작 흐름" 보기 수집 여부.</td></tr>
-        <tr><td><code>includeDataAccess</code></td><td>true</td><td>"DB · 캐시" 보기 수집 여부.</td></tr>
-        <tr><td><code>includeMiddleware</code></td><td>true</td><td>"미들웨어" 보기 수집 여부.</td></tr>
-        <tr><td><code>db</code></td><td>아래 참고</td><td>사내 DB·캐시 계층의 모양을 알려주는 설정. 비워 둬도 SQL 리터럴과 타입 이름에서 짐작해서 동작한다.</td></tr>
+        <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+        <tr><td><code>entryPointAttributes</code></td><td>HttpGet · HttpPost · HttpPut · HttpDelete · HttpPatch</td><td>Methods carrying these attributes are treated as HTTP entry points.</td></tr>
+        <tr><td><code>kindRules</code></td><td>6 kinds: Controller · Repository · Validator · Infra · Service · Db</td><td>Rules that classify a class's kind by name suffix / base type.</td></tr>
+        <tr><td><code>maxCallDepth</code></td><td>8</td><td>Maximum depth to follow when walking the call graph.</td></tr>
+        <tr><td><code>excludeNamespacePrefixes</code></td><td>System · Microsoft · Swashbuckle</td><td>Namespaces starting with these prefixes are excluded from analysis.</td></tr>
+        <tr><td><code>analysisScope</code></td><td><code>"Solution"</code></td><td><code>"Solution"</code> (everything) or <code>"EntryPoints"</code> (only what's reachable from entry points).</td></tr>
+        <tr><td><code>includeObjectCreation</code></td><td>true</td><td>Whether <code>new X()</code> is also included in the call graph.</td></tr>
+        <tr><td><code>includeMembers</code></td><td>true</td><td>Whether to collect field/method members for the class diagram.</td></tr>
+        <tr><td><code>includeInterfaces</code></td><td>true</td><td>Whether interface declarations are included in the class list.</td></tr>
+        <tr><td><code>includeStartupFlow</code></td><td>true</td><td>Whether to collect data for the "Startup Flow" view.</td></tr>
+        <tr><td><code>includeDataAccess</code></td><td>true</td><td>Whether to collect data for the "Data Access" view.</td></tr>
+        <tr><td><code>includeMiddleware</code></td><td>true</td><td>Whether to collect data for the "Middleware" view.</td></tr>
+        <tr><td><code>db</code></td><td>see below</td><td>Configuration describing the shape of your in-house DB/cache layer. Works even when left empty, by guessing from SQL literals and type names.</td></tr>
       </table>
 
-      <h4 class="mini-h"><code>db</code> 섹션 — 샤딩·Redis·보상 처리 설정</h4>
+      <h4 class="mini-h">The <code>db</code> section — sharding, Redis, and compensation settings</h4>
       <p>
-        사내 DB 계층(자체 커넥션 팩토리, 샤딩, Redis 래퍼 등)의 이름 규칙을 알려주면 "DB · 캐시" 보기의
-        정확도가 올라간다. 패턴 문자열은 전체 이름에 <code>*</code> 와일드카드만 지원한다(대소문자 무시).
+        Telling TraceLens the naming conventions of your in-house DB layer (custom connection
+        factories, sharding, Redis wrappers, etc.) improves the accuracy of the "Data Access"
+        view. Pattern strings only support a <code>*</code> wildcard over the full name
+        (case-insensitive).
       </p>
       <table>
-        <tr><th>필드</th><th>설명</th></tr>
-        <tr><td><code>queryApis</code></td><td>SQL을 실행하는 API 패턴. 기본값에 Dapper 계열이 포함되어 있다.</td></tr>
-        <tr><td><code>cacheApis</code></td><td>캐시 클라이언트 API 패턴(Redis 등).</td></tr>
-        <tr><td><code>connectionFactories</code></td><td>커넥션을 여는 메서드 패턴. 첫 인자를 샤드 키로 본다.</td></tr>
-        <tr><td><code>shardKeyParameters</code></td><td>샤드 키로 쓰는 파라미터 이름(예: <code>userNo</code>).</td></tr>
-        <tr><td><code>externalApis</code></td><td>상태를 바꾸는 외부 호출 패턴(HTTP 클라이언트 등). 트랜잭션 안 외부 호출 판정에 쓴다.</td></tr>
-        <tr><td><code>dataSources</code></td><td>데이터소스 이름 → <code>{ kind, shardCount, readOnly, writeOnly, typePatterns }</code>. <code>kind</code>는 <code>shard</code> · <code>single</code> · <code>cache</code> 중 하나. 샤드로 표시한 데이터소스가 하나라도 있으면 SHARD 규칙군이 켜진다.</td></tr>
-        <tr><td><code>compensation.pairs</code></td><td>이름 규칙(Insert↔Delete 등)으로 못 잡는 되돌리기 짝을 <code>{ "do": "...", "undo": "..." }</code>로 직접 지정.</td></tr>
-        <tr><td><code>compensation.irreversible</code></td><td>취소 수단이 없는 호출 패턴(예: 발송 API).</td></tr>
-        <tr><td><code>compensation.idempotent</code></td><td>재실행해도 안전해서 되돌릴 필요가 없는 호출 패턴.</td></tr>
+        <tr><th>Field</th><th>Description</th></tr>
+        <tr><td><code>queryApis</code></td><td>API patterns that execute SQL. The default includes the Dapper family.</td></tr>
+        <tr><td><code>cacheApis</code></td><td>Cache client API patterns (Redis, etc.).</td></tr>
+        <tr><td><code>connectionFactories</code></td><td>Method patterns that open a connection. The first argument is treated as the shard key.</td></tr>
+        <tr><td><code>shardKeyParameters</code></td><td>Parameter names used as shard keys (e.g. <code>userNo</code>).</td></tr>
+        <tr><td><code>externalApis</code></td><td>State-changing external call patterns (HTTP clients, etc.), used to detect external calls inside a transaction.</td></tr>
+        <tr><td><code>dataSources</code></td><td>Data source name → <code>{ kind, shardCount, readOnly, writeOnly, typePatterns }</code>. <code>kind</code> is one of <code>shard</code> · <code>single</code> · <code>cache</code>. The SHARD rule group turns on if any data source is marked as a shard.</td></tr>
+        <tr><td><code>compensation.pairs</code></td><td>Explicitly declare undo pairs that name-based heuristics (Insert↔Delete, etc.) can't catch, as <code>{ "do": "...", "undo": "..." }</code>.</td></tr>
+        <tr><td><code>compensation.irreversible</code></td><td>Call patterns with no way to cancel them (e.g. a send/notify API).</td></tr>
+        <tr><td><code>compensation.idempotent</code></td><td>Call patterns that are safe to re-run, so they don't need undoing.</td></tr>
       </table>
 
       <pre><code>{
@@ -764,14 +803,15 @@ npm run dev</code></pre>
     }
   }
 }</code></pre>
-      <p class="text-soft">설정을 바꾼 뒤에는 반드시 <b>다시 분석</b>해야 반영된다.</p>
+      <p class="text-soft">Changes to the config only take effect after you <b>re-analyze</b>.</p>
     </section>
 
     <section class="doc-section" id="freshness">
-      <h2>신선도 · 재분석</h2>
+      <h2>Freshness &amp; re-analysis</h2>
       <p class="section-desc">
-        TraceLens는 파일 저장을 감지해서 자동으로 재분석하지 않는다. 대신 마지막 분석 시점과 현재
-        코드가 같은지 항상 배지로 보여주고, 재분석은 사용자가 명시적으로 누른다.
+        TraceLens doesn't watch for file saves and re-analyze automatically. Instead, a badge
+        always shows whether the last analysis still matches the current code, and re-analysis
+        happens only when you explicitly ask for it.
       </p>
       <div class="status-row">
         <div class="status-pill fresh"><span class="dot"></span>최신 상태</div>
@@ -780,215 +820,236 @@ npm run dev</code></pre>
         <div class="status-pill idle"><span class="dot"></span>분석 전</div>
         <div class="status-pill unknown"><span class="dot"></span>확인 실패</div>
       </div>
+      <p class="text-soft">(left to right, in the order the badge actually shows: Fresh · Changed 3 · Checking… · Not analyzed yet · Check failed)</p>
       <p>
-        배지는 30초마다 자동으로 상태를 다시 확인한다. <b>변경됨</b> 상태에서는 몇 개 파일이 바뀌었는지
-        숫자가 붙고, 마우스를 올리면 바뀐 파일 목록(또는 마지막 분석 시각)이 툴팁으로 뜬다. 배지 옆
-        <b>다시 분석</b> 버튼을 누르면 그 자리에서 재분석하고, 보고 있던 보기·선택·필터는 그대로 유지된다
-        (사라진 노드·클래스만 선택에서 정리된다).
+        The badge automatically re-checks status every 30 seconds. In the <b>Changed</b> state, a
+        number shows how many files changed, and hovering shows the list of changed files (or the
+        last analysis time) as a tooltip. Pressing <b>Re-analyze</b> next to the badge
+        re-analyzes on the spot, and the view/selection/filters you were looking at are kept as-is
+        (only selections pointing at code that no longer exists get cleared).
       </p>
     </section>
 
     <section class="doc-section" id="saveload">
-      <h2>저장 · 불러오기</h2>
+      <h2>Save &amp; load</h2>
       <p class="section-desc">
-        분석은 몇 초에서 수십 초가 걸릴 수 있다. 같은 결과를 나중에 다시 열거나 다른 사람과
-        공유하려면 파일로 저장해 둔다.
+        Analysis can take anywhere from a few seconds to tens of seconds. Save the result to a
+        file if you want to reopen the same result later, or share it with someone else.
       </p>
       <ul>
-        <li><b>저장</b> — 지금 분석 결과를 <code>솔루션이름.분석날짜.tracelens.json</code> 이름으로
-          내려받는다(브라우저의 "다른 이름으로 저장" 창이 뜬다).</li>
-        <li><b>불러오기</b> — 저장해 둔 JSON 파일을 골라 그대로 화면에 올린다. <b>다시 분석하지 않는다</b> —
-          그 시점의 스냅샷을 그대로 보는 것이다.</li>
+        <li><b>Save (저장)</b> — downloads the current analysis result as
+          <code>solution-name.analysis-date.tracelens.json</code> (triggers the browser's "Save As" dialog).</li>
+        <li><b>Load (불러오기)</b> — picks a saved JSON file and loads it onto the screen as-is.
+          <b>Does not re-analyze</b> — you're looking at a snapshot from that point in time.</li>
       </ul>
       <div class="callout tip">
-        <strong>언제 쓰나.</strong> ① 분석에 시간이 걸리는 큰 솔루션을 팀원과 공유할 때 —
-        분석 결과 파일 하나만 넘기면 상대는 재분석 없이 바로 열어본다.
-        ② 서버를 재시작한 직후 — 같은 경로를 다시 <b>분석</b>하지 않아도, 전에 저장해 둔 결과가
-        있으면 새로고침 시 조용히 그 결과를 불러와 화면을 되살린다.
-        ③ 특정 시점의 구조를 스냅샷으로 남겨두고 싶을 때(리팩토링 전후 비교 등).
+        <strong>When to use this.</strong> ① Sharing a large, slow-to-analyze solution with a
+        teammate — hand over just the result file, and they open it instantly with no
+        re-analysis needed. ② Right after restarting the server — you don't need to
+        re-<b>analyze</b> the same path; if a saved result exists, a refresh quietly loads it and
+        restores the screen. ③ When you want to keep a snapshot of the structure at a specific
+        point in time (e.g. comparing before/after a refactor).
       </div>
     </section>
 
     <section class="doc-section" id="views">
-      <h2>여섯 가지 보기</h2>
+      <h2>Six views</h2>
       <p class="section-desc">
-        상단 탭에서 전환한다. 보기를 바꾸면 왼쪽 목록과 가운데 캔버스가 한 세트로 바뀌고, 오른쪽
-        상세·질문 패널은 그대로 이어진다.
+        Switch between them from the top tabs. Switching views swaps the left list and center
+        canvas together as one set, while the detail/ask panel on the right stays put.
       </p>
 
-      <h3 class="sub-h" id="view-callflow">호출 흐름 — 진입점 하나를 단계식으로 파고든다</h3>
+      <h3 class="sub-h" id="view-callflow">Call Flow — drill into one entry point step by step</h3>
       <p>
-        왼쪽에서 라우트를 고르면 그 진입점에서 <b>분기 지점까지만</b> 먼저 그린다. <code>⊕</code>가 붙은
-        노드를 누르면 그 아래 호출을 한 단계 더 펼친다 — 그래프 전체를 한 번에 그리지 않고 필요한
-        만큼만 넓혀 가는 방식이다. 노드를 클릭하면 오른쪽에 그 메서드의 시그니처·접근제한자·호출하는
-        대상/호출하는 쪽과 실제 소스가 뜬다.
+        Pick a route on the left and it first draws <b>only up to the branch point</b> from that
+        entry point. Click a node marked <code>⊕</code> to expand its calls one level deeper —
+        rather than drawing the whole graph at once, it widens exactly as far as you need.
+        Clicking a node shows, on the right, that method's signature, access modifier,
+        callers/callees, and actual source.
       </p>
       <ul>
-        <li>왼쪽 패널: HTTP 메서드 + 라우트로 정리된 진입점 목록.</li>
-        <li>상단 우측 "레벨 N": 지금까지 몇 단계를 펼쳤는지.</li>
-        <li>breadcrumb으로 펼친 단계를 눌러 이전 단계로 되돌아간다.</li>
+        <li>Left panel: entry points listed as HTTP method + route.</li>
+        <li>Top-right "Level N": how many levels you've expanded so far.</li>
+        <li>Use the breadcrumb to step back through levels you've expanded.</li>
       </ul>
 
-      <h3 class="sub-h" id="view-classmap">클래스 다이어그램 — 솔루션 전체를 UML로 한 번에 본다</h3>
+      <h3 class="sub-h" id="view-classmap">Class Diagram — the whole solution as UML, at a glance</h3>
       <p>
-        모든 타입을 UML 박스(이름 / 필드 / 메서드 3단)로 한 캔버스에 그린다. 기본 배치는
-        <b>트리(계층)</b>다 — 관계 방향으로 층을 나누고(상속·구현은 상위 타입이 왼쪽), 층을 건너뛰는
-        선에는 중간 경유점을 끼워 넣어 교차를 줄인다. 진행 방향은 <code>→</code>/<code>↓</code>로
-        바꾸고, 네임스페이스로 묶어 보고 싶으면 <b>패키지</b> 배치로 전환한다.
+        Draws every type as a UML box (name / fields / methods, three tiers) on one canvas. The
+        default layout is <b>tree (hierarchical)</b> — layered by relationship direction (for
+        inheritance/implementation, the parent type sits to the left); edges that skip layers get
+        routed through waypoints to reduce crossings. Flip direction with
+        <code>→</code>/<code>↓</code>, or switch to <b>package</b> layout to group by namespace.
       </p>
-      <p>관계는 네 종류를 선으로 구분한다.</p>
+      <p>Four kinds of relationships are drawn as distinct line styles.</p>
       <table>
-        <tr><th>모양</th><th>관계</th><th>어디서 나오나</th></tr>
+        <tr><th>Shape</th><th>Relationship</th><th>Where it comes from</th></tr>
         <tr>
           <td class="rel-legend">
             <svg width="46" height="16"><line x1="2" y1="8" x2="24" y2="8" stroke="currentColor" stroke-width="1.6"/><polygon points="24,2 24,14 44,8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
           </td>
-          <td>상속</td><td><code>baseTypeId</code></td>
+          <td>Inheritance</td><td><code>baseTypeId</code></td>
         </tr>
         <tr>
           <td class="rel-legend">
             <svg width="46" height="16"><line x1="2" y1="8" x2="24" y2="8" stroke="currentColor" stroke-width="1.6" stroke-dasharray="4 3"/><polygon points="24,2 24,14 44,8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
           </td>
-          <td>구현</td><td><code>interfaceIds</code></td>
+          <td>Implementation</td><td><code>interfaceIds</code></td>
         </tr>
         <tr>
           <td class="rel-legend">
             <svg width="46" height="16"><line x1="2" y1="8" x2="30" y2="8" stroke="currentColor" stroke-width="1.6"/><polyline points="24,2 36,8 24,14" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
           </td>
-          <td>연관</td><td>필드·프로퍼티의 타입(대부분 DI 주입)</td>
+          <td>Association</td><td>the type of a field/property (mostly DI injection)</td>
         </tr>
         <tr>
           <td class="rel-legend">
             <svg width="46" height="16"><line x1="2" y1="8" x2="30" y2="8" stroke="currentColor" stroke-width="1.6" stroke-dasharray="4 3"/><polyline points="24,2 36,8 24,14" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
           </td>
-          <td>의존</td><td>호출 엣지 중 위 세 관계에 없는 것만</td>
+          <td>Dependency</td><td>call edges not already covered by the three relationships above</td>
         </tr>
       </table>
       <p>
-        전체를 그리는 게 목적이라 노드를 줄이는 대신 <b>보는 밀도를 조절하는 손잡이</b>를 뒀다.
+        Since the goal is to draw everything, instead of trimming nodes there are
+        <b>density controls</b>.
       </p>
       <ul>
-        <li>멤버(필드·메서드) 접기 — 끄면 박스 높이가 크게 줄어든다.</li>
-        <li>관계 4종 개별 토글 — <b>의존은 기본으로 꺼져 있다</b>(엣지가 가장 많아 화면을 채우기 쉽다).</li>
-        <li>네임스페이스 체크박스로 패키지 단위 표시/숨김.</li>
-        <li>"선택 1홉만" — 고른 클래스와 직접 이어진 클래스만 그린다.</li>
-        <li>줌 50 / 75 / 100% / 맞춤.</li>
+        <li>Collapse members (fields/methods) — collapsing shrinks box height a lot.</li>
+        <li>Toggle each of the 4 relationship kinds individually — <b>dependency is off by
+          default</b> (it produces the most edges and fills the screen fastest).</li>
+        <li>Namespace checkboxes to show/hide by package.</li>
+        <li>"1 hop from selection only" — draws only classes directly connected to the selected one.</li>
+        <li>Zoom 50 / 75 / 100% / fit.</li>
       </ul>
-      <p class="text-soft">클래스가 150개를 넘으면 멤버 접힘 + 의존 끔 + 맞춤 줌으로 자동으로 시작하고, 범위를 좁히라는 안내가 뜬다.</p>
+      <p class="text-soft">Past 150 classes, it automatically starts with members collapsed + dependency off + zoom-to-fit, and prompts you to narrow the scope.</p>
 
-      <h3 class="sub-h" id="view-flowmap">전체 흐름도 — 진입점 지도에서 전 구간 흐름으로</h3>
+      <h3 class="sub-h" id="view-flowmap">Flow Map — from an entry-point map to the full path</h3>
       <p>
-        기본 화면은 컨트롤러 박스에 라우트가 줄로 붙은 <b>클래스 단위 지도</b>다. 라우트 줄을 누르면
-        그 진입점의 <b>메서드 단위 전 구간 흐름</b>으로 들어가고, breadcrumb으로 지도에 돌아온다.
-        도달한 메서드를 클래스로 묶어 박스로 만들고, 선은 어느 메서드가 어느 메서드를 부르는지 줄
-        ↔ 줄로 잇는다. 깊이 제한(2 / 3 / 4 / 전체)에 걸려 안 보이는 하위 호출은 그 줄 오른쪽에
-        <code>+n</code>으로, 자기 자신을 부르는 재귀는 <code>↺</code>로 표시된다.
+        The default screen is a <b>class-level map</b> with controller boxes and their routes
+        listed as rows. Clicking a route row takes you into the <b>full, method-level path</b>
+        for that entry point, with a breadcrumb back to the map.
+        Reached methods are grouped into class boxes, and lines connect row ↔ row to show which
+        method calls which. Sub-calls hidden by the depth limit (2 / 3 / 4 / all) show as
+        <code>+n</code> to the right of that row, and recursive self-calls are marked with
+        <code>↺</code>.
       </p>
 
-      <h3 class="sub-h" id="view-startup">시작 흐름 — Program.cs가 실행되는 순서 그대로</h3>
+      <h3 class="sub-h" id="view-startup">Startup Flow — Program.cs, in the order it actually runs</h3>
       <p>
-        Program.cs 하나를 소스 순서대로 읽어, 서버가 뜰 때 <b>어떤 인터페이스가 어떤 구현체로 어떤
-        수명(Scoped / Singleton / Transient)으로 등록되는지</b>와 <code>app.UseXxx()</code> /
-        <code>MapXxx()</code> 미들웨어·라우팅 파이프라인 순서를 타임라인 두 단(서비스 등록 /
-        미들웨어 파이프라인)으로 보여준다. 솔루션 안에 정의된 확장 메서드(<code>AddFixtureServices()</code>
-        같은)는 접혀 있다가 클릭하면 그 안에서 실제로 어떤 등록이 일어나는지 펼쳐 보여준다. 이 보기는
-        호출 그래프가 아니라 Program.cs 하나만 읽는 별도의 타임라인이다.
+        Reads Program.cs top to bottom and shows, as a two-track timeline (service registrations /
+        middleware pipeline), <b>which interface is registered to which implementation with what
+        lifetime (Scoped / Singleton / Transient)</b>, and the order of the
+        <code>app.UseXxx()</code> / <code>MapXxx()</code> middleware and routing pipeline.
+        Extension methods defined inside the solution (like <code>AddFixtureServices()</code>)
+        start collapsed and expand on click to show what they actually register. This view isn't
+        a call graph — it's a separate timeline built by reading only Program.cs.
       </p>
 
-      <h3 class="sub-h" id="view-data">DB · 캐시 — 무엇을 어떤 순서로 바꾸고, 실패하면 무엇이 남는가</h3>
+      <h3 class="sub-h" id="view-data">Data Access — what changes, in what order, and what's left behind on failure</h3>
       <p>
-        SQL 리터럴과 캐시 호출에서 <b>어느 저장소의 무엇을 읽고 쓰는지</b>를 모아 다섯 개 하위 보기로
-        보여준다. 좌측 목록과 상단 툴바로 하위 보기를 전환한다.
+        Gathers <b>which storage is read/written and what</b> from SQL literals and cache calls,
+        and presents it across five sub-views. Switch between them from the left list and the
+        toolbar at the top.
       </p>
       <table>
-        <tr><th>하위 보기</th><th>내용</th></tr>
-        <tr><td>실행 경로</td><td>진입점 하나를 골라, 그 경로가 저장소를 어떤 순서로 건드리는지 단계별로 나열한다.</td></tr>
-        <tr><td>접근 지도</td><td>클래스 × 테이블/키 읽기·쓰기 매트릭스.</td></tr>
-        <tr><td>트랜잭션</td><td>트랜잭션 경계 안에서 실행되는 순서, 경계를 넘나드는 커넥션 수, 경계 안 외부 호출을 보여준다.</td></tr>
-        <tr><td><b>보상 처리</b></td><td>이 보기의 중심. 아래 참고.</td></tr>
-        <tr><td>점검 결과</td><td>DB·캐시 규칙(SHARD/TX/COMP/CACHE/CONN/RW/PERF/SEC) 위반 목록. 근거와 확실도가 함께 붙는다.</td></tr>
+        <tr><th>Sub-view</th><th>Contents</th></tr>
+        <tr><td>Execution path</td><td>Pick one entry point and list, step by step, the order in which that path touches storage.</td></tr>
+        <tr><td>Access map</td><td>A class × table/key read/write matrix.</td></tr>
+        <tr><td>Transactions</td><td>Execution order inside a transaction boundary, how many connections it spans, and external calls made inside it.</td></tr>
+        <tr><td><b>Compensation</b></td><td>The centerpiece of this view. See below.</td></tr>
+        <tr><td>Findings</td><td>A list of DB/cache rule violations (SHARD/TX/COMP/CACHE/CONN/RW/PERF/SEC), each with evidence and a confidence level.</td></tr>
       </table>
       <p>
-        <b>보상 처리(수동 롤백) 점검</b> — 트랜잭션 없이 저장소를 두 번 이상 바꾸는 경로를 찾아, 단계마다
-        실패 경로(<code>catch</code> · 조기 <code>return</code>)에서 역연산을 찾았는지 판정하고
-        <b>"i번에서 실패하면 무엇이 남는가"를 격자</b>로 편다. 빨간 칸이 되돌리는 코드를 찾지 못한 자리다.
-        <code>catch</code>에는 되돌리기가 있는데 <code>if (!ok) return</code> 조기 반환 경로에는 없는,
-        눈으로 놓치기 쉬운 자리도 규칙(<code>COMP-006</code>)으로 잡는다.
+        <b>Compensation (manual rollback) checking</b> — finds paths that touch storage more than
+        once without a transaction, determines at each step whether the failure path
+        (<code>catch</code> / early <code>return</code>) contains an undo, and lays out
+        <b>a grid answering "if step i fails, what's left behind?"</b> A red cell means no undoing
+        code was found there. It also catches the easy-to-miss case — via rule
+        <code>COMP-006</code> — where a <code>catch</code> has an undo but an early-return path
+        like <code>if (!ok) return</code> doesn't.
       </p>
       <p class="text-soft">
-        샤딩은 선택이다 — <code>tracelens.config.json</code>의 <code>db.dataSources</code>에 샤드를 잡은
-        경우에만 SHARD 규칙군과 "샤드 키" 단계가 켜진다. 상단 툴바의 "구성: 샤딩/단일 DB" 칩으로
-        지금 어떤 설정으로 읽었는지 확인할 수 있다.
+        Sharding is opt-in — the SHARD rule group and the "shard key" step only turn on when
+        <code>tracelens.config.json</code>'s <code>db.dataSources</code> defines a shard. The
+        "Config: sharded/single DB" chip in the top toolbar shows which configuration is
+        currently in effect.
       </p>
 
-      <h3 class="sub-h" id="view-middleware">미들웨어 — 요청이 무엇을 통과하고 어디서 끊기는가</h3>
+      <h3 class="sub-h" id="view-middleware">Middleware — what a request passes through, and where it can short-circuit</h3>
       <p>
-        <code>app.UseXxx()</code> 등록 순서를 그대로 세우고, 솔루션 안에 있는 미들웨어는
-        <code>InvokeAsync</code> 본문을 열어 <code>_next</code> 호출 앞뒤를 <b>요청 시 / 응답 시</b>
-        구간으로 나눠 보여준다. <code>_next</code>를 부르지 않고 끝나는 분기는 <b>단락 지점</b>으로
-        잡아 상태 코드와 함께 표시한다.
+        Lays out the <code>app.UseXxx()</code> registration order as-is, and for middleware
+        defined inside the solution, opens up the <code>InvokeAsync</code> body to split it into
+        <b>on-request / on-response</b> sections around the <code>_next</code> call. Branches that
+        end without calling <code>_next</code> are flagged as <b>short-circuit points</b>, shown
+        together with their status code.
       </p>
       <table>
-        <tr><th>하위 보기</th><th>내용</th></tr>
-        <tr><td>파이프라인</td><td>미들웨어 등록 순서와 각 단계의 요청/응답 구간 코드.</td></tr>
-        <tr><td>단락 지점</td><td>요청이 거기서 끊길 때 <b>실행되지 않는 것</b>과, 그래도 <b>실행되는 응답 후처리</b>를 나란히 보여준다.</td></tr>
-        <tr><td>점검 결과</td><td>인증·인가·CORS 순서, 생성자에 Scoped 서비스를 받는 미들웨어, 엔드포인트 매핑 뒤에 등록해 실행되지 않는 미들웨어 등 MW 규칙 위반 목록.</td></tr>
+        <tr><th>Sub-view</th><th>Contents</th></tr>
+        <tr><td>Pipeline</td><td>Middleware registration order and the request/response section code for each step.</td></tr>
+        <tr><td>Short-circuit points</td><td>Shows, side by side, <b>what doesn't run</b> when a request gets cut off there, and <b>what still runs</b> as response post-processing.</td></tr>
+        <tr><td>Findings</td><td>A list of MW rule violations — authentication/authorization/CORS ordering, middleware that takes a Scoped service through its constructor, middleware registered after endpoint mapping that never runs, and so on.</td></tr>
       </table>
 
-      <h4 class="mini-h">점검 결과 공통 규칙 — 확실도와 근거</h4>
-      <p>DB·캐시와 미들웨어의 점검 결과는 항상 아래 두 배지를 함께 보여준다.</p>
+      <h4 class="mini-h">Findings, in general — confidence and evidence</h4>
+      <p>Data Access and Middleware findings always come with these two badges together.</p>
       <p>
-        <span class="badge certain">확실</span> 정적으로 확실하게 판정한 것 &nbsp;
-        <span class="badge guess">추정</span> 이름 규칙 등으로 짐작한 것 — 근거 체인을 함께 확인해야 한다.
+        <span class="badge certain">확실</span> determined statically, with certainty &nbsp;
+        <span class="badge guess">추정</span> inferred from naming conventions etc. — check the evidence chain too.
       </p>
       <p>
-        심각도는 <span class="badge critical">치명</span> <span class="badge warning">경고</span>
-        <span class="badge info">정보</span> 세 단계이고, 툴바에서 전체/치명/경고/정보로 필터링한다.
-        <b>검사하지 않는 규칙도 카탈로그에 "꺼짐"으로 남겨</b> 무엇을 보지 않는지 항상 알 수 있게 한다.
+        Severity has three levels — <span class="badge critical">치명</span>
+        <span class="badge warning">경고</span> <span class="badge info">정보</span>
+        (critical/warning/info) — and the toolbar filters by all/critical/warning/info.
+        <b>Rules that aren't checked also stay listed in the catalog as "off,"</b> so you always
+        know what isn't being looked at.
       </p>
     </section>
 
     <section class="doc-section" id="ask">
-      <h2>AI 에이전트에게 질문하기</h2>
+      <h2>Asking an AI agent</h2>
       <p class="section-desc">
-        어느 보기에서든 클래스·메서드·네임스페이스·점검 항목·미들웨어 단계 등을 선택하면 오른쪽 아래
-        <b>Claude에게 질문</b> 패널(화면에 있는 실제 이름이다)에 파일 경로·라인 범위·심볼명이 자동으로
-        채워진다. 질문을 적고 세 가지 방식 중 하나로 보낸다. 패널 이름과 달리 <b>Claude Code에만 묶여
-        있지 않다</b> — 클립보드는 어떤 AI 코딩 에이전트로도 붙여넣어 쓰고, MCP로 그래프를 조회하는
-        것도 Claude Code와 Codex CLI 모두 등록해서 쓸 수 있다(아래 참고).
+        In any view, selecting a class, method, namespace, finding, or middleware step fills the
+        <b>Claude에게 질문</b> panel at the bottom right (that's the actual on-screen name) with
+        the file path, line range, and symbol name automatically. Write your question and send it
+        one of three ways. Despite its name, the panel <b>isn't tied to Claude Code alone</b> —
+        the clipboard works with any AI coding agent you paste into, and MCP-based graph lookups
+        can be registered with both Claude Code and Codex CLI (see below).
       </p>
 
-      <h3 class="sub-h" id="ask-clipboard">클립보드</h3>
+      <h3 class="sub-h" id="ask-clipboard">Clipboard</h3>
       <p>
-        캡처된 컨텍스트 + 질문을 클립보드에 복사한다. Claude Code든 Codex CLI든, 지금 쓰고 있는 AI
-        코딩 에이전트의 터미널·채팅창을 열어 두고 있으면 붙여넣기만 하면 된다 — 특정 CLI에 묶이지
-        않는, <b>어떤 선택에도</b> 쓸 수 있는 유일한 방식이다(다른 두 모드는 실행 가능한 노드가 있어야
-        한다).
+        Copies the captured context plus your question to the clipboard. Whether you're using
+        Claude Code or Codex CLI, just paste it into whatever AI coding agent's terminal or chat
+        you already have open — this is the only mode that works with <b>any</b> selection and
+        isn't tied to a specific CLI (the other two modes need a node that's actually executable).
       </p>
 
-      <h3 class="sub-h" id="ask-mcp">MCP 직접 연동</h3>
+      <h3 class="sub-h" id="ask-mcp">MCP Direct</h3>
       <p>
-        브라우저 안에서 바로 질문을 보내고 답을 스트리밍으로 받는다. 서버가 헤드리스로 <b>Claude Code
-        CLI</b>를 실행하면서 TraceLens MCP 도구(그래프 조회)를 붙여 준다. <b>별도 등록이 필요 없다</b> —
-        요청마다 서버가 지금 분석 결과에 맞는 <code>.tracelens/mcp.json</code>을 만들어 CLI에 넘긴다.
-        이 버튼은 Claude Code 전용이다 — Codex CLI 등 다른 CLI는 헤드리스로 실행하지 않는다.
+        Sends your question straight from the browser and streams back the answer. The server
+        runs the <b>Claude Code CLI</b> headlessly, attaching TraceLens's MCP tools (graph
+        lookups) to it. <b>No separate registration is needed</b> — on every request, the server
+        builds a <code>.tracelens/mcp.json</code> matching the current analysis result and hands
+        it to the CLI. This button is Claude Code-only — Codex CLI and other CLIs are never run
+        headlessly.
       </p>
       <ul>
-        <li>Claude Code CLI가 PATH에 있어야 한다.</li>
-        <li>진행 중 로그(도구 호출 등)는 "실행 로그" 아코디언으로 펼쳐 볼 수 있다.</li>
-        <li>답변이 오는 중에도 패널을 벗어나거나 다른 항목을 선택하면 요청은 취소된다.</li>
+        <li>The Claude Code CLI needs to be on PATH.</li>
+        <li>In-progress logs (tool calls, etc.) can be expanded via the "Execution log" accordion.</li>
+        <li>Leaving the panel or selecting something else while an answer is streaming cancels the request.</li>
       </ul>
 
-      <h4 class="mini-h">Claude Code · Codex CLI 세션에 직접 등록하기</h4>
+      <h4 class="mini-h">Registering directly in a Claude Code or Codex CLI session</h4>
       <p>
-        TraceLens.Mcp는 표준 stdio MCP 서버라 이 버튼 없이도, 평소 쓰는 CLI 세션에 직접 등록해서 쓸 수
-        있다. 다른 세션·다른 도구에서도 그래프를 조회하고 싶을 때 이 방법을 쓴다. 자세한 절차와
-        제공 도구(<code>get_node</code> · <code>get_source</code> · <code>get_callers</code> ·
-        <code>get_callees</code> · <code>get_entrypoints</code> · <code>search_symbol</code>) 목록은
-        <code>docs/mcp-setup.md</code>에 정리되어 있다.
+        TraceLens.Mcp is a standard stdio MCP server, so you can register it directly in whatever
+        CLI session you normally use, without this button at all. Use this when you want to query
+        the graph from a different session or a different tool. The full steps and the list of
+        tools provided (<code>get_node</code> · <code>get_source</code> · <code>get_callers</code>
+        · <code>get_callees</code> · <code>get_entrypoints</code> · <code>search_symbol</code>)
+        are in <code>docs/mcp-setup.md</code>.
       </p>
       <table>
-        <tr><th>CLI</th><th>등록 명령</th><th>설정 파일</th></tr>
+        <tr><th>CLI</th><th>Registration command</th><th>Config file</th></tr>
         <tr>
           <td>Claude Code</td>
           <td><code>claude mcp add --scope local tracelens -- dotnet TraceLens.Mcp.dll --graph ...</code></td>
@@ -997,152 +1058,155 @@ npm run dev</code></pre>
         <tr>
           <td>Codex CLI</td>
           <td><code>codex mcp add tracelens -- dotnet TraceLens.Mcp.dll --graph ...</code></td>
-          <td><code>~/.codex/config.toml</code>의 <code>[mcp_servers.tracelens]</code> (TOML)</td>
+          <td><code>[mcp_servers.tracelens]</code> in <code>~/.codex/config.toml</code> (TOML)</td>
         </tr>
       </table>
       <div class="callout note">
-        위 표는 등록 형태 차이만 요약한 것이다. 실제 경로가 들어간 전체 명령과 설정 파일 예시는
-        <code>docs/mcp-setup.md</code>를 그대로 복사해서 쓴다. 등록 후에는 각 CLI의 세션 안에서
-        (Claude Code는 <code>/mcp</code>, Codex CLI는 <code>codex mcp list</code> 또는 세션 안 <code>/mcp</code>)
-        상태를 확인한다.
+        The table above only summarizes the difference in registration shape. For the full
+        commands with real paths and config-file examples, copy them straight from
+        <code>docs/mcp-setup.md</code>. After registering, check status from inside each CLI's
+        session (<code>/mcp</code> for Claude Code; <code>codex mcp list</code> or
+        <code>/mcp</code> inside the session for Codex CLI).
       </div>
 
-      <h3 class="sub-h" id="ask-editor">에디터에서 열기</h3>
+      <h3 class="sub-h" id="ask-editor">Open in editor</h3>
       <p>
-        선택한 위치를 VS Code로 바로 연다. 서버가 <code>code --goto 파일:라인</code>을 실행하고,
-        <code>code</code> CLI를 찾지 못하면 <code>vscode://file/...</code> URI로 자동 대체한다(질문
-        입력 없이 위치만 여는 버튼이다).
+        Opens the selected location directly in VS Code. The server runs
+        <code>code --goto file:line</code>, and if it can't find the <code>code</code> CLI, falls
+        back automatically to a <code>vscode://file/...</code> URI (this button just opens the
+        location — no question needed).
       </p>
     </section>
 
     <section class="doc-section" id="scenarios">
-      <h2>사용 시나리오</h2>
+      <h2>Usage scenarios</h2>
       <p class="section-desc">
-        실제로 이 도구를 쓰게 되는 상황과, 그때 화면을 어떻게 조작하면 되는지를 정리했다.
+        Real situations where you'd reach for this tool, and how to drive the screen once you're
+        there.
       </p>
 
       <div class="scenario">
-        <div class="scenario-head"><span class="scenario-num">1</span><h4>처음 합류한 코드베이스의 전체 구조부터 파악한다</h4></div>
-        <div class="scenario-when">낯선 ASP.NET Core 솔루션을 새로 맡았을 때</div>
+        <div class="scenario-head"><span class="scenario-num">1</span><h4>Get the overall structure of a codebase you just joined</h4></div>
+        <div class="scenario-when">When you've just taken over an unfamiliar ASP.NET Core solution</div>
         <ol>
-          <li>경로를 입력하거나 <b>찾아보기…</b>로 <code>.sln</code>을 고르고 <b>분석</b>을 누른다.</li>
-          <li><b>클래스 다이어그램</b>으로 전환해 배치를 <b>패키지</b>로 바꾸고, 네임스페이스별 규모를 먼저 훑는다.</li>
-          <li>관심 없는 네임스페이스는 왼쪽 체크박스로 꺼서 화면을 좁힌다.</li>
-          <li>배치를 <b>트리</b>로 바꿔 상속·구현 관계(인터페이스 → 구현체)를 확인한다.</li>
-          <li><b>전체 흐름도</b>로 이동해 진입점 지도를 훑어 어떤 API들이 있는지 감을 잡는다.</li>
+          <li>Type in a path or use <b>Browse…</b> to pick a <code>.sln</code>, then press <b>Analyze</b>.</li>
+          <li>Switch to <b>Class Diagram</b>, change layout to <b>package</b>, and skim the size of each namespace first.</li>
+          <li>Turn off namespaces you don't care about with the left checkboxes to narrow the view.</li>
+          <li>Switch layout to <b>tree</b> to check inheritance/implementation relationships (interface → implementation).</li>
+          <li>Move to <b>Flow Map</b> and skim the entry-point map to get a feel for what APIs exist.</li>
         </ol>
-        <div class="scenario-views"><span>클래스 다이어그램</span><span>전체 흐름도</span></div>
+        <div class="scenario-views"><span>Class Diagram</span><span>Flow Map</span></div>
       </div>
 
       <div class="scenario">
-        <div class="scenario-head"><span class="scenario-num">2</span><h4>API 엔드포인트 하나가 정확히 무슨 일을 하는지 설명해야 한다</h4></div>
-        <div class="scenario-when">코드 리뷰, 장애 분석, 다른 사람에게 인수인계할 때</div>
+        <div class="scenario-head"><span class="scenario-num">2</span><h4>Explain exactly what one API endpoint does</h4></div>
+        <div class="scenario-when">Code review, incident analysis, handing off to someone else</div>
         <ol>
-          <li><b>호출 흐름</b>에서 왼쪽 목록에 해당 라우트를 찾아 고른다.</li>
-          <li><code>⊕</code> 노드를 눌러 필요한 만큼만 단계를 펼친다(전체를 한 번에 펼치지 않는다).</li>
-          <li>궁금한 메서드를 클릭해 오른쪽에서 시그니처와 실제 소스를 확인한다.</li>
-          <li>Ask 패널에서 <b>MCP 직접 연동</b>으로 "이 메서드의 트랜잭션 경계가 어디인지" 같은 질문을 바로 보낸다.</li>
+          <li>In <b>Call Flow</b>, find and pick that route from the left list.</li>
+          <li>Click <code>⊕</code> nodes to expand only as far as you need (don't expand everything at once).</li>
+          <li>Click the method you're curious about to see its signature and actual source on the right.</li>
+          <li>From the Ask panel, use <b>MCP Direct</b> to send a question like "where's the transaction boundary in this method" right away.</li>
         </ol>
-        <div class="scenario-views"><span>호출 흐름</span></div>
+        <div class="scenario-views"><span>Call Flow</span></div>
       </div>
 
       <div class="scenario">
-        <div class="scenario-head"><span class="scenario-num">3</span><h4>리팩토링이나 변경 전에 영향 범위를 확인한다</h4></div>
-        <div class="scenario-when">클래스 시그니처를 바꾸거나 삭제하기 전, "이거 건드리면 뭐가 깨지지?"</div>
+        <div class="scenario-head"><span class="scenario-num">3</span><h4>Check the blast radius before a refactor or change</h4></div>
+        <div class="scenario-when">Before changing or deleting a class's signature — "what breaks if I touch this?"</div>
         <ol>
-          <li><b>클래스 다이어그램</b>에서 왼쪽 검색으로 대상 클래스를 찾아 선택한다.</li>
-          <li>툴바에서 <b>"선택 1홉만"</b>을 켠다 — 이 클래스와 직접 이어진 것만 남는다.</li>
-          <li>관계 토글에서 <b>의존</b>도 켜서 실제로 이 클래스를 호출하는 곳까지 확인한다.</li>
-          <li>영향받는 클래스를 클릭해 "전체 흐름도에서 보기"로 넘어가 어떤 진입점들이 이 경로를 타는지 확인한다.</li>
+          <li>In <b>Class Diagram</b>, search the left panel for the target class and select it.</li>
+          <li>Turn on <b>"1 hop from selection only"</b> in the toolbar — only what's directly connected to this class remains.</li>
+          <li>Turn on <b>dependency</b> too, in the relationship toggles, to see what actually calls this class.</li>
+          <li>Click an affected class and jump to "view in Flow Map" to see which entry points go through this path.</li>
         </ol>
-        <div class="scenario-views"><span>클래스 다이어그램</span><span>전체 흐름도</span></div>
+        <div class="scenario-views"><span>Class Diagram</span><span>Flow Map</span></div>
       </div>
 
       <div class="scenario">
-        <div class="scenario-head"><span class="scenario-num">4</span><h4>트랜잭션 없이 여러 저장소를 건드리는 코드가 안전한지 점검한다</h4></div>
-        <div class="scenario-when">장애 사후분석, 배포 전 리뷰, "결제 실패하면 포인트는 안 빠지나?" 같은 질문에 답할 때</div>
+        <div class="scenario-head"><span class="scenario-num">4</span><h4>Check whether code touching multiple stores without a transaction is safe</h4></div>
+        <div class="scenario-when">Post-incident analysis, pre-deploy review, answering "if payment fails, do the points not get deducted?"</div>
         <ol>
-          <li><b>DB · 캐시</b>로 전환하고 하위 보기를 <b>보상 처리</b>로 바꾼다.</li>
-          <li>왼쪽에서 대상 진입점 또는 쓰기 경로를 고른다.</li>
-          <li>"실패 지점 × 단계" 격자에서 빨간 칸(되돌리기를 못 찾은 자리)을 확인한다.</li>
-          <li>칸을 클릭해 오른쪽에서 근거 체인과 확실도(확실/추정)를 확인한다.</li>
-          <li>필요하면 Ask 패널로 "이 자리에 보상 처리를 어떻게 추가하면 좋을지" 바로 물어본다.</li>
+          <li>Switch to <b>Data Access</b> and change the sub-view to <b>Compensation</b>.</li>
+          <li>Pick the target entry point or write path on the left.</li>
+          <li>Look at the "failure point × step" grid for red cells (where no undo was found).</li>
+          <li>Click a cell to see the evidence chain and confidence level (certain/inferred) on the right.</li>
+          <li>If needed, ask the Ask panel right away — "how should I add compensation here?"</li>
         </ol>
-        <div class="scenario-views"><span>DB · 캐시</span></div>
+        <div class="scenario-views"><span>Data Access</span></div>
       </div>
 
       <div class="scenario">
-        <div class="scenario-head"><span class="scenario-num">5</span><h4>인증·인가·CORS 버그를 미들웨어 순서에서 의심한다</h4></div>
-        <div class="scenario-when">"인증이 우회되는 것 같다", "특정 상황에서 CORS 헤더가 안 붙는다" 같은 증상</div>
+        <div class="scenario-head"><span class="scenario-num">5</span><h4>Suspect an auth/CORS bug is caused by middleware order</h4></div>
+        <div class="scenario-when">Symptoms like "auth seems to be getting bypassed" or "CORS headers are missing in some cases"</div>
         <ol>
-          <li><b>미들웨어</b>로 전환하고 하위 보기 <b>파이프라인</b>에서 등록 순서를 확인한다.</li>
-          <li>하위 보기를 <b>단락 지점</b>으로 바꿔, 요청이 끊기는 자리와 상태 코드를 확인한다.</li>
-          <li>그 지점에서 <b>실행되지 않는 것</b>과 <b>그래도 실행되는 응답 후처리</b>를 나란히 비교한다.</li>
-          <li>하위 보기 <b>점검 결과</b>에서 순서 관련 규칙(인증/인가/CORS 순서, 매핑 뒤에 등록된 미들웨어 등)을 확인한다.</li>
+          <li>Switch to <b>Middleware</b> and check registration order in the <b>Pipeline</b> sub-view.</li>
+          <li>Switch to <b>Short-circuit points</b> to see where requests get cut off and with what status code.</li>
+          <li>Compare, side by side, <b>what doesn't run</b> at that point versus <b>what still runs</b> as response post-processing.</li>
+          <li>Check the <b>Findings</b> sub-view for ordering-related rules (auth/authz/CORS order, middleware registered after mapping, etc.).</li>
         </ol>
-        <div class="scenario-views"><span>미들웨어</span></div>
+        <div class="scenario-views"><span>Middleware</span></div>
       </div>
 
       <div class="scenario">
-        <div class="scenario-head"><span class="scenario-num">6</span><h4>서버가 시작될 때 DI 등록이 꼬였는지 확인한다</h4></div>
-        <div class="scenario-when">"이 인터페이스가 어떤 구현체로 주입되지?", 순환 참조나 수명 불일치가 의심될 때</div>
+        <div class="scenario-head"><span class="scenario-num">6</span><h4>Check whether DI registration got tangled at startup</h4></div>
+        <div class="scenario-when">"What implementation does this interface resolve to?", or when a cycle or lifetime mismatch is suspected</div>
         <ol>
-          <li><b>시작 흐름</b>으로 전환해 Program.cs의 서비스 등록 순서를 위에서부터 훑는다.</li>
-          <li>솔루션 안에 정의된 확장 메서드(<code>AddXxxServices()</code> 등)를 클릭해 펼쳐서 실제 등록 내용을 확인한다.</li>
-          <li>등록 항목을 클릭해 "이 클래스에서 보기"로 클래스 다이어그램까지 이어서 확인한다.</li>
-          <li>미들웨어 파이프라인 단도 같은 화면에서 함께 확인한다.</li>
+          <li>Switch to <b>Startup Flow</b> and read Program.cs's service registration order from the top.</li>
+          <li>Click extension methods defined in the solution (like <code>AddXxxServices()</code>) to expand and see what they actually register.</li>
+          <li>Click a registration entry and follow "view in this class" through to the class diagram.</li>
+          <li>Check the middleware pipeline track on the same screen too.</li>
         </ol>
-        <div class="scenario-views"><span>시작 흐름</span></div>
+        <div class="scenario-views"><span>Startup Flow</span></div>
       </div>
 
       <div class="scenario">
-        <div class="scenario-head"><span class="scenario-num">7</span><h4>코드가 바뀐 뒤에도 그래프를 최신으로 유지한다</h4></div>
-        <div class="scenario-when">평소 작업 흐름 — 브랜치를 옮기거나 코드를 고친 직후</div>
+        <div class="scenario-head"><span class="scenario-num">7</span><h4>Keep the graph current after the code changes</h4></div>
+        <div class="scenario-when">Everyday workflow — right after switching branches or making a change</div>
         <ol>
-          <li>화면 상단의 <b>신선도 배지</b>를 확인한다. "변경됨"이면 몇 개 파일이 바뀌었는지 숫자가 붙는다.</li>
-          <li>배지 옆 <b>다시 분석</b>을 누른다.</li>
-          <li>재분석이 끝나도 보고 있던 보기·선택·필터는 그대로 유지된다(사라진 코드만 선택에서 정리된다).</li>
+          <li>Check the <b>freshness badge</b> at the top. If it says "Changed," a number shows how many files changed.</li>
+          <li>Press <b>Re-analyze</b> next to the badge.</li>
+          <li>The view/selection/filters you had stay exactly as they were after re-analysis finishes (only selections pointing at code that's gone get cleared).</li>
         </ol>
-        <div class="scenario-views"><span>모든 보기 공통</span></div>
+        <div class="scenario-views"><span>Applies to every view</span></div>
       </div>
 
       <div class="scenario">
-        <div class="scenario-head"><span class="scenario-num">8</span><h4>분석 결과를 팀원과 공유하거나 재분석 없이 다시 연다</h4></div>
-        <div class="scenario-when">분석이 오래 걸리는 큰 솔루션, 서버를 재시작한 직후</div>
+        <div class="scenario-head"><span class="scenario-num">8</span><h4>Share an analysis result with a teammate, or reopen it without re-analyzing</h4></div>
+        <div class="scenario-when">A large solution that's slow to analyze; right after restarting the server</div>
         <ol>
-          <li>분석을 마친 뒤 상단의 <b>저장</b>을 눌러 JSON 파일을 내려받는다.</li>
-          <li>이 파일을 팀원에게 전달하거나 저장소 밖에 보관한다.</li>
-          <li>받은 사람은 자기 화면에서 <b>불러오기</b>로 그 파일을 골라 곧바로 같은 화면을 본다(재분석하지 않는다).</li>
+          <li>After analysis finishes, press <b>Save</b> at the top to download the JSON file.</li>
+          <li>Hand this file to a teammate, or keep it outside the repository.</li>
+          <li>Whoever receives it picks it with <b>Load</b> on their own screen and sees the same result immediately (no re-analysis).</li>
         </ol>
-        <div class="scenario-views"><span>모든 보기 공통</span></div>
+        <div class="scenario-views"><span>Applies to every view</span></div>
       </div>
 
       <div class="scenario">
-        <div class="scenario-head"><span class="scenario-num">9</span><h4>사내 DB 계층(샤딩·Redis 등)을 도구가 못 알아볼 때 설정으로 알려준다</h4></div>
-        <div class="scenario-when">"DB · 캐시" 보기의 접근/샤드 판정이 실제와 다르게 나올 때</div>
+        <div class="scenario-head"><span class="scenario-num">9</span><h4>Tell the tool about an in-house DB layer (sharding, Redis, etc.) it doesn't recognize</h4></div>
+        <div class="scenario-when">When the Data Access view's access/shard detection doesn't match reality</div>
         <ol>
-          <li>분석 대상 솔루션 루트에 <code>tracelens.config.json</code>을 만들거나 연다.</li>
-          <li><code>db.dataSources</code>에 실제 커넥션 팩토리 타입 이름 패턴과 <code>kind</code>(shard/single/cache)를 적는다.</li>
-          <li>이름 규칙으로 못 잡는 보상 짝이 있으면 <code>db.compensation.pairs</code>에 직접 추가한다.</li>
-          <li><b>다시 분석</b>해서 "DB · 캐시" 보기의 접근 지도·보상 처리 결과가 실제와 맞는지 확인한다.</li>
+          <li>Create or open <code>tracelens.config.json</code> at the root of the analysis target solution.</li>
+          <li>In <code>db.dataSources</code>, write the real connection-factory type-name patterns and their <code>kind</code> (shard/single/cache).</li>
+          <li>If there are undo pairs that naming conventions can't catch, add them directly to <code>db.compensation.pairs</code>.</li>
+          <li><b>Re-analyze</b> and confirm the Data Access view's access map and compensation results now match reality.</li>
         </ol>
-        <div class="scenario-views"><span>DB · 캐시</span><span>tracelens.config.json</span></div>
+        <div class="scenario-views"><span>Data Access</span><span>tracelens.config.json</span></div>
       </div>
     </section>
 
     <section class="doc-section" id="reference">
-      <h2>더 알아보기</h2>
+      <h2>Learn more</h2>
       <ul>
-        <li><code>README.md</code> — 프로젝트 개요, 아키텍처, 기술 스택.</li>
-        <li><code>docs/mcp-setup.md</code> — Claude Code와 Codex CLI에 TraceLens를 MCP 서버로 등록하는 방법과 제공 도구 목록.</li>
-        <li><code>CLAUDE.md</code> — 이 저장소에서 작업하는 개발자/에이전트를 위한 설계 제약과 코딩 컨벤션(사용자보다는 기여자를 위한 문서).</li>
+        <li><code>README.md</code> — project overview, architecture, tech stack.</li>
+        <li><code>docs/mcp-setup.md</code> — how to register TraceLens as an MCP server with Claude Code and Codex CLI, plus the list of tools it provides.</li>
+        <li><code>CLAUDE.md</code> — design constraints and coding conventions for developers/agents working in this repository (Korean-only; written for contributors rather than users).</li>
       </ul>
     </section>
 
   </main>
 </div>
 
-<footer class="doc-footer">TraceLens · 로컬 전용 개발 도구 · 이 문서는 <code>docs/manual.html</code>에 있다</footer>
+<footer class="doc-footer">TraceLens · a local-only development tool · this document lives at <code>docs/manual.html</code></footer>
 
 <script>
   (function () {

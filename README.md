@@ -1,106 +1,106 @@
+*English · [한국어](README_kr.md)*
+
 # TraceLens
 
-ASP.NET Core Web API 코드베이스의 호출 흐름을 그래프로 탐색하고, 선택한 코드 위치를 AI 코딩 에이전트(Claude Code · Codex CLI 등)에게 곧바로 질의할 수 있는 로컬 개발 도구다.
+A local development tool that lets you explore the call flow of an ASP.NET Core Web API codebase as a graph, and ask an AI coding agent (Claude Code, Codex CLI, etc.) about any selected code location right away.
 
-> 빌드 방법·화면 구성·여섯 가지 보기·AI 에이전트 연동·실전 사용 시나리오까지 한 번에 보려면
-> [`docs/manual.html`](docs/manual.html)을 브라우저로 연다.
+> For build instructions, the screen layout, all six views, AI agent integration, and real usage
+> scenarios in one place, open [`docs/manual.html`](docs/manual.html) in a browser.
 
-## 이 도구가 하는 일
+## What this tool does
 
-HTTP 엔드포인트(진입점)부터 시작해서 컨트롤러 → 서비스 → 리포지토리로 이어지는 실제 메서드 호출 흐름을 그래프로 보여준다. 코드베이스 전체가 어떻게 생겼는지 보고 싶으면 클래스 다이어그램이나 전체 흐름도로 전환한다. 어느 보기에서든 박스나 멤버 줄을 클릭하면 그 위치의 실제 소스 코드가 옆에 뜨고, 질문을 입력하면 파일 경로·라인 범위·심볼명이 자동으로 캡처되어 AI 코딩 에이전트에게 전달된다.
+Starting from an HTTP endpoint (entry point), it shows the real method call flow as it moves from controller → service → repository. Switch to the class diagram or the flow map to see how the whole codebase is shaped. In any view, clicking a box or a member row brings up the actual source at that location, and typing a question automatically captures the file path, line range, and symbol name and hands them to an AI coding agent.
 
-## 여섯 가지 보기
+> **Note:** TraceLens's own UI is Korean-only today — button and tab labels appear in Korean on
+> screen. This document explains everything in English; screen mockups below reproduce the actual
+> on-screen (Korean) text so you can match what's described here to what you'll actually see.
 
-화면 위 툴바에서 **호출 흐름 · 클래스 다이어그램 · 전체 흐름도 · 시작 흐름 · DB·캐시 · 미들웨어**를 전환한다. 보기를 바꾸면 좌측 패널과 가운데 캔버스가 한 세트로 바뀌고, 오른쪽의 상세·질문 패널은 그대로 이어진다. 세 패널 사이의 경계선은 드래그해서 폭을 바꿀 수 있고(더블클릭하면 기본값), 창을 키우면 그만큼 넓게 쓴다.
+## Six views
 
-### 호출 흐름 — 진입점 하나를 단계식으로 파고든다
+Switch between **Call Flow · Class Diagram · Flow Map · Startup Flow · Data Access (DB · Cache) · Middleware** from the toolbar at the top (the tab buttons themselves are labeled in Korean: 호출 흐름 · 클래스 다이어그램 · 전체 흐름도 · 시작 흐름 · DB·캐시 · 미들웨어). Switching views swaps the left panel and the center canvas together as one set, while the detail/ask panel on the right stays put. The dividers between the three panels can be dragged to resize (double-click to reset), and the center canvas gets more room as you widen the window.
 
-왼쪽에서 라우트를 고르면 그 진입점에서 분기 지점까지를 먼저 그리고, `⊕`가 붙은 노드를 눌러 한 단계씩 펼친다. 오른쪽에는 고른 메서드의 시그니처·접근제한자·호출 관계와 실제 소스가 뜬다.
+### Call Flow — drill into one entry point step by step
 
-### 클래스 다이어그램 — 솔루션 전체를 UML로 한 번에 본다
+Pick a route on the left and it first draws up to the nearest branch point from that entry point; click a node marked `⊕` to expand one level deeper at a time. The right panel shows the selected method's signature, access modifier, call relationships, and actual source.
 
-모든 타입을 UML 박스(이름 / 필드 / 메서드 3단)로 한 캔버스에 그린다. 기본 배치는 **트리(계층)** 다 — 관계 방향으로 층을 나누고(상속·구현은 상위 타입이 왼쪽), 층을 건너뛰는 선에는 중간 경유점을 끼워 넣은 뒤 층마다 순서를 바꿔가며 교차를 줄인다. 진행 방향은 `→`/`↓`로 바꾸고, 네임스페이스로 묶어 보고 싶으면 **패키지** 배치로 전환한다.
+### Class Diagram — the whole solution as UML, at a glance
 
-관계는 네 종류를 선으로 구분한다.
+Every type is drawn as a UML box (name / fields / methods, three tiers) on one canvas. The default layout is **tree (hierarchical)** — types are arranged in layers by relationship direction (for inheritance/implementation, the parent type sits to the left); edges that skip layers get routed through waypoints, and rows are reordered layer by layer to reduce crossings. Flip the direction with `→`/`↓`, or switch to **package** layout to group by namespace.
 
-| 관계 | 선 모양 | 어디서 나오나 |
+Four kinds of relationships are drawn as distinct line styles.
+
+| Relationship | Line style | Where it comes from |
 |---|---|---|
-| 상속 | 실선 + 빈 삼각형 | `baseTypeId` |
-| 구현 | 점선 + 빈 삼각형 | `interfaceIds` |
-| 연관 | 실선 + 열린 화살표 | 필드·프로퍼티의 타입(대부분 DI 주입) |
-| 의존 | 점선 + 열린 화살표 | 호출 엣지 중 위 세 관계에 없는 것만 |
+| Inheritance | solid + hollow triangle | `baseTypeId` |
+| Implementation | dashed + hollow triangle | `interfaceIds` |
+| Association | solid + open arrow | the type of a field/property (mostly DI injection) |
+| Dependency | dashed + open arrow | call edges not already covered by the three relationships above |
 
-전체를 그리는 게 목적이라 노드를 줄이는 대신 **보는 밀도를 조절하는 손잡이**를 뒀다. 멤버(필드·메서드) 접기, 관계 4종 개별 토글(의존은 기본 꺼짐), 네임스페이스 체크박스, "선택 1홉만", 줌 50/75/100/맞춤이다. 클래스가 150개를 넘으면 멤버 접힘 + 의존 끔으로 시작하고 범위를 좁히라는 안내를 띄운다.
+Since the point is to draw everything, instead of trimming nodes there are **density controls**: collapsing members (fields/methods), toggling each of the four relationship kinds individually (dependency is off by default), namespace checkboxes, "1 hop from selection only," and zoom at 50/75/100%/fit. Past 150 classes, it automatically starts with members collapsed, dependency off, and zoom-to-fit, and prompts you to narrow the scope.
 
-### 전체 흐름도 — 진입점 지도에서 전 구간 흐름으로
+### Flow Map — from an entry-point map to the full path
 
-기본 화면은 컨트롤러 박스에 라우트가 줄로 붙은 클래스 단위 지도다. 라우트 줄을 누르면 그 진입점의 **메서드 단위 전 구간 흐름**으로 들어가고, breadcrumb으로 지도에 돌아온다.
+The default screen is a class-level map with controller boxes and their routes listed as rows. Clicking a route row takes you into the **full, method-level call path** for that entry point, with a breadcrumb back to the map.
 
-도달한 메서드를 클래스로 묶어 박스로 만들고, 선은 어느 메서드가 어느 메서드를 부르는지 보이도록 줄 ↔ 줄로 잇는다. 깊이 제한(2/3/4/전체)에 걸려 안 보이는 하위 호출은 그 줄 오른쪽에 `+n`으로, 자기 자신을 부르는 재귀는 `↺`로 남는다.
+Reached methods are grouped into class boxes, and lines connect row ↔ row to show which method calls which. Sub-calls hidden by the depth limit (2/3/4/all) appear as `+n` to the right of that row, and recursive self-calls are marked with `↺`.
 
-### 시작 흐름 — Program.cs가 실행되는 순서 그대로
+### Startup Flow — Program.cs, in the order it actually runs
 
-Program.cs 하나를 소스 순서대로 읽어, 서버가 뜰 때 **어떤 인터페이스가 어떤 구현체로 어떤 수명(Scoped/Singleton/Transient)으로 등록되는지**와 `app.UseXxx()`/`MapXxx()` 미들웨어·라우팅 파이프라인 순서를 타임라인 두 단(서비스 등록 / 미들웨어 파이프라인)으로 보여준다. 솔루션 안에 정의된 확장 메서드(`AddFixtureServices()` 같은)는 접혀 있다가 클릭하면 그 안의 실제 등록을 펼쳐 보여준다. 이 보기는 호출 그래프가 아니라 Program.cs 하나만 읽는 별도의 타임라인이다.
+Reads Program.cs top to bottom and shows, as a two-track timeline (service registrations / middleware pipeline), **which interface is registered to which implementation with what lifetime (Scoped/Singleton/Transient)**, and the order of the `app.UseXxx()`/`MapXxx()` middleware and routing pipeline. Extension methods defined inside the solution (like `AddFixtureServices()`) start collapsed and expand on click to show what they actually register. This view isn't a call graph — it's a separate timeline built by reading only Program.cs.
 
-### DB · 캐시 — 무엇을 어떤 순서로 바꾸고, 실패하면 무엇이 남는가
+### Data Access (DB · Cache) — what changes, in what order, and what's left behind on failure
 
-SQL 리터럴과 캐시 호출에서 **어느 저장소의 무엇을 읽고 쓰는지**를 모아, 진입점별 실행 경로 · 클래스 × 테이블 접근 지도 ·
-트랜잭션 경계 · 점검 결과로 보여준다. 이 보기의 중심은 **보상 처리**다.
+Gathers **which storage is read/written and what** from SQL literals and cache calls, and presents it as a per-entry-point execution path · class × table access map · transaction boundaries · findings. The centerpiece of this view is **compensation analysis**.
 
-트랜잭션 없이 저장소를 두 번 이상 바꾸는 경로를 찾아, 단계마다 실패 경로(`catch` · 조기 `return`)에서 역연산을 찾았는지 판정하고
-**"i번에서 실패하면 무엇이 남는가"를 격자로** 편다. 빨간 칸이 되돌리는 코드를 찾지 못한 자리다.
-`catch`에는 되돌리기가 있는데 `if (!ok) return` 경로에는 없는, 눈으로 놓치기 쉬운 자리도 규칙(`COMP-006`)으로 잡는다.
+It finds paths that touch storage more than once without a transaction, determines at each step whether the failure path (`catch` / early `return`) contains an undo operation, and lays out **a grid answering "if step i fails, what's left behind?"** A red cell means no undoing code was found there. It also catches the easy-to-miss case — via rule `COMP-006` — where a `catch` has an undo but an early-return path like `if (!ok) return` doesn't.
 
-샤딩은 선택이다. `tracelens.config.json`의 `dataSources`에 샤드를 잡은 경우에만 SHARD 규칙군이 켜진다.
+Sharding is opt-in: the SHARD rule group only turns on when `tracelens.config.json`'s `dataSources` defines a shard.
 
-### 미들웨어 — 요청이 무엇을 통과하고 어디서 끊기는가
+### Middleware — what a request passes through, and where it can short-circuit
 
-`app.UseXxx()` 순서를 그대로 세우고, 솔루션 안에 있는 미들웨어는 `InvokeAsync` 본문을 열어 `_next` 앞뒤를
-**요청 시 / 응답 시**로 나눠 보여준다. `_next`를 부르지 않고 끝나는 분기는 단락 지점으로 잡아 상태 코드와 함께 표시하고,
-"단락 지점" 보기에서 그때 **실행되지 않는 것**과 **그래도 실행되는 응답 후처리**를 나란히 놓는다.
-인증·인가·CORS 순서, 생성자에 Scoped 서비스를 받는 미들웨어, 엔드포인트 매핑 뒤에 등록해 실행되지 않는 미들웨어도 함께 잡는다.
+Lays out the `app.UseXxx()` registration order as-is, and for middleware defined inside the solution, opens up the `InvokeAsync` body to split it into **on-request / on-response** sections around the `_next` call. Branches that end without calling `_next` are flagged as short-circuit points, shown together with their status code.
+It also catches things like authentication/authorization/CORS ordering, middleware that takes a Scoped service through its constructor, and middleware registered after endpoint mapping that never actually runs.
 
-## 왜 만들었나
+## Why this was built
 
-큰 ASP.NET Core 코드베이스를 새로 파악하거나 다른 사람에게 설명할 때, 코드를 눈으로 따라가며 구조를 재구성하는 데 시간이 많이 든다. 기존 오픈소스 도구들은 아키텍처 다이어그램은 잘 그려주지만 "그 노드를 클릭하면 실제 코드가 보이고, 그 자리에서 바로 AI 에이전트에게 물어볼 수 있는" 흐름까지는 지원하지 않아서 직접 만들기로 했다.
+Getting your head around a large ASP.NET Core codebase — or explaining one to someone else — usually means reconstructing its structure by eye, which takes a long time. Existing open-source tools draw architecture diagrams well, but none of them support the "click a node, see the real code, and ask an AI agent about it right there" flow, so I built one.
 
-## 핵심 기능
+## Key features
 
-- 진입점(HTTP 엔드포인트) 기준으로 단계식으로 펼쳐지는 호출 흐름 그래프
-- 솔루션 전체를 상속·구현·연관·의존으로 잇는 UML 클래스 다이어그램(트리 배치 / 패키지 배치)
-- 진입점 지도와, 라우트를 눌러 들어가는 메서드 단위 전 구간 흐름도
-- Program.cs를 소스 순서대로 읽어 DI 등록(수명 포함)과 미들웨어 파이프라인 순서를 그대로 보여주는 시작 흐름 타임라인
-- 노드 클릭 시 실제 소스 코드로 드릴다운, breadcrumb으로 이전 단계 이동
-- 보기·필터·선택 상태를 저장해서 새로고침이나 재분석 후에도 보던 화면을 유지
-- 선택한 위치를 AI 코딩 에이전트에게 질의 — 클립보드 복사 / 로컬 MCP 직접 연동(Claude Code 헤드리스 호출) / 에디터에서 열기, 세 가지 방식 지원. TraceLens.Mcp는 Claude Code·Codex CLI 세션에 직접 등록해서 쓸 수도 있다(`docs/mcp-setup.md`)
-- 마지막 분석 시점과 현재 코드가 같은지 보여주는 신선도 표시, 필요할 때만 수동으로 재분석
-- 분석 결과를 파일로 저장하고, 재분석 없이 그 파일을 불러와 그대로 이어 보기(팀원과 공유하거나 서버 재시작 후 되살릴 때)
-- DB·캐시 접근 지도와 **보상 처리(수동 롤백) 점검** — 트랜잭션 없는 쓰기 경로에서 무엇이 되돌려지지 않는지 격자로 표시
-- 미들웨어 파이프라인의 요청/응답 구간·단락 지점과 순서 점검
-- 점검 결과는 언제나 근거 체인과 확실도(확실/추정)를 함께 보여주고, 검사하지 않는 규칙도 목록에 남긴다
-- 분석 대상은 솔루션(`.sln`)과 프로젝트(`.csproj`) 모두 지원하고, 폴더 탐색 대화상자로 골라서 지정
+- A call-flow graph that expands step by step, anchored on entry points (HTTP endpoints)
+- A UML class diagram connecting the whole solution via inheritance/implementation/association/dependency (tree layout / package layout)
+- An entry-point map, plus a method-level, full-path flow map you enter by clicking a route
+- A Startup Flow timeline that reads Program.cs in source order and shows DI registrations (with lifetimes) and the middleware pipeline order
+- Click-through from a node to its actual source, with breadcrumb navigation back
+- View/filter/selection state is persisted, so the screen you were looking at survives a refresh or re-analysis
+- Ask an AI coding agent about a selected location — three ways: copy to clipboard / local MCP direct integration (Claude Code headless invocation) / open in editor. TraceLens.Mcp can also be registered directly in a Claude Code or Codex CLI session (see `docs/mcp-setup.md`)
+- A freshness indicator showing whether the code still matches the last analysis, with manual re-analysis on demand
+- A DB/cache access map and **compensation (manual rollback) checking** — a grid showing what doesn't get undone on transaction-free write paths
+- Request/response sections, short-circuit points, and ordering checks for the middleware pipeline
+- Findings always come with an evidence chain and a confidence level (certain/inferred); rules that aren't checked stay listed as "off," so you always know what isn't being looked at
+- Analysis targets can be a solution (`.sln`) or a project (`.csproj`); pick one through a folder-browse dialog
 
-## 아키텍처
+## Architecture
 
 ```mermaid
 flowchart TB
-    subgraph Browser["브라우저 (React + TypeScript)"]
-        GV[호출 흐름\nGraphView · Cytoscape.js]
-        CD[클래스 다이어그램 / 전체 흐름도\nDiagramCanvas · DOM+SVG]
-        CP[상세 패널\nMonaco Editor]
+    subgraph Browser["Browser (React + TypeScript)"]
+        GV[Call Flow\nGraphView · Cytoscape.js]
+        CD[Class Diagram / Flow Map\nDiagramCanvas · DOM+SVG]
+        CP[Detail Panel\nMonaco Editor]
         AP[AskPanel]
         FB[FreshnessBadge]
     end
 
-    subgraph Local["로컬 머신 (localhost 전용)"]
+    subgraph Local["Local machine (localhost only)"]
         Server[TraceLens.Server\nASP.NET Core Minimal API]
-        Analyzer[TraceLens.Analyzer\nRoslyn 기반 분석기]
-        Mcp["TraceLens.Mcp\n로컬 전용 MCP 서버"]
-        CC[Claude Code CLI\n헤드리스 호출]
-        Ext["외부 CLI 세션\nClaude Code · Codex CLI"]
+        Analyzer[TraceLens.Analyzer\nRoslyn-based analyzer]
+        Mcp["TraceLens.Mcp\nlocal-only MCP server"]
+        CC[Claude Code CLI\nheadless invocation]
+        Ext["External CLI session\nClaude Code · Codex CLI"]
     end
 
-    Target[(분석 대상\nASP.NET Core 솔루션)]
+    Target[(Analysis target\nASP.NET Core solution)]
     Graph[(.tracelens/graph.json\n.tracelens/snapshot.json)]
 
     GV -->|GET /api/graph| Server
@@ -108,36 +108,36 @@ flowchart TB
     CP -->|GET /api/source| Server
     AP -->|POST /api/ask| Server
     FB -->|GET /api/freshness| Server
-    Server -->|분석 실행| Analyzer
-    Analyzer -->|파싱| Target
-    Analyzer -->|결과 저장| Graph
-    Server -->|결과 로드| Graph
-    Server -.->|MCP 직접 연동 버튼| CC
-    CC -.->|도구 조회| Mcp
-    Ext -.->|직접 등록 후 도구 조회| Mcp
-    Mcp -.->|소스/노드 조회| Graph
+    Server -->|runs analysis| Analyzer
+    Analyzer -->|parses| Target
+    Analyzer -->|saves results| Graph
+    Server -->|loads results| Graph
+    Server -.->|MCP Direct button| CC
+    CC -.->|queries tools| Mcp
+    Ext -.->|registers directly, queries tools| Mcp
+    Mcp -.->|reads source/nodes| Graph
 ```
 
-## 기술 스택
+## Tech stack
 
-| 영역 | 선택 | 비고 |
+| Area | Choice | Notes |
 |---|---|---|
-| 분석기 | C# / Roslyn (Microsoft.CodeAnalysis) | 메서드 호출 관계와 파일·라인 정보를 정확히 추출 |
-| 서버 | ASP.NET Core Minimal API | 그래프 서빙, 소스 서빙, React 정적 파일 호스팅을 겸함 |
-| 프론트엔드 | React + TypeScript (Vite) | 호출 흐름은 Cytoscape.js, 클래스 다이어그램·전체 흐름도는 DOM+SVG 직접 렌더, 코드 뷰는 Monaco Editor |
-| 데이터 저장 | JSON 파일 (`.tracelens/` 아래) | 구현 단순함 우선, 필요해지면 이후 교체 검토 |
-| 에이전트 연동 | 로컬 MCP 서버(TraceLens.Mcp) + Claude Code CLI 헤드리스 호출 | MCP 서버는 표준 stdio 서버라 Claude Code·Codex CLI 등에 직접 등록해도 쓸 수 있다. 원격 노출 없이 로컬에서만 동작 |
+| Analyzer | C# / Roslyn (Microsoft.CodeAnalysis) | Extracts method call relationships and file/line info precisely |
+| Server | ASP.NET Core Minimal API | Serves the graph, serves source, and hosts the React static build |
+| Frontend | React + TypeScript (Vite) | Call Flow uses Cytoscape.js; Class Diagram/Flow Map render directly via DOM+SVG; the code view is Monaco Editor |
+| Data storage | JSON files (under `.tracelens/`) | Chosen for implementation simplicity; revisit if it ever needs to change |
+| Agent integration | Local MCP server (TraceLens.Mcp) + Claude Code CLI headless invocation | The MCP server is a standard stdio server, so it can also be registered directly with Claude Code, Codex CLI, etc. No remote exposure — local only |
 
-## 시작하기
+## Getting started
 
-### 요구사항
+### Requirements
 
-- .NET 8 이상 SDK
-- Node.js 20 이상
-- Claude Code CLI — Ask 패널의 **MCP 직접 연동** 버튼을 쓸 경우에만 필요(이 버튼은 Claude Code 전용이다)
-- Codex CLI — TraceLens.Mcp를 Codex CLI 세션에 직접 등록해서 쓰고 싶을 경우에만 필요(`docs/mcp-setup.md`)
+- .NET 8 SDK or later
+- Node.js 20 or later
+- Claude Code CLI — only needed for the Ask panel's **MCP Direct** button (this button is Claude Code-only)
+- Codex CLI — only needed if you want to register TraceLens.Mcp directly in a Codex CLI session (see `docs/mcp-setup.md`)
 
-### 설치 및 실행 (명령 하나)
+### Install and run (one command)
 
 ```powershell
 git clone <repo-url> tracelens
@@ -146,40 +146,42 @@ cd tracelens
 .\run.ps1
 ```
 
-`run.ps1`이 클라이언트 의존성 설치 → 서버 빌드 → 클라이언트 프로덕션 빌드까지 한 번에 하고 서버를 띄운다.
-클라이언트 빌드 결과는 `src/TraceLens.Server/wwwroot`로 들어가서 서버가 그대로 호스팅하므로, 브라우저에서 <http://127.0.0.1:25011> 하나만 열면 된다(준비되면 자동으로 열린다).
+`run.ps1` installs client dependencies → builds the server → builds the client for production, all in one go, and starts the server. The client build output goes into `src/TraceLens.Server/wwwroot`, which the server hosts as-is, so all you need is <http://127.0.0.1:25011> in a browser (it opens automatically once ready).
 
-| 옵션 | 설명 |
+| Option | Description |
 |---|---|
-| `.\run.ps1` | 클라이언트를 빌드해서 서버 하나로 실행한다(<http://127.0.0.1:25011>). 평소 도구를 쓸 때 쓴다. |
-| `.\run.ps1 -Dev` | API 서버(25011)와 Vite 개발 서버(25012)를 함께 띄운다. 클라이언트를 고치면서 HMR로 확인할 때 쓴다. 브라우저는 <http://localhost:25012>으로 연다. |
-| `.\run.ps1 -SkipBuild` | 빌드를 건너뛰고 바로 실행한다. |
-| `.\run.ps1 -NoBrowser` | 브라우저를 자동으로 열지 않는다. |
+| `.\run.ps1` | Builds the client and runs it behind a single server (<http://127.0.0.1:25011>). Use this for everyday use. |
+| `.\run.ps1 -Dev` | Runs the API server (25011) and the Vite dev server (25012) together. Use this while editing the client, to see changes via HMR. Opens <http://localhost:25012>. |
+| `.\run.ps1 -SkipBuild` | Skips the build and runs immediately. |
+| `.\run.ps1 -NoBrowser` | Doesn't open a browser automatically. |
 
-Ctrl+C로 종료하며, `-Dev` 모드에서는 백그라운드로 띄운 API 서버까지 함께 정리한다.
+Stop with Ctrl+C; in `-Dev` mode this also cleans up the background API server.
 
-### 직접 실행 (스크립트 없이)
+### Publishing and running the build output only (no source tree)
+
+See "Deploying and running just the build output, without source" in `docs/manual.html` for the full `dotnet publish` workflow — useful when you want to run TraceLens from a build artifact alone, without the source tree or Node.js on the target machine.
+
+### Running directly (without the script)
 
 ```bash
-# 백엔드
+# Backend
 dotnet build
 dotnet run --project src/TraceLens.Server
 
-# 프론트엔드 (다른 터미널에서)
+# Frontend (in another terminal)
 cd client
 npm install
 npm run dev
 ```
 
-### 분석 대상 지정
+### Pointing at an analysis target
 
-화면 위쪽 입력란에 분석할 경로를 직접 입력하거나 **찾아보기…** 버튼으로 폴더를 탐색해서 고른다.
-솔루션(`.sln`)과 프로젝트(`.csproj`)를 모두 고를 수 있고, `.csproj`를 고르면 그 프로젝트와 그 프로젝트가 참조하는 프로젝트만 분석한다(큰 솔루션에서 필요한 부분만 빠르게 볼 때 쓴다).
+Type the path to analyze directly into the input field at the top of the screen, or use the **Browse…** button to pick a folder. You can point at either a solution (`.sln`) or a project (`.csproj`) — pointing at a `.csproj` analyzes only that project and the projects it references (handy for quickly looking at just the part you need inside a large solution).
 
-## 폴더 구조
+## Folder structure
 
-세부 폴더 구조와 각 파일의 책임은 CLAUDE.md의 "저장소 구조" 절을 참고한다.
+For the detailed folder structure and what each file is responsible for, see the "Repository structure" section of `CLAUDE.md`.
 
-## 현재 개발 단계
+## Current development stage
 
-1~6단계 구현이 모두 끝났다. 현재 상태와 남은 작업은 `git log`와 코드를 직접 확인한다.
+Stages 1 through 6 are all implemented. For the current state and any remaining work, check `git log` and the code directly.
