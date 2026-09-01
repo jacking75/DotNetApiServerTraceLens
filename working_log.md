@@ -1,3 +1,8 @@
+## 2026-09-01 14:54 KST - 오래된 스크린샷 4장 삭제
+
+- `docs/screenshots/*.jpg`(callflow·classmap·flowmap·flowmap-entry)가 지금 프로그램과 같은지 확인해달라는 요청에, 상단 보기 전환 툴바를 근거로 비교했다. 스크린샷은 모두 5단계(커밋 483bac2) 직후에 찍혀 탭이 "호출 흐름·클래스 다이어그램·전체 흐름도" 3개뿐인데, 이후 "시작 흐름"(cc8bb84)·"DB·캐시"·"미들웨어"(19483f4) 보기가 추가되어 지금은 탭이 6개다. 예전 스크린샷으로 확정되어 삭제했다.
+- README.md에서 이 스크린샷을 걸던 이미지 링크 4곳을 함께 제거했다(설명 본문은 그대로 두고 이미지 줄만 뺐다).
+
 ## 2026-09-01 14:50 KST - docs 목업 4종 삭제, 스크린샷은 유지
 
 - 구현 전 단계에서 만든 인터랙티브 목업 4개(`concept-mockup.html`, `structure-view-mockup.html`, `db-view-mockup.html`, `middleware-view-mockup.html`)를 삭제했다. 실제 구현이 끝나 더 이상 참고할 필요가 없다는 사용자 판단에 따랐다.
