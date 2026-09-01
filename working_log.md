@@ -1,3 +1,10 @@
+## 2026-09-01 17:45 KST - 매뉴얼에 배포용 빌드·Codex CLI 안내 추가
+
+- "빌드와 실행"에 "소스 없이 빌드 결과만 배포·실행할 때" 절을 새로 넣었다. `npm run build`(wwwroot에 결과 반영) → `dotnet publish src/TraceLens.Server -c Release -o publish` → `publish\TraceLens.Server.exe`(또는 `dotnet publish\TraceLens.Server.dll`) 실행까지, 소스·Node.js 없이 그 폴더 하나로 도는 과정을 정리했다. 포트는 `Program.cs`에 고정된 `127.0.0.1:25011`이라는 점, 게시 후에도 재분석은 그대로 필요하다는 점, MCP 등록 경로를 게시 폴더 기준으로 다시 잡아야 한다는 점을 함께 적었다. `TraceLens.Server.csproj`(Sdk.Web, wwwroot 자동 포함)와 `Program.cs`의 `UseUrls` 하드코딩을 직접 확인해서 맞췄다.
+- "MCP 직접 연동"이 Claude Code CLI 전용이라는 점을 더 명확히 하고, 그 아래 "Claude Code · Codex CLI 세션에 직접 등록하기" 표를 추가했다. `codex mcp add` 명령과 `~/.codex/config.toml`의 `[mcp_servers.tracelens]` 형식은 웹 검색으로 실제 Codex CLI 문법을 확인한 뒤 반영했다(추측으로 쓰지 않았다).
+- `docs/mcp-setup.md`에도 "Codex CLI에 등록" 절과 `config.toml` 예시를 Claude Code 절과 나란히 추가했다.
+- 로컬 서버로 다시 띄워 새 절·표가 라이트/다크 모두에서 잘 보이는지 확인했다.
+
 ## 2026-09-01 17:10 KST - docs/manual.html 사용 설명서 신규 작성
 
 - 개발·정식 사용 빌드 방법, 화면 구성, 여섯 가지 보기, Claude Code 연동(클립보드·MCP 직접 연동·에디터), `tracelens.config.json` 설정, 신선도·재분석, 저장·불러오기, 9가지 사용 시나리오를 담은 자체 완결형 HTML 매뉴얼을 새로 만들었다. README.md·mcp-setup.md·App.tsx·AskEndpoints.cs·TraceLensConfig.cs·DataAccessOptions.cs 등을 직접 읽어 내용을 정확히 맞췄다(예: 에디터 열기가 VS Code `code --goto`와 `vscode://` 폴백을 쓴다는 것, MCP 직접 연동은 별도 등록 없이 요청마다 `.tracelens/mcp.json`을 만든다는 것).
