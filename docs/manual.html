@@ -460,7 +460,7 @@
     location right away. This document covers building and running the tool, all six views, AI
     agent integration, and real usage scenarios.
   </p>
-  <div class="meta">Last updated 2026-09-01 · Local-only tool — the server and MCP integration always run on localhost only</div>
+  <div class="meta">Last updated 2026-09-08 · Local-only tool — the server and MCP integration always run on localhost only</div>
 </header>
 
 <div class="summary-grid">
@@ -842,6 +842,9 @@ npm run dev</code></pre>
         <tr><td><code>includeStartupFlow</code></td><td>true</td><td>Whether to collect data for the "Startup Flow" view.</td></tr>
         <tr><td><code>includeDataAccess</code></td><td>true</td><td>Whether to collect data for the "Data Access" view.</td></tr>
         <tr><td><code>includeMiddleware</code></td><td>true</td><td>Whether to collect data for the "Middleware" view.</td></tr>
+        <tr><td><code>includeCallSites</code></td><td>true</td><td>Whether to keep call evidence (<code>callSites</code>). Turning it off shrinks the file, but the detail panel's "call evidence" and "unresolved calls" sections stay empty.</td></tr>
+        <tr><td><code>maxCallSitesPerEdge</code></td><td>3</td><td>Cap on how many call-site entries to keep for a single edge, so a call inside a loop doesn't blow up the file.</td></tr>
+        <tr><td><code>maxBoundaryCallSites</code></td><td>300</td><td>Cap on the unresolved-calls (boundary) list.</td></tr>
         <tr><td><code>db</code></td><td>see below</td><td>Configuration describing the shape of your in-house DB/cache layer. Works even when left empty, by guessing from SQL literals and type names.</td></tr>
       </table>
 
@@ -966,6 +969,19 @@ npm run dev</code></pre>
         <li>Top-right "Level N": how many levels you've expanded so far.</li>
         <li>Use the breadcrumb to step back through levels you've expanded.</li>
       </ul>
+      <p>
+        The detail panel adds two more sections below that: <b>call evidence</b> and
+        <b>unresolved calls (boundary)</b>. Call evidence lists, for every confirmed edge into or out
+        of this method, the other method, its <code>file:line</code>, the resolution kind (direct call,
+        DI registration, single-implementation guess, etc.) and a confidence badge — so you can see
+        right there why the edge exists. Boundary is a separate list of calls where the analyzer
+        <b>did not create an edge</b> because the symbol was ambiguous or unresolved — an empty list
+        means this method had no such unresolved calls, not that it has no calls at all. If the
+        selected method is itself an entry point (a controller action, say), its route also gets an
+        estimated badge with the reason next to it when applicable. These sections appear the same
+        way whenever you select the same method from Class Diagram, Full Flow Map, or Startup Flow,
+        since they share the same detail panel.
+      </p>
 
       <h3 class="sub-h" id="view-classmap">Class Diagram — the whole solution as UML, at a glance</h3>
       <p>

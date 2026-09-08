@@ -150,7 +150,9 @@
 | 엔드포인트 | 처리 | 주요 실패 |
 |---|---|---|
 | `POST /api/analyze` | 분석하고 결과를 메모리와 `.tracelens/graph.json`에 반영한다(호환 경로). | `400 ANALYZE_FAILED` |
+| `POST /api/analyze/load` | 재분석하지 않고 대상 폴더의 `.tracelens/graph.json`을 그대로 불러온다(서버 재시작 직후 복원용). | `400 INVALID_REQUEST` |
 | `POST /api/analysis-jobs` | 분석을 작업으로 시작한다. `202`와 jobId를 돌려준다. | `400 INVALID_REQUEST` |
+| `GET /api/analysis-jobs/{id}` | 작업 하나의 현재 상태를 조회한다(스트리밍 없이 한 번만). | `404 JOB_NOT_FOUND` |
 | `GET /api/analysis-jobs/{id}/events` | 단계별 진행 상태를 SSE로 보낸다(진행률 % 없음). | `404 JOB_NOT_FOUND` |
 | `DELETE /api/analysis-jobs/{id}` | 취소를 요청한다. 취소해도 기존 그래프는 유지된다. | `409 JOB_NOT_CANCELABLE` |
 | `POST /api/analyze/import` | 사용자가 고른 그래프 파일을 `offlineSnapshot`으로 불러온다. 활성 `graph.json`을 덮어쓰지 않는다. | `400 GRAPH_INVALID` |
@@ -163,9 +165,12 @@
 | `POST /api/report` | 선택 범위만 담는 공유용 Markdown을 만든다(절대 경로·소스 본문 제외). | 위와 같다 |
 | `POST /api/impact` | 여러 nodeId의 영향 후보를 조회한다. 상한과 중단 이유를 함께 준다. | `400 INVALID_REQUEST` |
 | `GET/POST /api/snapshots` | 기준 목록 조회 / 현재 분석을 기준으로 저장한다. | `400 OFFLINE_SNAPSHOT` |
+| `DELETE /api/snapshots/{snapshotId}` | 보관한 기준 하나를 지운다. | `404 SNAPSHOT_NOT_FOUND` |
 | `POST /api/snapshots/compare` | 보관한 기준과 비교한다. 임의 경로는 받지 않는다. | `404 BASELINE_NOT_FOUND` |
 | `GET /api/mcp-setup` | 대상·호스트에 맞춘 MCP 설정 미리보기를 준다. | `400 MCP_HOST_MISSING` |
 | `POST /api/ask` | 문맥을 만들어 외부 CLI에 전달하고 응답을 SSE로 중계한다. | `404 NO_ANALYSIS`, `409 SNAPSHOT_MISMATCH` |
+| `GET /api/browse` | 로컬 디렉터리를 훑어 `.sln`/`.csproj`를 찾는 대상 선택용 API(브라우저 파일 선택창은 절대 경로를 안 주므로). | — |
+| `GET /api/graph`, `/graph/entrypoints`, `/graph/classes`, `/graph/namespaces` | 현재 메모리 그래프 전체/진입점/클래스 요약/네임스페이스 요약을 돌려준다(옛 `{ error }` 형태). | `404` |
 
 ### 오류 코드
 

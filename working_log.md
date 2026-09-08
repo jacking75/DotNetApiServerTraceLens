@@ -1,3 +1,20 @@
+## 2026-09-08 17:59 KST - 매뉴얼(한·영)을 최신 구현과 대조해 갱신
+
+- `docs/manual_kr.html`·`docs/manual.html`을 실제 구현(컴포넌트·i18n·CLI·MCP·설정)과 항목별로 대조했다.
+  6개 보기·CLI 5개 서브커맨드·MCP 도구 12개·레시피 4종·schema v7 등은 이미 일치했고, 실질적 공백은
+  두 가지였다.
+- "호출 흐름" 절에 최근 커밋(37d648f)에서 추가된 상세 패널의 **호출 근거**·**확정하지 못한 호출(경계)**
+  절과 진입점의 추정 사유 표시를 설명하는 문단을 추가했다(호출 흐름뿐 아니라 다른 보기에서도 상세
+  패널을 공유해 같은 절이 뜬다는 점도 적었다).
+- `tracelens.config.json` 표에 이미 코드에는 있었지만 문서에 빠져 있던 `includeCallSites`·
+  `maxCallSitesPerEdge`·`maxBoundaryCallSites` 세 필드를 `TraceLensConfig.cs`의 실제 기본값
+  (true/3/300)에 맞춰 추가했다(한글판에 먼저 반영된 것을 영문판에도 맞춰 넣었다).
+- "최종 갱신" 날짜를 2026-09-08로 갱신했다.
+- 같은 대조 과정에서 `docs/data-contract.md`의 API 표에도 실제 `Endpoints/*.cs`에는 있지만 문서에는
+  없던 엔드포인트 6개(`POST /api/analyze/load`, `GET /api/analysis-jobs/{id}`,
+  `DELETE /api/snapshots/{snapshotId}`, `GET /api/browse`,
+  `GET /api/graph`·`/graph/entrypoints`·`/graph/classes`·`/graph/namespaces`)를 채워 넣었다.
+
 ## 2026-09-08 17:36 KST - README 재작성(무엇·왜·장점 중심)과 상세 패널의 호출 근거 표시
 
 - README.md와 README_kr.md를 같은 구조로 다시 썼다. "왜 필요한가"(도구 없을 때 vs 있을 때 5가지 상황),
