@@ -29,6 +29,12 @@ public enum AnalysisScope
 /// <param name="IncludeMiddleware">
 /// 미들웨어 파이프라인을 열어 요청/응답 구간·단락을 수집할지 여부. 끄면 "미들웨어" 보기가 빈 상태로 남는다.
 /// </param>
+/// <param name="IncludeCallSites">
+/// 호출 엣지의 근거(실제 호출 줄·해석 종류)를 <c>graph.json</c>에 남길지 여부. 끄면 파일이 작아지는 대신
+/// UI·AI 문맥에서 "왜 이 엣지가 생겼는지"를 보여줄 수 없다.
+/// </param>
+/// <param name="MaxCallSitesPerEdge">한 엣지에 남길 근거 수 상한. 반복문 안 호출로 파일이 커지는 것을 막는다.</param>
+/// <param name="MaxBoundaryCallSites">미해석·모호 호출(경계 목록)의 상한.</param>
 /// <param name="Db">
 /// 사내 DB·캐시 계층의 모양을 알려주는 설정. 비워 두면 SQL 리터럴과 타입 이름에서 짐작한다.
 /// </param>
@@ -44,6 +50,9 @@ public sealed record TraceLensConfig(
     bool IncludeStartupFlow,
     bool IncludeDataAccess,
     bool IncludeMiddleware,
+    bool IncludeCallSites,
+    int MaxCallSitesPerEdge,
+    int MaxBoundaryCallSites,
     DataAccessOptions Db)
 {
     public static TraceLensConfig Default { get; } = new(
@@ -65,6 +74,9 @@ public sealed record TraceLensConfig(
         true,
         true,
         true,
+        true,
+        3,
+        300,
         DataAccessOptions.Default);
 
     public static async Task<TraceLensConfig> LoadAsync(
@@ -105,6 +117,15 @@ public sealed record TraceLensConfig(
             root.TryGetProperty("includeMiddleware", out var includeMiddleware)
                 ? includeMiddleware.GetBoolean()
                 : Default.IncludeMiddleware,
+            root.TryGetProperty("includeCallSites", out var includeCallSites)
+                ? includeCallSites.GetBoolean()
+                : Default.IncludeCallSites,
+            root.TryGetProperty("maxCallSitesPerEdge", out var maxCallSitesPerEdge)
+                ? maxCallSitesPerEdge.GetInt32()
+                : Default.MaxCallSitesPerEdge,
+            root.TryGetProperty("maxBoundaryCallSites", out var maxBoundaryCallSites)
+                ? maxBoundaryCallSites.GetInt32()
+                : Default.MaxBoundaryCallSites,
             DataAccessOptions.Read(root));
     }
 

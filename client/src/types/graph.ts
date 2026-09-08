@@ -7,6 +7,9 @@ export type MemberKind = 'Field' | 'Property' | 'Constructor' | 'Method'
 
 export type MemberAccessibility = 'Public' | 'Protected' | 'Internal' | 'Private'
 
+/** 실행 본문을 가진 단위의 모양. v7부터 있다. */
+export type CallableKind = 'Method' | 'Constructor' | 'PropertyAccessor' | 'LocalFunction' | 'Lambda'
+
 export interface GraphNode {
   id: string
   kind: NodeKind
@@ -20,6 +23,35 @@ export interface GraphNode {
   /** 표시용 반환 타입. 생성자는 빈 문자열이다. */
   returnType: string
   parameterTypes: string[]
+  /** v7부터 있다. v6 이하 문서를 읽으면 'Method'로 채운다. */
+  callable: CallableKind
+  /** 프로젝트·오버로드까지 구분하는 비교용 키. v7부터 있다. */
+  stableKey: string
+  signatureFingerprint: string
+  bodyFingerprint: string
+}
+
+/** 호출 한 지점을 어떤 근거로 이었는지. v7부터 있다. */
+export type CallResolution =
+  | 'Direct'
+  | 'DiRegistration'
+  | 'SingleImplementation'
+  | 'Ambiguous'
+  | 'Unresolved'
+  | 'External'
+
+export type CallConfidence = 'Certain' | 'Estimated'
+
+/** 엣지의 근거가 되는 실제 호출 위치. `to`가 빈 문자열이면 확정하지 못한 호출(경계)이다. */
+export interface CallSite {
+  from: string
+  to: string
+  declaredTarget: string
+  file: string
+  line: number
+  resolution: CallResolution
+  confidence: CallConfidence
+  note: string
 }
 
 export interface GraphEdge {
@@ -89,10 +121,81 @@ export interface GraphNamespaceSummary {
   kinds: NodeKind[]
 }
 
+export type EndpointSource = 'Controller' | 'MinimalApi'
+
+export type HandlerKind = 'Method' | 'MethodGroup' | 'Lambda' | 'LocalFunction' | 'Unresolved'
+
 export interface EntryPoint {
+  /** 핸들러 노드 ID. 여러 엔드포인트가 같은 값을 가질 수 있다. */
   nodeId: string
   httpMethod: string
   route: string
+  /** v7부터 있다. 같은 메서드의 여러 라우트를 구분한다. */
+  endpointId: string
+  normalizedRoute: string
+  source: EndpointSource
+  handlerKind: HandlerKind
+  confidence: CallConfidence
+  registrationFile: string
+  registrationLine: number
+  handlerDisplayName: string
+  projectKey: string
+  notes: string[]
+}
+
+/* ------------------------------------------------------------------ 분석 진단·입력 목록 (스키마 v7) */
+
+export type ManifestInputKind = 'Solution' | 'Project' | 'Config' | 'BuildProps' | 'PackagesProps' | 'GlobalJson'
+
+export interface ManifestInput {
+  path: string
+  hash: string
+  kind: ManifestInputKind
+}
+
+export interface AnalysisManifest {
+  inputs: ManifestInput[]
+  sourceRoots: string[]
+  excludedDirectories: string[]
+  linkedSources: string[]
+  limitations: string[]
+}
+
+export interface AnalyzedProject {
+  name: string
+  path: string
+  loaded: boolean
+  errorCount: number
+  sampleErrors: string[]
+}
+
+export interface CallResolutionStats {
+  inspected: number
+  resolved: number
+  direct: number
+  diRegistration: number
+  singleImplementation: number
+  ambiguous: number
+  unresolved: number
+  external: number
+  /** 해석한 지원 대상 호출 지점 / 검사한 지원 대상 호출 지점. 호출 정확도와는 다른 값이다. */
+  resolutionRate: number
+}
+
+export interface AnalysisDiagnostics {
+  totalProjects: number
+  loadedProjects: number
+  projectsWithCompileErrors: number
+  projects: AnalyzedProject[]
+  calls: CallResolutionStats
+  excludedNamespacePrefixes: string[]
+  maxCallDepth: number
+  depthLimitReached: boolean
+  analysisScope: string
+  limitations: string[]
+  changedDuringAnalysis: boolean
+  changedDuringAnalysisFiles: string[]
+  entryPointNotes: string[]
 }
 
 /** 시작 흐름 한 단계의 종류. */
@@ -133,6 +236,18 @@ export interface GraphDocument {
   nodes: GraphNode[]
   edges: GraphEdge[]
   fileHashes: Record<string, string>
+  /** v7부터 있다. 이 분석 실행 하나를 가리킨다. */
+  snapshotId: string
+  /** v7부터 있다. 분석 입력만으로 만든 지문. */
+  inputFingerprint: string
+  /** v7부터 있다. 이 분석이 무엇을 읽었는지. */
+  manifest: AnalysisManifest | null
+  /** v7부터 있다. 얼마나 보고 무엇을 못 봤는지. */
+  diagnostics: AnalysisDiagnostics | null
+  /** v7부터 있다. 엣지의 근거가 되는 실제 호출 위치. */
+  callSites: CallSite[]
+  analyzerVersion: string
+  rulesVersion: string
   /** v5부터 있다. v4 이하 문서를 읽으면 null이다. */
   startupFlow: StartupFlowDocument | null
   /** v6부터 있다. 설정에서 껐거나 v5 이하 문서를 읽으면 null이다. */
@@ -175,6 +290,15 @@ export type Selection =
 export interface AnalyzeSummary {
   /** DB·캐시와 미들웨어 점검에서 잡은 항목 수. v6부터 채워진다. */
   findingCount?: number
+  snapshotId?: string
+  inputFingerprint?: string
+  callSiteCount?: number
+  resolutionRate?: number
+  unresolvedCallSites?: number
+  minimalApiCount?: number
+  origin?: 'live' | 'offlineSnapshot'
+  /** 진입점 0개·컴파일 오류처럼 바로 알려야 하는 안내. */
+  notice?: string | null
   entryPointCount: number
   classCount: number
   interfaceCount: number
@@ -187,10 +311,23 @@ export interface AnalyzeSummary {
   previousAnalyzedAt: string | null
 }
 
+export type FreshnessStatus = 'fresh' | 'stale' | 'unknown'
+
+export type FreshnessChangeKind = 'Modified' | 'Deleted' | 'Added' | 'ConfigChanged' | 'Unreadable'
+
+export interface FreshnessChange {
+  path: string
+  kind: FreshnessChangeKind
+}
+
 export interface FreshnessResponse {
-  status: 'fresh' | 'stale'
+  status: FreshnessStatus
   analyzedAt: string
   changedFiles: string[]
+  snapshotId: string
+  changes: FreshnessChange[]
+  reasons: string[]
+  origin: 'live' | 'offlineSnapshot'
 }
 
 /** 분석 대상 선택 대화상자가 다루는 파일 시스템 항목. */
@@ -214,14 +351,24 @@ export interface SourceResponse {
   startLine: number
   endLine: number
   content: string
+  /** snapshot이면 분석 당시와 같은 내용이고, current면 그 뒤로 바뀐 현재 소스다. */
+  sourceVersion: 'snapshot' | 'current'
+  truncated: boolean
 }
 
-export type AskMode = 'clipboard' | 'mcp' | 'editor'
+/** 질문 패널이 고르는 실행 방식. 이름은 실제 동작을 그대로 쓴다. */
+export type AskMode = 'context' | 'mcp' | 'editor'
 
 export interface AskRequest {
-  nodeId: string
+  /** 선택 종류를 함께 보내면 그 종류로 문맥을 만든다. 비우면 nodeId를 노드로 본다. */
+  kind?: string
+  id?: string
+  nodeId: string | null
   question: string | null
   mode: 'mcp' | 'editor'
+  intent?: string
+  budget?: string
+  expectedSnapshotId?: string
 }
 
 export interface AskEvent {

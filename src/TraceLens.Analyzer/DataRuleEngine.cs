@@ -393,7 +393,7 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
         return document;
     }
 
-    private static string ResolveDataSource(MethodDataFacts facts, CallSite site)
+    private static string ResolveDataSource(MethodDataFacts facts, DataCallSite site)
     {
         if (site.DataSource.Length > 0)
         {
@@ -472,7 +472,7 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
         string ruleId,
         FindingConfidence confidence,
         MethodDataFacts facts,
-        CallSite site,
+        DataCallSite site,
         string what,
         string why,
         string fix,

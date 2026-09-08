@@ -1,3 +1,5 @@
+using TraceLens.Context;
+
 namespace TraceLens.Server.Endpoints;
 
 public static class SourceEndpoints
@@ -8,6 +10,10 @@ public static class SourceEndpoints
         return group;
     }
 
+    /// <summary>
+    /// 분석 루트 안의 소스를 읽는다. 접근 규칙은 MCP와 같은 <see cref="SourceAccessPolicy"/>를 쓴다.
+    /// 응답에는 이 내용이 분석 당시와 같은지(<c>sourceVersion</c>)를 함께 담는다.
+    /// </summary>
     private static async Task<IResult> ReadSourceAsync(
         string file,
         int start,
@@ -15,44 +21,40 @@ public static class SourceEndpoints
         IGraphStore store,
         CancellationToken cancellationToken)
     {
-        var graph = store.Current;
-        if (graph is null)
+        var session = store.Session;
+        if (session is null)
         {
-            return Results.NotFound(new { error = "먼저 솔루션을 분석해야 한다." });
+            return ApiResults.NotAnalyzed();
         }
 
-        if (string.IsNullOrWhiteSpace(file) || start < 1 || end < start)
+        var result = await session.Source.ReadAsync(file, start, end, cancellationToken);
+        if (result.Slice is null)
         {
-            return Results.BadRequest(new { error = "file, start, end 값을 확인해야 한다." });
+            var statusCode = result.Access.Denial switch
+            {
+                SourceAccessDenial.NotFound => StatusCodes.Status404NotFound,
+                SourceAccessDenial.NotInSnapshot => StatusCodes.Status404NotFound,
+                _ => StatusCodes.Status400BadRequest
+            };
+            return ApiResults.LegacyError(statusCode, ApiResults.SourceDenied, result.Access.Message);
         }
 
-        var solutionDirectory = graph.RootDirectory;
-        var fullPath = Path.GetFullPath(Path.Combine(solutionDirectory, file));
-        var relativePath = Path.GetRelativePath(solutionDirectory, fullPath);
-        if (Path.IsPathRooted(file) || relativePath == ".." ||
-            relativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-        {
-            return Results.BadRequest(new { error = "솔루션 외부 파일은 읽을 수 없다." });
-        }
-
-        if (!File.Exists(fullPath))
-        {
-            return Results.NotFound(new { error = "소스 파일을 찾을 수 없다." });
-        }
-
-        var lines = await File.ReadAllLinesAsync(fullPath, cancellationToken);
-        if (start > lines.Length)
-        {
-            return Results.BadRequest(new { error = "시작 라인이 파일 범위를 벗어났다." });
-        }
-
-        var actualEnd = Math.Min(end, lines.Length);
+        var slice = result.Slice;
         return Results.Ok(new SourceResponse(
-            relativePath.Replace(Path.DirectorySeparatorChar, '/'),
-            start,
-            actualEnd,
-            string.Join(Environment.NewLine, lines[(start - 1)..actualEnd])));
+            slice.File,
+            slice.StartLine,
+            slice.EndLine,
+            slice.Content,
+            slice.SourceVersion,
+            slice.Truncated));
     }
 }
 
-public sealed record SourceResponse(string File, int StartLine, int EndLine, string Content);
+/// <param name="SourceVersion">snapshot이면 분석 당시와 같은 내용이고, current면 그 뒤로 바뀐 현재 소스다.</param>
+public sealed record SourceResponse(
+    string File,
+    int StartLine,
+    int EndLine,
+    string Content,
+    string SourceVersion,
+    bool Truncated);

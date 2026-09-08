@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getFreshness } from '../api/client'
+import { useI18n } from '../i18n/I18nProvider'
 import type { FreshnessResponse } from '../types/graph'
 
 interface FreshnessBadgeProps {
@@ -11,7 +12,13 @@ interface FreshnessBadgeProps {
 
 const pollingIntervalMs = 30_000
 
+/**
+ * 분석 결과와 현재 소스가 같은지 보여 준다.
+ * 이 확인은 파일 목록·해시 비교일 뿐이고 재분석을 실행하지 않는다.
+ * 신선도 입력이 없는 옛 그래프는 `fresh`로 단정하지 않고 `unknown`으로 둔다.
+ */
 export function FreshnessBadge({ canReanalyze, refreshKey, analyzing, onReanalyze }: FreshnessBadgeProps) {
+  const { t, formatDateTime } = useI18n()
   const [freshness, setFreshness] = useState<FreshnessResponse | null>(null)
   const [unavailable, setUnavailable] = useState(false)
 
@@ -44,29 +51,39 @@ export function FreshnessBadge({ canReanalyze, refreshKey, analyzing, onReanalyz
 
   const status = unavailable ? (freshness ? 'unknown' : 'idle') : freshness?.status ?? 'checking'
   const label = status === 'fresh'
-    ? '최신 상태'
+    ? t('freshness.fresh')
     : status === 'stale'
-      ? `변경됨${freshness?.changedFiles.length ? ` ${freshness.changedFiles.length}` : ''}`
+      ? freshness?.changedFiles.length
+        ? t('freshness.staleCount', { count: freshness.changedFiles.length })
+        : t('freshness.stale')
       : status === 'checking'
-        ? '확인 중…'
+        ? t('freshness.checking')
         : status === 'idle'
-          ? '분석 전'
-          : '확인 실패'
-  const details = freshness?.changedFiles.length
-    ? `변경된 파일: ${freshness.changedFiles.join(', ')}`
-    : freshness
-      ? `마지막 분석: ${new Date(freshness.analyzedAt).toLocaleString('ko-KR')}`
-      : undefined
+          ? t('freshness.idle')
+          : status === 'unknown'
+            ? t('freshness.unknown')
+            : t('freshness.failed')
+
+  const details = [
+    freshness?.changedFiles.length
+      ? t('freshness.changedFiles', { files: freshness.changedFiles.slice(0, 8).join(', ') })
+      : freshness
+        ? t('freshness.lastAnalyzed', { time: formatDateTime(freshness.analyzedAt) })
+        : null,
+    freshness?.origin === 'offlineSnapshot' ? t('freshness.offline') : null,
+    status === 'unknown' ? t('freshness.unknownHint') : null,
+    ...(freshness?.reasons ?? []),
+  ].filter(Boolean).join('\n')
 
   return (
-    <div className="freshness-control" title={details}>
+    <div className="freshness-control" title={details || undefined}>
       <div className={`freshness-badge ${status}`}>
         <span className="freshness-dot" />
         {label}
       </div>
       {canReanalyze && (
         <button type="button" onClick={() => void onReanalyze()} disabled={analyzing}>
-          {analyzing ? '분석 중…' : '다시 분석'}
+          {analyzing ? t('freshness.reanalyzing') : t('freshness.reanalyze')}
         </button>
       )}
     </div>

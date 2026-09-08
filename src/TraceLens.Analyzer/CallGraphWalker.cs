@@ -21,25 +21,27 @@ public sealed class CallGraphWalker(
         var nodes = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
         var edges = new HashSet<GraphEdge>();
         var visitedDepth = new Dictionary<string, int>(StringComparer.Ordinal);
-        var queue = new Queue<(IMethodSymbol Method, int Depth)>();
+        var queue = new Queue<(AnalysisCallable Callable, int Depth)>();
+        var collector = new CallSiteCollector(config.IncludeCallSites, config.MaxCallSitesPerEdge, config.MaxBoundaryCallSites);
+        var depthLimitReached = false;
 
         foreach (var entryPoint in entryPoints)
         {
-            queue.Enqueue((entryPoint.Method, 0));
+            queue.Enqueue((entryPoint.Handler, 0));
         }
 
         while (queue.Count > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var (method, depth) = queue.Dequeue();
-            var methodId = SymbolNames.GetNodeId(method);
+            var (callable, depth) = queue.Dequeue();
+            var methodId = callable.NodeId;
             if (visitedDepth.TryGetValue(methodId, out var existingDepth) && existingDepth <= depth)
             {
                 continue;
             }
 
             visitedDepth[methodId] = depth;
-            var node = await CreateNodeAsync(method, solutionDirectory, config, cancellationToken);
+            var node = GraphNodes.Create(callable, solutionDirectory, nodeClassifier.Classify(callable.ContainingType, config));
             if (node is null)
             {
                 continue;
@@ -48,78 +50,93 @@ public sealed class CallGraphWalker(
             nodes[methodId] = node;
             if (depth >= config.MaxCallDepth)
             {
+                depthLimitReached = true;
                 logger.LogDebug("maxCallDepth에 도달해 더 내려가지 않는다: {Method}", methodId);
                 continue;
             }
 
-            foreach (var calledMethod in await GetCalledMethodsAsync(
-                         loaded.Solution,
-                         method,
-                         solutionDirectory,
-                         config,
-                         cancellationToken))
+            foreach (var call in await GetCallsAsync(loaded.Solution, callable, solutionDirectory, config, cancellationToken))
             {
-                var calledId = SymbolNames.GetNodeId(calledMethod);
-                var calledNode = await CreateNodeAsync(calledMethod, solutionDirectory, config, cancellationToken);
-                if (calledNode is null)
+                if (!call.IsEdge || call.Target is null)
                 {
+                    collector.Add(methodId, null, call);
                     continue;
                 }
 
-                nodes[calledId] = calledNode;
-                edges.Add(new GraphEdge(methodId, calledId));
-                queue.Enqueue((calledMethod, depth + 1));
+                var calledCallable = await CreateCallableAsync(call.Target, cancellationToken);
+                if (calledCallable is null)
+                {
+                    collector.Add(methodId, null, call with
+                    {
+                        Resolution = CallResolution.Unresolved,
+                        Note = "대상 메서드의 선언 위치를 찾지 못했다."
+                    });
+                    continue;
+                }
+
+                var calledNode = GraphNodes.Create(
+                    calledCallable,
+                    solutionDirectory,
+                    nodeClassifier.Classify(calledCallable.ContainingType, config));
+                if (calledNode is null)
+                {
+                    collector.Add(methodId, null, call with
+                    {
+                        Resolution = CallResolution.External,
+                        Note = "대상 선언이 분석 루트 밖이거나 빌드 산출물이다."
+                    });
+                    continue;
+                }
+
+                nodes[calledCallable.NodeId] = calledNode;
+                edges.Add(new GraphEdge(methodId, calledCallable.NodeId));
+                collector.Add(methodId, calledCallable.NodeId, call);
+                queue.Enqueue((calledCallable, depth + 1));
             }
         }
 
+        var nodeIds = nodes.Keys.ToHashSet(StringComparer.Ordinal);
         return new CallGraphResult(
             nodes.Values.OrderBy(node => node.Id, StringComparer.Ordinal).ToArray(),
-            edges.OrderBy(edge => edge.From, StringComparer.Ordinal).ThenBy(edge => edge.To, StringComparer.Ordinal).ToArray());
+            edges.OrderBy(edge => edge.From, StringComparer.Ordinal).ThenBy(edge => edge.To, StringComparer.Ordinal).ToArray(),
+            collector.Build(nodeIds),
+            collector.Stats,
+            depthLimitReached,
+            collector.DroppedForLimit);
     }
 
-    private async Task<IReadOnlyList<IMethodSymbol>> GetCalledMethodsAsync(
+    private async Task<IReadOnlyList<ResolvedCall>> GetCallsAsync(
         Solution solution,
-        IMethodSymbol method,
+        AnalysisCallable callable,
         string solutionDirectory,
         TraceLensConfig config,
         CancellationToken cancellationToken)
     {
-        var result = new List<IMethodSymbol>();
-        foreach (var syntaxReference in method.DeclaringSyntaxReferences)
+        var syntax = callable.Declaration;
+
+        // 주 생성자는 선언 위치가 타입 자체라서, 그대로 훑으면 클래스 안 모든 호출이 이 생성자의 호출로 잡힌다.
+        if (syntax is TypeDeclarationSyntax)
         {
-            var syntax = await syntaxReference.GetSyntaxAsync(cancellationToken);
-
-            // 주 생성자는 선언 위치가 타입 자체라서, 그대로 훑으면 클래스 안 모든 호출이 이 생성자의 호출로 잡힌다.
-            if (syntax is TypeDeclarationSyntax)
-            {
-                continue;
-            }
-
-            var document = solution.GetDocument(syntax.SyntaxTree);
-            if (document is null)
-            {
-                continue;
-            }
-
-            var model = await document.GetSemanticModelAsync(cancellationToken);
-            if (model is null)
-            {
-                continue;
-            }
-
-            result.AddRange(invocationResolver.ResolveCalls(model, syntax, solutionDirectory, config, cancellationToken));
+            return [];
         }
 
-        return result;
+        var document = solution.GetDocument(syntax.SyntaxTree);
+        if (document is null)
+        {
+            return [];
+        }
+
+        var model = await document.GetSemanticModelAsync(cancellationToken);
+        return model is null
+            ? []
+            : invocationResolver.ResolveCalls(model, syntax, solutionDirectory, config, cancellationToken);
     }
 
-    private async Task<GraphNode?> CreateNodeAsync(
+    /// <summary>호출 대상 심볼로 callable을 만든다. 기본 생성자는 선언 구문이 없으므로 그 타입 선언 위치를 쓴다.</summary>
+    private static async Task<AnalysisCallable?> CreateCallableAsync(
         IMethodSymbol method,
-        string solutionDirectory,
-        TraceLensConfig config,
         CancellationToken cancellationToken)
     {
-        // 기본 생성자는 선언 구문이 없으므로 그 타입 선언 위치를 쓴다.
         var reference = InvocationResolver.GetDeclarations(method).FirstOrDefault();
         if (reference is null)
         {
@@ -127,8 +144,18 @@ public sealed class CallGraphWalker(
         }
 
         var syntax = await reference.GetSyntaxAsync(cancellationToken);
-        return GraphNodes.Create(method, syntax, solutionDirectory, nodeClassifier.Classify(method, config));
+        var projectKey = method.ContainingAssembly?.Name ?? string.Empty;
+        return method.MethodKind == MethodKind.LocalFunction
+            ? AnalysisCallable.ForLocalFunction(method, syntax, projectKey, null)
+            : AnalysisCallable.ForMethod(method, syntax, projectKey);
     }
 }
 
-public sealed record CallGraphResult(IReadOnlyList<GraphNode> Nodes, IReadOnlyList<GraphEdge> Edges);
+/// <param name="DroppedCallSites">상한 때문에 근거 목록에서 뺀 호출 지점 수.</param>
+public sealed record CallGraphResult(
+    IReadOnlyList<GraphNode> Nodes,
+    IReadOnlyList<GraphEdge> Edges,
+    IReadOnlyList<CallSite> CallSites,
+    CallResolutionStats Stats,
+    bool DepthLimitReached,
+    int DroppedCallSites);

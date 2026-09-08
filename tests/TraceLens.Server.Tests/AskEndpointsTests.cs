@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using TraceLens.Analyzer.Models;
+using TraceLens.Context;
 using TraceLens.Server.Endpoints;
 using Xunit;
 
@@ -31,7 +32,9 @@ public sealed class AskEndpointsTests
             context,
             store,
             runner,
+            new ClaudeCodeAgentRunner(runner),
             new StubMcpConfigWriter("C:\\Fixture\\.tracelens\\mcp.json"),
+            new ContextBuilder(new GraphFreshnessEvaluator()),
             CancellationToken.None);
 
         context.Response.Body.Position = 0;
@@ -62,7 +65,9 @@ public sealed class AskEndpointsTests
             context,
             store,
             runner,
+            new ClaudeCodeAgentRunner(runner),
             new StubMcpConfigWriter(string.Empty),
+            new ContextBuilder(new GraphFreshnessEvaluator()),
             CancellationToken.None);
 
         context.Response.Body.Position = 0;
@@ -110,6 +115,9 @@ public sealed class AskEndpointsTests
     {
         public Task<string> WriteAsync(GraphDocument graph, CancellationToken cancellationToken = default) =>
             Task.FromResult(path);
+
+        public McpSetupPreview BuildPreview(GraphDocument graph, string? offlineGraphPath) =>
+            new(path, "dotnet", [path], [], null);
     }
 
     private sealed class StubProcessRunner : IProcessRunner

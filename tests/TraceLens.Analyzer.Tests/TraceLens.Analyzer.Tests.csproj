@@ -6,7 +6,9 @@
   <ItemGroup>
     <Compile Remove="Fixtures\**\*.cs" />
     <Compile Remove="FixturesData\**\*.cs" />
+    <Compile Remove="FixturesMinimalApi\**\*.cs" />
     <ProjectReference Include="..\..\src\TraceLens.Analyzer\TraceLens.Analyzer.csproj" />
+    <ProjectReference Include="..\..\src\TraceLens.Context\TraceLens.Context.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />

@@ -24,19 +24,33 @@ internal static class GraphNodes
     /// <summary>메서드 심볼과 그 선언 구문으로 그래프 노드를 만든다. 솔루션 밖이거나 빌드 산출물이면 null이다.</summary>
     public static GraphNode? Create(IMethodSymbol method, SyntaxNode syntax, string solutionDirectory, NodeKind kind)
     {
+        var projectKey = method.ContainingAssembly?.Name ?? string.Empty;
+        return Create(
+            AnalysisCallable.ForMethod(method, syntax, projectKey),
+            solutionDirectory,
+            kind);
+    }
+
+    /// <summary>callable(메서드·생성자·람다·로컬 함수)로 그래프 노드를 만든다.</summary>
+    public static GraphNode? Create(AnalysisCallable callable, string solutionDirectory, NodeKind kind)
+    {
+        var syntax = callable.Declaration;
         var relativePath = SourcePaths.ToSolutionRelative(solutionDirectory, syntax.SyntaxTree.FilePath);
         if (relativePath is null || SourcePaths.IsBuildOutput(relativePath))
         {
             return null;
         }
 
+        var method = callable.Symbol;
         var lineSpan = syntax.GetLocation().GetLineSpan();
         return new GraphNode(
-            SymbolNames.GetNodeId(method),
+            callable.NodeId,
             kind,
-            SymbolNames.GetDisplayName(method),
-            method.ContainingNamespace.IsGlobalNamespace ? string.Empty : method.ContainingNamespace.ToDisplayString(),
-            SymbolNames.GetClassId(method.ContainingType),
+            callable.DisplayName,
+            callable.ContainingType.ContainingNamespace.IsGlobalNamespace
+                ? string.Empty
+                : callable.ContainingType.ContainingNamespace.ToDisplayString(),
+            SymbolNames.GetClassId(callable.ContainingType),
             relativePath,
             lineSpan.StartLinePosition.Line + 1,
             lineSpan.EndLinePosition.Line + 1)
@@ -46,7 +60,11 @@ internal static class GraphNodes
             ReturnType = method.MethodKind == MethodKind.Constructor
                 ? string.Empty
                 : method.ReturnType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-            ParameterTypes = SymbolNames.GetParameterTypeNames(method)
+            ParameterTypes = SymbolNames.GetParameterTypeNames(method),
+            Callable = callable.Kind,
+            StableKey = callable.StableKey,
+            SignatureFingerprint = MethodFingerprints.ComputeSignature(method),
+            BodyFingerprint = MethodFingerprints.ComputeBody(syntax)
         };
     }
 }

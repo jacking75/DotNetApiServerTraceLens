@@ -467,7 +467,7 @@
   <div class="summary-card"><div class="num">01</div><h3>Run with one command</h3><p><code>.\run.ps1</code> builds and runs everything.</p></div>
   <div class="summary-card"><div class="num">02</div><h3>Six views</h3><p>Call Flow · Class Diagram · Flow Map · Startup Flow · Data Access · Middleware.</p></div>
   <div class="summary-card"><div class="num">03</div><h3>Click for real code</h3><p>Click anywhere in any view and the source shows up right next to it.</p></div>
-  <div class="summary-card"><div class="num">04</div><h3>Ask an AI agent directly</h3><p>Three ways: clipboard · MCP Direct · open in editor.</p></div>
+  <div class="summary-card"><div class="num">04</div><h3>Ask an AI agent directly</h3><p>Three ways: copy context · run with Claude Code · open in editor.</p></div>
 </div>
 
 <div class="page">
@@ -478,8 +478,10 @@
       <a href="#build">Build &amp; run</a>
       <a class="sub" href="#build-dev">While developing</a>
       <a class="sub" href="#build-prod">For everyday use</a>
+      <a class="sub" href="#build-package">Released build &amp; CLI</a>
       <a class="sub" href="#build-publish">Build output only</a>
       <a class="sub" href="#build-manual">Running without the script</a>
+      <a href="#first-run">First run &amp; guide</a>
       <a href="#layout">Screen layout</a>
       <a href="#target">Analysis target &amp; config</a>
       <a class="sub" href="#target-config">tracelens.config.json</a>
@@ -493,6 +495,12 @@
       <a class="sub" href="#view-data">Data Access</a>
       <a class="sub" href="#view-middleware">Middleware</a>
       <a href="#ask">Asking an AI agent</a>
+      <a class="sub" href="#ask-context">Copy context</a>
+      <a class="sub" href="#ask-mcp">Run with Claude Code</a>
+      <a class="sub" href="#ask-editor">Open in editor</a>
+      <a href="#impact">Change impact</a>
+      <a href="#diff">Before / after</a>
+      <a href="#recipes">Recipes</a>
       <a href="#scenarios">Usage scenarios</a>
       <a href="#reference">Learn more</a>
     </nav>
@@ -503,19 +511,29 @@
     <section class="doc-section" id="overview">
       <h2>Overview</h2>
       <p class="section-desc">
-        TraceLens shows the real method call flow as a graph, starting from an HTTP endpoint
-        (entry point) and moving from controller → service → repository. Switch to the class
-        diagram or the flow map to see how the whole codebase is shaped. In any view, clicking a
-        box or a member row brings up the actual source at that location, and typing a question
-        automatically captures the file path, line range, and symbol name and hands them to an AI
-        coding agent. Both Claude Code and Codex CLI can be used this way.
+        TraceLens is a local development tool that <b>shows the call path of an ASP.NET Core Web API
+        together with the code behind it, and hands an AI coding agent the context it needs.</b>
+        It draws the method call flow from an HTTP endpoint down through controller → service →
+        repository; switch to the class diagram or flow map to see the shape of the whole codebase.
+        In any view, clicking a box or a member row brings up the actual source, and that selection
+        becomes a task context — with its evidence attached — you can hand to whichever AI tool you use.
       </p>
+
+      <div class="callout warn">
+        <strong>This is static analysis.</strong> Everything here comes from <b>reading source</b>.
+        No runtime request history or timing is collected — the "Trace" in the name means following
+        call paths through code, not distributed tracing. Anything that cannot be proven statically —
+        dynamic routes, reflection, event subscriptions — is left <b>estimated or unresolved rather
+        than asserted.</b>
+      </div>
 
       <div class="callout note">
         <strong>Why this exists.</strong> Getting your head around a large ASP.NET Core codebase,
         or explaining one to someone else, usually means reconstructing its structure by eye —
-        which takes a long time. Existing architecture-diagram tools don't support the flow of
-        "click a node, see the real code, and ask an AI agent about it right there."
+        which takes a long time. Tools that trace callers or do impact analysis already exist;
+        TraceLens aims narrower, tying <b>request-centric exploration, local static analysis,
+        AI context with evidence attached, and database/cache compensation checking</b> into one
+        workflow. That is the seat it picked, not a measured claim of being better.
       </div>
 
       <div class="callout warn">
@@ -548,8 +566,8 @@
       <ul>
         <li>.NET 8 SDK or later</li>
         <li>Node.js 20 or later</li>
-        <li>Claude Code CLI — only needed for the Ask panel's <b>MCP Direct</b> button (this button is Claude Code-only)</li>
-        <li>Codex CLI — separate from the button above, needed only if you want to register TraceLens.Mcp directly in a Codex CLI session (see <a href="#ask-mcp">MCP Direct</a>)</li>
+        <li>Claude Code CLI — only needed for the ask panel's <b>Run with Claude Code</b> button (that button is the one Claude Code-specific piece). Copying context works without it.</li>
+        <li>Codex CLI / VS Code — separate from the button above, needed only if you want to register the TraceLens MCP server directly (see <a href="#ask-mcp">Run with Claude Code</a> for how to connect it)</li>
       </ul>
 
       <h3 class="sub-h" id="build-prod">For everyday use — one command</h3>
@@ -565,6 +583,41 @@ cd tracelens
         <code>http://127.0.0.1:25011</code> in a browser (opens automatically once ready). Stop
         with <span class="kbd">Ctrl</span>+<span class="kbd">C</span>.
       </p>
+
+      <h3 class="sub-h" id="build-package">Running the released build &amp; the CLI</h3>
+      <p>
+        Running <code>.\pack.ps1</code> in the repository root produces a Windows x64 portable ZIP and a
+        .NET tool package under <code>artifacts/</code>, plus a <code>manifest.txt</code> holding SHA256
+        checksums, versions and the <b>manual verification steps</b>. The script only builds —
+        it never publishes.
+      </p>
+      <p>
+        The released build carries the web assets (<code>wwwroot</code>) and the examples
+        (<code>samples</code>) with it, so the UI opens from any working directory and it runs
+        <b>without the TraceLens source tree or Node.js</b>. Opening the project you analyze still
+        needs a <b>.NET SDK</b> — the tool's runtime and the target's build environment are different things.
+      </p>
+      <table>
+        <tr><th>Command</th><th>What it does</th></tr>
+        <tr><td><code>tracelens doctor [--target &lt;path&gt;] [--json]</code></td>
+            <td>Checks the SDK, target format, output permissions, port, MCP host and optional CLIs, and
+                says what to do next. It never installs anything or changes settings, and collects no
+                API keys or environment dumps.</td></tr>
+        <tr><td><code>tracelens analyze &lt;path&gt; [--json]</code></td>
+            <td>Runs one analysis and prints a summary: entry points, nodes, edges, resolution rate, limits.</td></tr>
+        <tr><td><code>tracelens serve [--target &lt;path&gt;] [--port n]</code></td>
+            <td>Starts the UI server, bound to loopback only.</td></tr>
+        <tr><td><code>tracelens mcp --graph &lt;graph.json&gt;</code></td>
+            <td>Starts the local stdio MCP server.</td></tr>
+        <tr><td><code>tracelens demo [--dir &lt;destination&gt;]</code></td>
+            <td>Copies the example into a folder you choose and explains what to look at.</td></tr>
+      </table>
+      <div class="callout note">
+        <strong>Supported formats.</strong> <code>.sln</code> and <code>.csproj</code>.
+        <code>.slnx</code> is not supported yet because the MSBuildWorkspace in use cannot open it;
+        <code>doctor</code> reports <code>UNSUPPORTED_TARGET_FORMAT</code> with that reason rather than
+        failing obscurely. Support is not "added" by loosening an extension check.
+      </div>
 
       <h3 class="sub-h" id="build-publish">Deploying and running just the build output, without source</h3>
       <p>
@@ -611,7 +664,7 @@ dotnet .\publish\TraceLens.Server.dll</code></pre>
       </div>
       <p class="text-soft">
         If you had registered a path to <code>TraceLens.Mcp.dll</code> for MCP integration
-        (<a href="#ask-mcp">MCP Direct</a>, <code>docs/mcp-setup.md</code>), you'll need to
+        (<a href="#ask-mcp">Run with Claude Code</a>, <code>docs/mcp-setup.md</code>), you'll need to
         re-register it with the published folder's path — before publishing it was probably
         pointing at <code>bin/Debug/net8.0/TraceLens.Mcp.dll</code>. To publish TraceLens.Mcp the
         same way, run <code>dotnet publish src/TraceLens.Mcp -c Release -o publish-mcp</code>
@@ -648,10 +701,34 @@ npm install
 npm run dev</code></pre>
 
       <div class="callout tip">
-        <strong>Tip.</strong> To use TraceLens.Mcp (see <a href="#ask-mcp">MCP Direct</a> below),
+        <strong>Tip.</strong> To use the TraceLens MCP server (see <a href="#ask-mcp">Run with Claude Code</a> below),
         the whole solution needs to be built first with
         <code>dotnet build TraceLens.sln</code>. <code>run.ps1</code> already does this, so you
         usually don't need to think about it.
+      </div>
+    </section>
+
+    <section class="doc-section" id="first-run">
+      <h2>First run &amp; the guide</h2>
+      <p class="section-desc">
+        Before anything is analyzed you do not get an empty canvas — you get <b>what to try first</b>:
+        start with the example, analyze your own project, what is supported today, and the recipes.
+      </p>
+      <ul>
+        <li><b>The example</b> — <code>samples/OrderApi</code> has four controller routes and four minimal
+          API routes calling the same services and repositories, plus a four-step write path with no
+          transaction. Run <code>tracelens demo</code> to copy it into a folder you choose, then analyze it.</li>
+        <li><b>Environment check</b> — "Run environment check" shows the same result as <code>doctor</code>, in the UI.</li>
+        <li><b>Getting started guide</b> — "Show guide" in the header walks five steps (pick a target →
+          analyze → pick an entry point → check the source → copy context). Progress only advances on
+          <b>real completion events</b>, and you can close and reopen it at any time.</li>
+        <li><b>Language</b> — pick Korean or English in the header. The browser language is the default and
+          your choice is remembered. Symbols, routes, code and file paths are never translated.</li>
+      </ul>
+      <div class="callout note">
+        <strong>Analysis progress.</strong> Analysis reports a stage (load · entrypoints · scan · rules ·
+        save) and real counts. No invented percentage is shown. A long run can be <b>canceled</b>, and
+        canceling <b>keeps the previous analysis</b> intact.
       </div>
     </section>
 
@@ -673,7 +750,7 @@ npm run dev</code></pre>
       </ul>
 
       <div class="app-frame">
-        <div class="frame-label">Top bar + view-switch tabs — the app's UI is Korean-only, so this mockup shows the real on-screen labels</div>
+        <div class="frame-label">Top bar + view-switch tabs — the UI ships in Korean and English; this mockup shows the Korean labels</div>
         <div class="tabstrip">
           <div class="tab active">호출 흐름</div>
           <div class="tab">클래스 다이어그램</div>
@@ -818,16 +895,33 @@ npm run dev</code></pre>
         <div class="status-pill stale"><span class="dot"></span>변경됨 3</div>
         <div class="status-pill checking"><span class="dot"></span>확인 중…</div>
         <div class="status-pill idle"><span class="dot"></span>분석 전</div>
-        <div class="status-pill unknown"><span class="dot"></span>확인 실패</div>
+        <div class="status-pill unknown"><span class="dot"></span>Unknown</div>
       </div>
-      <p class="text-soft">(left to right, in the order the badge actually shows: Fresh · Changed 3 · Checking… · Not analyzed yet · Check failed)</p>
+      <p class="text-soft">(the badge follows the UI language; shown here as Fresh · Changed 3 · Checking… · Not analyzed · Unknown)</p>
       <p>
-        The badge automatically re-checks status every 30 seconds. In the <b>Changed</b> state, a
-        number shows how many files changed, and hovering shows the list of changed files (or the
-        last analysis time) as a tooltip. Pressing <b>Re-analyze</b> next to the badge
-        re-analyzes on the spot, and the view/selection/filters you were looking at are kept as-is
-        (only selections pointing at code that no longer exists get cleared).
+        The badge automatically re-checks status every 30 seconds. That check is a <b>file list and hash
+        comparison only</b> — it never runs an analysis. In the <b>Changed</b> state, a number shows how
+        many files changed, and hovering shows the list of changed files (or the last analysis time) as a
+        tooltip. Pressing <b>Re-analyze</b> next to the badge re-analyzes on the spot, and the
+        view/selection/filters you were looking at are kept as-is (only selections pointing at code that
+        no longer exists get cleared).
       </p>
+      <table>
+        <tr><th>State</th><th>Meaning</th></tr>
+        <tr><td>Up to date (fresh)</td><td>Every recorded input matches what is on disk.</td></tr>
+        <tr><td>Changed (stale)</td><td>Something changed or was deleted, a <b>new <code>.cs</code></b> appeared, or a config input changed.</td></tr>
+        <tr><td>Unknown</td><td>The check could not cover it — the analysis root is missing, or this analysis was
+          saved in an <b>older format with no freshness inputs</b>. It is never reported as "fresh" in that
+          case; re-analyze to also cover new files and config changes.</td></tr>
+      </table>
+      <div class="callout note">
+        <strong>What it looks at.</strong> Hashes of every source file the analysis read, the
+        <code>.sln</code>/<code>.csproj</code>, <code>tracelens.config.json</code>,
+        <code>Directory.Build.props/targets</code>, <code>Directory.Packages.props</code>,
+        <code>global.json</code>, and the <b>set</b> of <code>.cs</code> files under the project folders.
+        Expanded MSBuild imports and source-generator output are not tracked, and that limitation is
+        reported alongside the result.
+      </div>
     </section>
 
     <section class="doc-section" id="saveload">
@@ -1008,74 +1102,199 @@ npm run dev</code></pre>
     <section class="doc-section" id="ask">
       <h2>Asking an AI agent</h2>
       <p class="section-desc">
-        In any view, selecting a class, method, namespace, finding, or middleware step fills the
-        <b>Claude에게 질문</b> panel at the bottom right (that's the actual on-screen name) with
-        the file path, line range, and symbol name automatically. Write your question and send it
-        one of three ways. Despite its name, the panel <b>isn't tied to Claude Code alone</b> —
-        the clipboard works with any AI coding agent you paste into, and MCP-based graph lookups
-        can be registered with both Claude Code and Codex CLI (see below).
+        In any view, selecting an entry point, method, class, namespace, finding, write path or
+        middleware step makes the <b>Ask AI</b> panel build a <b>task context</b> from it.
+        That context comes from one place on the server (<code>POST /api/context</code>), so
+        <b>the clipboard, the in-app run and the MCP tools all get the same thing.</b>
+        It is not tied to any one AI tool.
       </p>
 
-      <h3 class="sub-h" id="ask-clipboard">Clipboard</h3>
+      <h4 class="mini-h">What goes into the context</h4>
+      <ol>
+        <li>Your intent (understand code · plan a change · review a change · investigate data) and question,
+          plus the identifiers of what you selected</li>
+        <li>Analysis time · <code>snapshotId</code> · freshness · analysis scope, and the significant
+          unresolved reasons</li>
+        <li>The selected method's signature and a <b>verified</b> source range — marked
+          (<code>snapshot</code> / <code>current</code>) with whether it still matches the analysis</li>
+        <li>The representative call path from the entry point to the target, and the evidence for each
+          call site (direct call · DI registration · single-implementation guess)</li>
+        <li>Direct callers and callees, plus related database, cache and middleware findings</li>
+        <li>Test candidates found in the graph — <b>not the result of running any test</b></li>
+        <li>What was omitted for length, and how to fetch more</li>
+      </ol>
       <p>
-        Copies the captured context plus your question to the clipboard. Whether you're using
-        Claude Code or Codex CLI, just paste it into whatever AI coding agent's terminal or chat
-        you already have open — this is the only mode that works with <b>any</b> selection and
-        isn't tied to a specific CLI (the other two modes need a node that's actually executable).
+        Length is <b>short · balanced · detailed</b>. It is implemented as deterministic caps on
+        characters, nodes and source lines, so the same selection with the same budget always produces
+        the same context. The token count shown is estimated from character count, not a model
+        tokenizer, and is labeled as an estimate.
       </p>
 
-      <h3 class="sub-h" id="ask-mcp">MCP Direct</h3>
+      <h4 class="mini-h">Check before you send</h4>
       <p>
-        Sends your question straight from the browser and streams back the answer. The server
-        runs the <b>Claude Code CLI</b> headlessly, attaching TraceLens's MCP tools (graph
-        lookups) to it. <b>No separate registration is needed</b> — on every request, the server
-        builds a <code>.tracelens/mcp.json</code> matching the current analysis result and hands
-        it to the CLI. This button is Claude Code-only — Codex CLI and other CLIs are never run
-        headlessly.
+        The preview lists <b>the files included, whether source text is in there, the length, what was
+        omitted, and the limitations</b>. The analysis is local, but <b>asking an external AI sends this
+        content to that service.</b> There is an option to leave source text out and to exclude files by
+        path; automatic secret detection alone is not treated as a safety guarantee.
+      </p>
+      <div class="callout note">
+        When the analysis is <b>stale</b>, source text is left out of an editing context on purpose —
+        pinning current code onto stale locations and calling it "the code as analyzed" would be wrong.
+        You are pointed at re-analyzing or checking the original instead.
+      </div>
+
+      <h3 class="sub-h" id="ask-context">Copy context</h3>
+      <p>
+        Copies the assembled Markdown context to the clipboard. Paste it into Claude Code, Codex CLI or
+        anything else you use. This works for <b>any selection</b> — including classes and namespaces that
+        have no runnable node.
+      </p>
+
+      <h3 class="sub-h" id="ask-mcp">Run with Claude Code</h3>
+      <p>
+        Sends the question from inside the browser and streams the answer back. The server runs the
+        <b>Claude Code CLI</b> headlessly with the same context as the prompt and the TraceLens MCP tools
+        attached. <b>No registration is needed</b> — each request writes a
+        <code>.tracelens/mcp.json</code> matching the current analysis and passes it to the CLI.
+        This button is the one Claude Code-specific piece.
       </p>
       <ul>
-        <li>The Claude Code CLI needs to be on PATH.</li>
-        <li>In-progress logs (tool calls, etc.) can be expanded via the "Execution log" accordion.</li>
-        <li>Leaving the panel or selecting something else while an answer is streaming cancels the request.</li>
+        <li>The Claude Code CLI must be on PATH.</li>
+        <li>In-progress logs (tool calls and so on) expand under "log lines".</li>
+        <li>Selecting something else while an answer streams cancels the request.</li>
       </ul>
 
-      <h4 class="mini-h">Registering directly in a Claude Code or Codex CLI session</h4>
+      <h4 class="mini-h">Connecting it to your own AI tool</h4>
       <p>
-        TraceLens.Mcp is a standard stdio MCP server, so you can register it directly in whatever
-        CLI session you normally use, without this button at all. Use this when you want to query
-        the graph from a different session or a different tool. The full steps and the list of
-        tools provided (<code>get_node</code> · <code>get_source</code> · <code>get_callers</code>
-        · <code>get_callees</code> · <code>get_entrypoints</code> · <code>search_symbol</code>)
-        are in <code>docs/mcp-setup.md</code>.
+        <b>"Show MCP setup"</b> in the panel prints a configuration snippet with the real paths for your
+        target and installed host filled in. <b>Nothing is overwritten</b> — add what it prints to the
+        matching file.
       </p>
       <table>
-        <tr><th>CLI</th><th>Registration command</th><th>Config file</th></tr>
-        <tr>
-          <td>Claude Code</td>
-          <td><code>claude mcp add --scope local tracelens -- dotnet TraceLens.Mcp.dll --graph ...</code></td>
-          <td><code>.mcp.json</code> (JSON)</td>
-        </tr>
-        <tr>
-          <td>Codex CLI</td>
-          <td><code>codex mcp add tracelens -- dotnet TraceLens.Mcp.dll --graph ...</code></td>
-          <td><code>[mcp_servers.tracelens]</code> in <code>~/.codex/config.toml</code> (TOML)</td>
-        </tr>
+        <tr><th>Tool</th><th>Config file</th><th>Format</th></tr>
+        <tr><td>Claude Code</td><td><code>.mcp.json</code> at the analysis target root</td><td>JSON, under <code>mcpServers</code></td></tr>
+        <tr><td>Codex CLI</td><td><code>~/.codex/config.toml</code></td><td>TOML, <code>[mcp_servers.tracelens]</code></td></tr>
+        <tr><td>VS Code</td><td><code>.vscode/mcp.json</code> in the workspace</td><td>JSON, under <code>servers</code></td></tr>
+      </table>
+      <p>Twelve tools are available. Inputs and returns are documented in <code>docs/mcp-setup.md</code>.</p>
+      <table>
+        <tr><th>Tool</th><th>What it returns</th></tr>
+        <tr><td><code>get_analysis_status</code></td><td>Target, timestamp, freshness, capabilities and diagnostics. Call it first to know how much to trust the rest.</td></tr>
+        <tr><td><code>get_context</code></td><td>The same task context this panel previews</td></tr>
+        <tr><td><code>get_entrypoint_flow</code></td><td>One entry point's bounded call path and its boundaries</td></tr>
+        <tr><td><code>get_findings</code></td><td>Database and middleware findings with confidence, plus disabled rules</td></tr>
+        <tr><td><code>get_impact</code></td><td>Entry points that may be affected by changing a method</td></tr>
+        <tr><td><code>compare_snapshots</code></td><td>Differences against a saved baseline</td></tr>
+        <tr><td><code>get_node</code> · <code>get_source</code> · <code>get_callers</code> ·
+                <code>get_callees</code> · <code>get_entrypoints</code> · <code>search_symbol</code></td>
+            <td>Nodes, source, adjacent calls, entry points and symbol search. List tools page with
+                <code>limit</code>/<code>cursor</code>.</td></tr>
       </table>
       <div class="callout note">
-        The table above only summarizes the difference in registration shape. For the full
-        commands with real paths and config-file examples, copy them straight from
-        <code>docs/mcp-setup.md</code>. After registering, check status from inside each CLI's
-        session (<code>/mcp</code> for Claude Code; <code>codex mcp list</code> or
-        <code>/mcp</code> inside the session for Codex CLI).
+        Every tool <b>reads an already-saved analysis and never re-analyzes.</b> Responses carry a
+        <code>snapshotId</code>; passing it back as <code>expectedSnapshotId</code> gets you a
+        <code>SNAPSHOT_MISMATCH</code> if the analysis changed in between. Do not treat "the tools appear
+        in the list" as success — check that a real question quotes real files and line numbers.
       </div>
 
       <h3 class="sub-h" id="ask-editor">Open in editor</h3>
       <p>
-        Opens the selected location directly in VS Code. The server runs
-        <code>code --goto file:line</code>, and if it can't find the <code>code</code> CLI, falls
-        back automatically to a <code>vscode://file/...</code> URI (this button just opens the
-        location — no question needed).
+        Opens the selected location in VS Code. The server runs <code>code --goto file:line</code>, and
+        falls back to a <code>vscode://file/...</code> URI when the <code>code</code> CLI isn't found
+        (this button just opens the location — no question needed).
       </p>
+    </section>
+
+    <section class="doc-section" id="impact">
+      <h2>Change impact</h2>
+      <p class="section-desc">
+        Select a method and press "Find affected APIs" in the <b>Change impact</b> panel on the right.
+        It walks callers backwards to the HTTP entry points that reach it, and shows <b>one representative
+        shortest path</b> per entry point with the evidence for each step. Picking one takes you into the
+        existing call flow view — several entry points are never unfolded into a single graph.
+      </p>
+      <div class="callout warn">
+        <strong>What this list does not prove.</strong> These are <b>impact candidates derived from the
+        method call relationships that were analyzed.</b> Property and DTO shape changes, reflection,
+        external calls, event subscriptions and runtime DI selection are not proven.
+        <b>"No callers found" does not mean "safe to delete"</b> — a job or a message consumer may still
+        run it. When a depth or node limit is hit, that is reported too.
+      </div>
+      <p>
+        Test candidates come along as well, split into <b>reached in graph</b> and <b>name match only</b>.
+        "No candidates" and "test coverage is sufficient" are not the same statement.
+      </p>
+    </section>
+
+    <section class="doc-section" id="diff">
+      <h2>Before / after comparison</h2>
+      <p class="section-desc">
+        The loop for checking <b>what actually changed</b> after an AI edited the code.
+        Open "Before / after" in the header and go in order.
+      </p>
+      <ol>
+        <li><b>Save as "before"</b> — stores the current analysis as a baseline under
+          <code>.tracelens/history/&lt;snapshotId&gt;/graph.json</code>.</li>
+        <li>Let your AI tool change the code.</li>
+        <li><b>Re-analyze and compare</b> — even here, re-analysis only runs because you pressed it.</li>
+      </ol>
+      <table>
+        <tr><th>Section</th><th>What you see</th></tr>
+        <tr><td>Endpoints</td><td>Added, removed, and handler changes</td></tr>
+        <tr><td>Methods</td><td>Added, removed, <b>signature</b> changes and <b>body</b> changes. The body fingerprint distinguishes whitespace/comment-only edits.</td></tr>
+        <tr><td>Calls</td><td>Edges added and removed, and <b>changes in the resolution evidence or confidence</b> of an existing edge</td></tr>
+        <tr><td>Data &amp; cache access</td><td>Access added and removed, and moves in or out of a transaction</td></tr>
+        <tr><td>Checks</td><td>New findings and findings that disappeared</td></tr>
+        <tr><td>Possible renames</td><td>Removed/added pairs with the same body fingerprint. <b>Never auto-confirmed.</b></td></tr>
+      </table>
+      <div class="callout warn">
+        <strong>Read the preconditions first.</strong> If the target, analyzer version, rules version or
+        analysis scope differ, the panel says the comparison conditions are not the same. A finding that
+        disappeared because its rule was turned off shows as <b>not comparable</b>, never as "fixed".
+        And <b>"no differences" is not "safe", and is not "the tests pass".</b>
+        Before/after bodies are only available when you kept the baseline source or have a specific Git commit.
+      </div>
+      <p>As baselines pile up you get a prompt to clean them out. They are not kept without limit.</p>
+    </section>
+
+    <section class="doc-section" id="recipes">
+      <h2>Four recipes</h2>
+      <p class="section-desc">
+        The app's first screen and this document point at the <b>same recipe ids</b>. Picking a recipe in
+        the app switches to the right view and shows a guidance strip. The prompts below can be copied as-is.
+      </p>
+      <table>
+        <tr><th>Recipe</th><th>What you do in the app</th><th>What to ask the AI</th><th>What to check</th></tr>
+        <tr>
+          <td><b>Understand an API you have never seen</b><br><code>understand-api</code></td>
+          <td>Pick an entry point in the call flow and follow the representative path and source.</td>
+          <td>"Explain this API from input to storage, citing the evidence ids. Also state what cannot be confirmed statically."</td>
+          <td>Check that each factual claim maps to the source.</td>
+        </tr>
+        <tr>
+          <td><b>Plan a change</b><br><code>plan-change</code></td>
+          <td>Select the target method, check the affected APIs under Change impact, then build the context.</td>
+          <td>"Propose where to change, which APIs are affected, and which tests are needed, keeping the current separation of concerns."</td>
+          <td>Check the evidence behind the suggested locations and test candidates.</td>
+        </tr>
+        <tr>
+          <td><b>Investigate a data or cache mismatch</b><br><code>investigate-data</code></td>
+          <td>Pick a write path and its findings under Data &amp; cache → compensation.</td>
+          <td>"Identify updates left behind by a mid-way failure, separate the estimated parts, and propose a fix."</td>
+          <td>Check the real code and the failure path.</td>
+        </tr>
+        <tr>
+          <td><b>Review a change made by AI</b><br><code>review-ai-change</code></td>
+          <td>Save a baseline → let the AI edit → re-analyze explicitly → compare.</td>
+          <td>"From this diff, point out unintended path changes, remaining checks, and gaps in verification."</td>
+          <td>Check the analysis diff and your local test results <b>separately</b>.</td>
+        </tr>
+      </table>
+      <div class="callout note">
+        Question templates are shown only when they fit the current selection. Before adding more
+        diagnostic rules, it should be possible to explain how <b>one</b> existing finding was judged and
+        how to verify it again.
+      </div>
     </section>
 
     <section class="doc-section" id="scenarios">
@@ -1105,7 +1324,7 @@ npm run dev</code></pre>
           <li>In <b>Call Flow</b>, find and pick that route from the left list.</li>
           <li>Click <code>⊕</code> nodes to expand only as far as you need (don't expand everything at once).</li>
           <li>Click the method you're curious about to see its signature and actual source on the right.</li>
-          <li>From the Ask panel, use <b>MCP Direct</b> to send a question like "where's the transaction boundary in this method" right away.</li>
+          <li>In the <b>Ask AI</b> panel, set the intent to "understand code" and either <b>copy context</b> or <b>run with Claude Code</b> asking something like "explain this API from input to storage, citing the evidence ids".</li>
         </ol>
         <div class="scenario-views"><span>Call Flow</span></div>
       </div>
@@ -1197,9 +1416,12 @@ npm run dev</code></pre>
     <section class="doc-section" id="reference">
       <h2>Learn more</h2>
       <ul>
-        <li><code>README.md</code> — project overview, architecture, tech stack.</li>
-        <li><code>docs/mcp-setup.md</code> — how to register TraceLens as an MCP server with Claude Code and Codex CLI, plus the list of tools it provides.</li>
-        <li><code>CLAUDE.md</code> — design constraints and coding conventions for developers/agents working in this repository (Korean-only; written for contributors rather than users).</li>
+        <li><code>README.md</code> — project overview, quick start, supported scope, tech stack.</li>
+        <li><code>docs/mcp-setup.md</code> — registering the MCP server with Claude Code, Codex CLI and VS Code, plus all twelve tools.</li>
+        <li><code>docs/data-contract.md</code> — the <code>graph.json</code> schema (v7), API and MCP contracts, error codes, and migration rules.</li>
+        <li><code>CONTRIBUTING.md</code> — how to report a missed call, the verification commands, and the promises about wording.</li>
+        <li><code>CHANGELOG.md</code> — release notes (updated by hand) and known limitations.</li>
+        <li><code>CLAUDE.md</code> — design constraints and coding conventions for developers/agents working in this repository (Korean; written for contributors rather than users). See also <code>docs/data-contract.md</code> and <code>CONTRIBUTING.md</code>.</li>
       </ul>
     </section>
 

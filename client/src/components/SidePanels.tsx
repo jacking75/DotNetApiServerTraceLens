@@ -6,26 +6,31 @@ import { kindColors } from './kindColors'
 
 interface EntryPointListProps {
   entryPoints: EntryPoint[]
-  selectedNodeId: string | null
+  /** 선택 표시는 엔드포인트 ID로 한다. 같은 메서드에 여러 라우트가 걸릴 수 있기 때문이다. */
+  selectedEndpointId: string | null
   emptyMessage: string
   onSelect: (entryPoint: EntryPoint) => void
 }
 
 /** 호출 흐름 보기의 좌측 패널. */
-export function EntryPointList({ entryPoints, selectedNodeId, emptyMessage, onSelect }: EntryPointListProps) {
+export function EntryPointList({ entryPoints, selectedEndpointId, emptyMessage, onSelect }: EntryPointListProps) {
   return (
     <div className="side-list">
       {entryPoints.length === 0 && <div className="panel-message">{emptyMessage}</div>}
       {entryPoints.map((entryPoint) => (
         <button
           type="button"
-          key={`${entryPoint.httpMethod} ${entryPoint.route} ${entryPoint.nodeId}`}
-          className={`side-item${selectedNodeId === entryPoint.nodeId ? ' selected' : ''}`}
+          key={entryPoint.endpointId}
+          className={`side-item${selectedEndpointId === entryPoint.endpointId ? ' selected' : ''}`}
           onClick={() => onSelect(entryPoint)}
-          title={entryPoint.nodeId}
+          title={[entryPoint.nodeId, ...entryPoint.notes].join(String.fromCharCode(10))}
         >
           <span className={`http ${entryPoint.httpMethod.toLowerCase()}`}>{entryPoint.httpMethod}</span>
           <span className="grow">{entryPoint.route}</span>
+          {entryPoint.source === 'MinimalApi' && <span className="chip small">min</span>}
+          {entryPoint.confidence === 'Estimated' && (
+            <span className="chip small warn" title={entryPoint.notes.join(String.fromCharCode(10))}>~</span>
+          )}
         </button>
       ))}
     </div>

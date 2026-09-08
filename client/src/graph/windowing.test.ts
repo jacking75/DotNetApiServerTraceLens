@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getDrilldownWindow, getInitialWindow } from './windowing'
 import type { GraphClass, GraphDocument, GraphNode } from '../types/graph'
+import { entryPoint, graphDefaults, nodeDefaults } from '../types/testFactories'
 
 const node = (id: string, classId = 'Tests.Sample'): GraphNode => ({
   id,
@@ -14,6 +15,7 @@ const node = (id: string, classId = 'Tests.Sample'): GraphNode => ({
   accessibility: 'Public',
   returnType: 'void',
   parameterTypes: [],
+  ...nodeDefaults,
 })
 
 const graphClass = (id: string, name: string, methodIds: string[]): GraphClass => ({
@@ -40,7 +42,7 @@ const graph: GraphDocument = {
   solutionPath: 'test.sln',
   rootDirectory: '.',
   analyzedAt: '2026-01-01T00:00:00Z',
-  entryPoints: [{ nodeId: 'A', httpMethod: 'GET', route: '/test' }],
+  entryPoints: [entryPoint('A', 'GET', '/test')],
   classes: [
     graphClass('Tests.Sample', 'Sample', ['A', 'B', 'C', 'D', 'E', 'F']),
   ],
@@ -53,6 +55,7 @@ const graph: GraphDocument = {
     { from: 'D', to: 'F' },
   ],
   fileHashes: {},
+  ...graphDefaults,
   startupFlow: null,
   dataAccess: null,
   middleware: null,

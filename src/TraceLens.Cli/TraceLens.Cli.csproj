@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>tracelens</AssemblyName>
+    <RootNamespace>TraceLens.Cli</RootNamespace>
+    <!-- .NET tool로 설치할 수 있게 한다. 실제 게시 주소와 패키지 ID는 공개 전에 확정한다. -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>tracelens</ToolCommandName>
+    <PackageId>TraceLens.Tool</PackageId>
+    <Description>ASP.NET Core Web API의 호출 경로와 코드 근거를 확인하고 AI 코딩 에이전트에 문맥을 전달하는 로컬 도구.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TraceLens.Analyzer\TraceLens.Analyzer.csproj" />
+    <ProjectReference Include="..\TraceLens.Context\TraceLens.Context.csproj" />
+    <ProjectReference Include="..\TraceLens.Mcp\TraceLens.Mcp.csproj" />
+    <ProjectReference Include="..\TraceLens.Server\TraceLens.Server.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+  <!--
+    Server(Web SDK)의 wwwroot는 참조만으로는 배포물에 들어오지 않는다.
+    클라이언트 빌드 결과를 CLI 출력에 함께 넣어야 `tracelens serve`가 어느 폴더에서 실행돼도 UI를 연다.
+    이 글롭은 클라이언트를 먼저 빌드한 뒤에 평가되어야 하므로 pack.ps1이 순서를 지킨다.
+  -->
+  <ItemGroup>
+    <None Include="..\TraceLens.Server\wwwroot\**\*"
+          Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!-- 배포 패키지에 예제를 함께 넣는다. tracelens demo가 여기서 복사한다. -->
+  <ItemGroup>
+    <None Include="..\..\samples\**\*"
+          Exclude="..\..\samples\**\bin\**;..\..\samples\**\obj\**;..\..\samples\**\.tracelens\**"
+          Link="samples\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

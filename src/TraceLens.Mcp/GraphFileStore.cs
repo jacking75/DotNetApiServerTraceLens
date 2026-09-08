@@ -1,71 +1,87 @@
-using System.Text.Json;
 using TraceLens.Analyzer.Models;
+using TraceLens.Context;
 
 namespace TraceLens.Mcp;
 
+/// <summary>
+/// 디스크의 <c>graph.json</c>을 읽어 스냅샷 세션을 만든다.
+/// 한 번의 도구 호출은 고정한 스냅샷을 쓰고, 같은 파일이면 색인을 재사용해서 전체 파일 읽기를 반복하지 않는다.
+/// 갱신 감지는 파일 메타데이터를 먼저 보되, 세대는 실제로 읽어 검증한 뒤 <c>snapshotId</c>로 확정한다.
+/// </summary>
 public sealed class GraphFileStore(string graphPath)
 {
+    private readonly SemaphoreSlim gate = new(1, 1);
+    private CachedSnapshot? cached;
+
     public string GraphPath { get; } = Path.GetFullPath(graphPath);
 
+    private sealed record CachedSnapshot(
+        SnapshotSession Session,
+        GraphDocument Graph,
+        DateTime LastWriteUtc,
+        long Length,
+        IReadOnlyList<GraphValidationIssue> Issues);
+
+    public async Task<SnapshotSession> GetSessionAsync(CancellationToken cancellationToken = default)
+    {
+        var snapshot = await GetAsync(cancellationToken);
+        return snapshot.Session;
+    }
+
     public async Task<GraphDocument> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        var snapshot = await GetAsync(cancellationToken);
+        return snapshot.Graph;
+    }
+
+    public async Task<IReadOnlyList<GraphValidationIssue>> GetIssuesAsync(CancellationToken cancellationToken = default)
+    {
+        var snapshot = await GetAsync(cancellationToken);
+        return snapshot.Issues;
+    }
+
+    private async Task<CachedSnapshot> GetAsync(CancellationToken cancellationToken)
     {
         if (!File.Exists(GraphPath))
         {
             throw new FileNotFoundException("TraceLens 그래프 파일을 찾을 수 없다.", GraphPath);
         }
 
-        await using var stream = File.OpenRead(GraphPath);
-        return await JsonSerializer.DeserializeAsync<GraphDocument>(
-                   stream,
-                   GraphDocument.JsonOptions,
-                   cancellationToken)
-               ?? throw new InvalidDataException("TraceLens 그래프 파일을 읽을 수 없다.");
-    }
-
-    public async Task<SourceResult> ReadSourceAsync(
-        GraphDocument graph,
-        string file,
-        int startLine,
-        int endLine,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(file) || startLine < 1 || endLine < startLine)
+        var info = new FileInfo(GraphPath);
+        var current = Volatile.Read(ref cached);
+        if (current is not null && current.LastWriteUtc == info.LastWriteTimeUtc && current.Length == info.Length)
         {
-            throw new ArgumentException("file, startLine, endLine 값을 확인해야 한다.");
+            return current;
         }
 
-        var solutionDirectory = graph.RootDirectory;
-        if (string.IsNullOrEmpty(solutionDirectory))
+        await gate.WaitAsync(cancellationToken);
+        try
         {
-            throw new InvalidDataException("그래프의 solutionPath가 올바르지 않다.");
-        }
+            info.Refresh();
+            current = Volatile.Read(ref cached);
+            if (current is not null && current.LastWriteUtc == info.LastWriteTimeUtc && current.Length == info.Length)
+            {
+                return current;
+            }
 
-        var fullPath = Path.GetFullPath(Path.Combine(solutionDirectory, file));
-        var relativePath = Path.GetRelativePath(solutionDirectory, fullPath);
-        if (Path.IsPathRooted(file) || relativePath == ".." ||
-            relativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            var loaded = await GraphJsonStore.LoadAsync(GraphPath, cancellationToken);
+            if (!loaded.Ok || loaded.Graph is null)
+            {
+                throw new InvalidDataException(
+                    "TraceLens 그래프 파일을 읽을 수 없다: " + string.Join(", ", loaded.Issues.Select(issue => issue.Message)));
+            }
+
+            var graph = loaded.Graph;
+            var session = new SnapshotSession(
+                new GraphIndex(graph),
+                new SourceReader(graph, SourceAccessPolicy.ForGraph(graph)));
+            var snapshot = new CachedSnapshot(session, graph, info.LastWriteTimeUtc, info.Length, loaded.Issues);
+            Volatile.Write(ref cached, snapshot);
+            return snapshot;
+        }
+        finally
         {
-            throw new ArgumentException("솔루션 외부 파일은 읽을 수 없다.", nameof(file));
+            gate.Release();
         }
-
-        if (!File.Exists(fullPath))
-        {
-            throw new FileNotFoundException("소스 파일을 찾을 수 없다.", fullPath);
-        }
-
-        var lines = await File.ReadAllLinesAsync(fullPath, cancellationToken);
-        if (startLine > lines.Length)
-        {
-            throw new ArgumentOutOfRangeException(nameof(startLine), "시작 라인이 파일 범위를 벗어났다.");
-        }
-
-        var actualEndLine = Math.Min(endLine, lines.Length);
-        return new SourceResult(
-            relativePath.Replace(Path.DirectorySeparatorChar, '/'),
-            startLine,
-            actualEndLine,
-            string.Join(Environment.NewLine, lines[(startLine - 1)..actualEndLine]));
     }
 }
-
-public sealed record SourceResult(string File, int StartLine, int EndLine, string Content);

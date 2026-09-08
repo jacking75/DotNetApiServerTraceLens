@@ -1,0 +1,13 @@
+{
+  "_comment": "예제용 설정이다. 사내 DB·캐시 래퍼를 쓰는 프로젝트가 무엇을 적어야 하는지 보여 주는 목적이다.",
+  "db": {
+    "queryApis": ["OrderApi.Data.IDbGateway.*", "OrderApi.Data.DbGateway.*"],
+    "cacheApis": ["OrderApi.Cache.IOrderCache.*", "*.IMemoryCache.*"],
+    "dataSources": {
+      "orders": { "kind": "single", "typePatterns": ["*DbGateway"] }
+    },
+    "compensation": {
+      "irreversible": ["OrderApi.Services.INotificationService.*"]
+    }
+  }
+}

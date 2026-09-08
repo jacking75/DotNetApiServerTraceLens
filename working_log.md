@@ -1,3 +1,21 @@
+## 2026-09-08 13:10 KST - 보급·바이브 코딩 로드맵(A~I) 전체 구현과 schema v7
+
+- **분석(C)**: `MinimalApiEntryPointScanner`를 추가해 `MapGet/MapPost/MapMethods/MapGroup`(중첩 포함)과 메서드 그룹·람다·로컬 함수 핸들러, 확장 메서드 안에 숨은 등록(깊이 4)까지 진입점으로 잡는다. 엔드포인트 ID를 핸들러 노드 ID와 분리해 한 메서드의 여러 라우트를 모두 남기고, `InvocationResolver`는 심볼 목록 대신 해석 결과(직접/DI/유일 구현체/모호/미해석)를 돌려준다. 모호한 후보를 첫 번째로 확정하던 동작을 없애고, 람다·로컬 함수 본문 호출이 부모 메서드의 직접 호출로 잡히지 않도록 callable 경계에서 순회를 멈춘다.
+- **신선도·스냅샷(D)**: `AnalysisManifest`로 프로젝트·설정 입력과 소스 루트를 기록해 새로 생긴 `.cs`와 설정 변경까지 잡고, 신선도에 `unknown`을 추가했다(입력이 없는 옛 분석을 fresh로 단정하지 않는다). `snapshotId`·`inputFingerprint`를 도입해 UI·API·MCP가 같은 분석을 보는지 확인하고, `graph.json`은 임시 파일에 쓰고 검증한 뒤 교체한다. 가져온 그래프는 `offlineSnapshot`으로 취급해 원본 루트를 확인하기 전에는 소스를 읽지 않는다.
+- **공통 조회(E)**: `TraceLens.Context`를 새로 만들어 `GraphIndex`·`ContextBuilder`·`ImpactAnalyzer`·`SnapshotComparer`·`SourceAccessPolicy`를 Server와 MCP가 함께 쓰게 했다. `POST /api/context`가 근거·경로·소스·한계를 담은 DTO와 Markdown을 만들고, 클립보드·인앱 실행·MCP가 모두 이 하나를 쓴다. MCP에는 목적별 도구 6개(`get_analysis_status`·`get_context`·`get_entrypoint_flow`·`get_findings`·`get_impact`·`compare_snapshots`)를 추가하고 기존 6개에 페이지 구분과 스냅샷 확인을 붙였다.
+- **영향·비교(F·G)**: 역방향 BFS로 영향받는 진입점 후보와 근거 경로를 찾고, 기준 스냅샷 보관(`.tracelens/history`)과 재분석 후 비교를 넣었다. 메서드 본문·시그니처 지문과 `stableKey`로 서식만 바뀐 변경을 구분하고, 규칙이 꺼져 사라진 점검은 "비교 불가"로 표시한다.
+- **배포·첫 사용(A·B·H·I)**: `TraceLens.Cli`(`doctor|analyze|serve|mcp|demo`)와 `pack.ps1`을 추가해 소스·Node.js 없이 실행되는 portable ZIP과 .NET tool을 만든다. 첫 화면·첫 사용 안내·레시피 4종·영어 UI(한국어 사전 키로 타입 제한)·분석 진행 상태(SSE)와 취소·공유용 Markdown 보고서를 넣었다. 배포용 예제 `samples/OrderApi`(컨트롤러 4 + Minimal API 4 라우트, 트랜잭션 없는 4단계 쓰기 경로)를 만들었다.
+- **검증**: `dotnet build` 경고 0개, `dotnet test` 84개 통과(신규 43개), `npm test` 41개 통과(신규 5개), `npm run build` 성공. portable ZIP을 다른 폴더에 풀어 `doctor`·`demo`·`analyze`·`serve`·소스 조회까지 확인했고, 브라우저로 첫 화면·언어 전환·호출 흐름·변경 영향·문맥 미리보기를 확인했다. 이 저장소 자체를 분석해 `MapXxxEndpoints` 형태의 진입점 26개가 `/api` 접두사까지 붙어 잡히는 것을 회귀로 확인했다.
+- **문서**: README(한·영)를 정적 분석 범위·빠른 시작·지원 표 중심으로 다시 쓰고, `docs/data-contract.md`·`CONTRIBUTING.md`·`CHANGELOG.md`를 새로 만들었다. 매뉴얼(한·영)과 MCP 안내를 갱신하고, `AGENTS.md`는 `CLAUDE.md`를 가리키는 포인터로 바꿔 내용이 갈라지지 않게 했다.
+- **남긴 것**: 로드맵 §16의 소규모 사용자 관찰, 공개 게시·홍보, macOS·Linux 검증은 사람이 해야 하는 일이라 하지 않았다. 지원 표에도 확인한 조합만 적었다.
+
+## 2026-09-08 10:43 KST - 보급 확대와 바이브 코딩 활용을 위한 조사·구현 계획 작성
+
+- 현재 코드·설계 지침·문서와 NDepend·Aider·Microsoft·MCP·개발자 조사 자료를 대조하여 `docs/adoption-and-vibe-coding-roadmap_kr.md`를 작성했다.
+- 첫 사용 안내·영어 UI·배포, Minimal API와 분석 신뢰성, 신선도·스냅샷 일관성, AI 문맥 전달, 변경 영향·수정 전후 비교의 우선순위와 구현 방법을 정리했다.
+- 변경할 파일·API·스키마 초안, 재현 픽스처·완료 기준, 단계별 공개 계획과 효과 측정 지표를 포함하고 확인 사실과 제안·추정치를 구분했다.
+- 문서의 상대 링크·코드 블록·문자 인코딩과 변경 내용을 점검했다. 제품 코드와 CI는 변경·실행하지 않았으며 빌드·런타임 재현은 수행하지 않았다.
+
 ## 2026-09-01 18:25 KST - README와 docs 문서를 한국어·영어 두 버전으로 분리
 
 - 기존 README.md(한국어)를 README_kr.md로 옮기고, README.md는 영어로 새로 썼다. 두 파일 맨 위에 서로를 가리키는 언어 전환 링크(`*English · [한국어](README_kr.md)*` / `*[English](README.md) · 한국어*`)를 달았다.

@@ -16,7 +16,7 @@ public sealed record MethodEffect(IReadOnlyList<EffectTarget> Writes, IReadOnlyL
 
 /// <param name="Path">만들어진 쓰기 경로.</param>
 /// <param name="Sites">단계마다 대응하는 호출 자리. 규칙 엔진이 근거를 만들 때 쓴다.</param>
-public sealed record WritePathAnalysis(WritePath Path, MethodDataFacts Facts, IReadOnlyList<CallSite> Sites);
+public sealed record WritePathAnalysis(WritePath Path, MethodDataFacts Facts, IReadOnlyList<DataCallSite> Sites);
 
 /// <summary>
 /// 트랜잭션으로 묶이지 않은 쓰기 경로를 찾고, 각 단계가 실패 시 되돌려지는지 판정한다.
@@ -154,7 +154,7 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
     }
 
     /// <summary>메서드 본문에서 상태를 바꾸는 호출만 소스 순서로 고른다. 실패 처리 경로 안의 호출은 단계가 아니라 보상이다.</summary>
-    private static IReadOnlyList<CallSite> CollectWriteSites(
+    private static IReadOnlyList<DataCallSite> CollectWriteSites(
         MethodDataFacts facts, IReadOnlyDictionary<string, MethodEffect> effects)
     {
         var inFailurePath = facts.FailurePaths
@@ -162,7 +162,7 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
             .Select(site => site.Position)
             .ToHashSet();
 
-        var sites = new List<CallSite>();
+        var sites = new List<DataCallSite>();
         foreach (var site in facts.Sites)
         {
             if (inFailurePath.Contains(site.Position) || site.InCatch)
@@ -189,7 +189,7 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
 
     private static WriteStep BuildStep(
         int order,
-        CallSite site,
+        DataCallSite site,
         MethodDataFacts facts,
         IReadOnlyDictionary<string, MethodEffect> effects,
         IReadOnlyDictionary<string, string> methodDataSources,
@@ -243,7 +243,7 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
     }
 
     private static (CompensationKind Kind, string Note) Classify(
-        CallSite site,
+        DataCallSite site,
         MethodDataFacts facts,
         TraceLensConfig config,
         StorageKind storage,
@@ -318,12 +318,12 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
     /// 로그성 쓰기인지. 테이블 이름에 log가 들어간다고 로그로 보면 <c>attendance_log</c> 같은 실제 데이터까지 놓치므로
     /// 호출 이름이나 데이터소스 이름으로만 판단한다.
     /// </summary>
-    private static bool IsLogWrite(CallSite site, string dataSource) =>
+    private static bool IsLogWrite(DataCallSite site, string dataSource) =>
         site.Name.Contains("Log", StringComparison.OrdinalIgnoreCase) ||
         dataSource.Contains("Log", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>이 단계를 되돌릴 만한 메서드 이름 후보. 설정에 적은 짝이 이름 규칙보다 먼저다.</summary>
-    private static IEnumerable<string> UndoCandidates(CallSite site, TraceLensConfig config)
+    private static IEnumerable<string> UndoCandidates(DataCallSite site, TraceLensConfig config)
     {
         var name = Trim(site.Name);
         foreach (var pair in config.Db.Compensation.Pairs)
@@ -351,7 +351,7 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
             value.EndsWith("Async", StringComparison.Ordinal) ? value[..^5] : value;
     }
 
-    private static bool IsUndo(CallSite candidate, IReadOnlyList<string> names, CallSite step, string target)
+    private static bool IsUndo(DataCallSite candidate, IReadOnlyList<string> names, DataCallSite step, string target)
     {
         var candidateName = candidate.Name.EndsWith("Async", StringComparison.Ordinal)
             ? candidate.Name[..^5]

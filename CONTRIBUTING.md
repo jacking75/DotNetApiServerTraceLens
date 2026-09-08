@@ -1,0 +1,81 @@
+# 기여 안내
+
+TraceLens는 MIT 라이선스의 로컬 개발 도구다. 지금 받고 싶은 기여는 세 가지로 좁힌다.
+
+1. **분석 누락 신고** — 잡혔어야 할 진입점·호출이 안 잡히는 최소 재현 코드
+2. **번역** — `client/src/i18n/ko.ts`가 원본이고 `en.ts`가 그 키로 타입이 제한된다
+3. **사용 절차 개선** — 안내 문구, 레시피, 매뉴얼의 실제 절차
+
+기능을 크게 늘리는 제안은 [CLAUDE.md](CLAUDE.md)의 설계 제약과 먼저 맞춰 본다. 특히 다음은 범위 밖이다.
+파일 저장 감시에 따른 자동 재분석, 원격 분석 서버, 이벤트 구독을 호출 엣지로 만드는 것,
+자체 코드 편집기·자동 커밋, 모든 언어 지원.
+
+## 분석 누락을 신고할 때
+
+아래 여섯 가지가 있으면 재현 픽스처로 바로 옮길 수 있다. **실제 사내 코드는 넣지 않는다.**
+
+```text
+1. TraceLens 버전       : tracelens --version 결과
+2. .NET SDK             : dotnet --info 의 SDK 줄
+3. 분석 대상 형식        : .sln / .csproj, 대상 프레임워크
+4. 최소 코드            : 문제를 재현하는 가장 작은 익명화 코드
+5. 기대한 결과          : "GET /api/orders 진입점이 잡혀야 한다" 처럼 구체적으로
+6. 실제 결과            : tracelens analyze <대상> --json 출력과 화면 캡처
+```
+
+`tracelens doctor --target <대상> --json` 결과를 함께 붙이면 환경 문제와 분석 문제를 빨리 가를 수 있다.
+doctor는 API 키나 전체 환경 변수를 수집하지 않는다.
+
+## 개발 환경
+
+```powershell
+git clone https://github.com/jacking75/DotNetApiServerTraceLens.git tracelens
+cd tracelens
+.\run.ps1 -Dev        # API 서버(25011) + Vite 개발 서버(25012)
+```
+
+## 검증
+
+바꾼 곳에 맞는 것만 고르면 된다. CI는 이 저장소의 실행 범위 밖이라 로컬 명령을 기준으로 한다.
+
+```powershell
+dotnet build TraceLens.sln            # 경고 0개를 유지한다
+dotnet test  TraceLens.sln            # Analyzer · Server · Mcp 테스트
+
+cd client
+npm test                              # 배치·i18n·다이어그램 렌더 테스트
+npm run build                         # tsc -b + vite build
+
+cd ..
+.\pack.ps1                            # 배포물을 만들고 체크섬·검증 절차를 남긴다
+```
+
+분석기를 고쳤다면 **픽스처를 함께 늘린다.**
+
+| 픽스처 | 무엇을 확인하나 |
+|---|---|
+| `tests/TraceLens.Analyzer.Tests/Fixtures` | 컨트롤러·DI 해석·클래스 메타 |
+| `tests/TraceLens.Analyzer.Tests/FixturesData` | DB·캐시 접근과 보상 처리, 미들웨어 |
+| `tests/TraceLens.Analyzer.Tests/FixturesMinimalApi` | Minimal API 등록, 그룹 접두사, 람다·로컬 함수 핸들러 |
+| `samples/OrderApi` | 배포물의 예제이자 사람이 보는 회귀 대상 |
+
+## 코딩 규칙
+
+전체 규칙은 [CLAUDE.md](CLAUDE.md)에 있다. 자주 걸리는 것만 옮긴다.
+
+- C#은 `Nullable enable`, file-scoped namespace. Analyzer는 Server/Mcp를 참조하지 않는다.
+- 비동기 I/O는 `async`/`await`로만 쓰고 `.Result`/`.Wait()`를 쓰지 않는다.
+- TypeScript는 `strict: true`, 함수형 컴포넌트와 훅만 쓴다. 서버 호출은 `api/client.ts`를 통해서만 한다.
+- 배치 계산(`client/src/graph/`)은 React에 의존하지 않는 순수 함수로 두고 단위 테스트를 붙인다.
+- 사용자에게 보이는 문자열은 `i18n` 사전에 넣는다. 심볼·라우트·코드·파일 경로는 번역하지 않는다.
+
+## 판정 문구에 대한 약속
+
+이 도구가 지키려는 선이다. 코드 리뷰에서도 이 기준으로 본다.
+
+- 확정하지 못한 것은 **추정**이라고 쓰고 근거를 함께 남긴다.
+- 검사하지 않은 규칙은 목록에서 지우지 않고 "꺼짐"으로 남긴다.
+- "정확도 n%"처럼 분모가 없는 수치를 쓰지 않는다. 해석률은 분모를 함께 적는다.
+- "호출자가 없다"를 "삭제해도 안전하다"로 바꿔 쓰지 않는다.
+- "차이 없음"을 "안전" 또는 "테스트 통과"로 바꿔 쓰지 않는다.
+- 측정하기 전에는 "토큰 n% 절약", "개발 속도 n배" 같은 문구를 쓰지 않는다.

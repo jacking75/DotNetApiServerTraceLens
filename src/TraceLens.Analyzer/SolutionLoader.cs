@@ -1,7 +1,9 @@
+using System.Collections.Concurrent;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.Extensions.Logging;
+using TraceLens.Analyzer.Models;
 
 namespace TraceLens.Analyzer;
 
@@ -9,12 +11,32 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
 {
     private static readonly object RegistrationLock = new();
 
+    /// <summary>지금 로더가 여는 분석 대상 확장자.</summary>
+    public static IReadOnlyList<string> SupportedExtensions { get; } = [".sln", ".csproj"];
+
+    /// <summary>
+    /// 아직 지원하지 않는 확장자와 그 이유. 확장자 검사만 풀고 "지원 완료"라고 하지 않기 위해 이유를 함께 둔다.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> UnsupportedExtensions { get; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [".slnx"] = "지금 쓰는 MSBuildWorkspace(Roslyn 4.11)가 .slnx를 열지 못한다. " +
+                        "같은 폴더의 .sln을 고르거나 분석할 .csproj를 직접 고르면 된다.",
+            [".vbproj"] = "TraceLens는 C# 프로젝트만 분석한다.",
+            [".fsproj"] = "TraceLens는 C# 프로젝트만 분석한다."
+        };
+
     /// <summary>분석 대상 경로(.sln 또는 .csproj)를 열어 Roslyn 워크스페이스를 만든다.</summary>
     /// <remarks>.csproj를 열면 그 프로젝트가 참조하는 프로젝트까지 함께 로드된다.</remarks>
     public async Task<LoadedSolution> LoadAsync(string targetPath, CancellationToken cancellationToken = default)
     {
         var fullPath = Path.GetFullPath(targetPath);
         var extension = Path.GetExtension(fullPath);
+        if (UnsupportedExtensions.TryGetValue(extension, out var reason))
+        {
+            throw new NotSupportedException($"{extension} 형식은 아직 지원하지 않는다. {reason}");
+        }
+
         var isProject = string.Equals(extension, ".csproj", StringComparison.OrdinalIgnoreCase);
         var isSolution = string.Equals(extension, ".sln", StringComparison.OrdinalIgnoreCase);
         if (!File.Exists(fullPath) || (!isSolution && !isProject))
@@ -24,12 +46,18 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
 
         EnsureMsBuildRegistered();
         var workspace = MSBuildWorkspace.Create();
-        workspace.WorkspaceFailed += (_, args) => logger.LogWarning("MSBuildWorkspace: {Message}", args.Diagnostic.Message);
+        var workspaceFailures = new ConcurrentBag<string>();
+        workspace.WorkspaceFailed += (_, args) =>
+        {
+            workspaceFailures.Add(args.Diagnostic.Message);
+            logger.LogWarning("MSBuildWorkspace: {Message}", args.Diagnostic.Message);
+        };
         var solution = isProject
             ? (await workspace.OpenProjectAsync(fullPath, cancellationToken: cancellationToken)).Solution
             : await workspace.OpenSolutionAsync(fullPath, cancellationToken: cancellationToken);
 
         var successfulProjects = new HashSet<ProjectId>();
+        var projectDiagnostics = new List<AnalyzedProject>();
         foreach (var project in solution.Projects.Where(project => project.SupportsCompilation))
         {
             try
@@ -38,13 +66,15 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
                 if (compilation is null)
                 {
                     logger.LogWarning("프로젝트 {ProjectName} 컴파일을 만들지 못해 제외한다.", project.Name);
+                    projectDiagnostics.Add(new AnalyzedProject(
+                        project.Name, project.FilePath ?? string.Empty, false, 0, ["컴파일을 만들지 못했다."]));
                     continue;
                 }
 
-                var errors = compilation.GetDiagnostics(cancellationToken)
+                var allErrors = compilation.GetDiagnostics(cancellationToken)
                     .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-                    .Take(5)
                     .ToArray();
+                var errors = allErrors.Take(5).ToArray();
                 if (errors.Length > 0)
                 {
                     logger.LogWarning(
@@ -53,15 +83,27 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
                         string.Join(" | ", errors.Select(error => error.GetMessage())));
                 }
 
+                projectDiagnostics.Add(new AnalyzedProject(
+                    project.Name,
+                    project.FilePath ?? string.Empty,
+                    true,
+                    allErrors.Length,
+                    errors.Select(error => error.GetMessage()).ToArray()));
                 successfulProjects.Add(project.Id);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 logger.LogWarning(exception, "프로젝트 {ProjectName} 컴파일 확인에 실패해 제외한다.", project.Name);
+                projectDiagnostics.Add(new AnalyzedProject(
+                    project.Name, project.FilePath ?? string.Empty, false, 0, [exception.Message]));
             }
         }
 
-        return new LoadedSolution(workspace, solution, successfulProjects);
+        return new LoadedSolution(workspace, solution, successfulProjects)
+        {
+            ProjectDiagnostics = projectDiagnostics,
+            WorkspaceFailures = workspaceFailures.Distinct(StringComparer.Ordinal).Take(20).ToArray()
+        };
     }
 
     private static void EnsureMsBuildRegistered()
@@ -79,19 +121,30 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
                     return;
                 }
 
-                var runtimeDirectory = new DirectoryInfo(System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory());
-                var dotnetRoot = runtimeDirectory.Parent?.Parent?.Parent?.FullName
-                    ?? throw new InvalidOperationException(".NET 설치 루트를 확인할 수 없다.");
-                var sdkDirectory = Directory.EnumerateDirectories(Path.Combine(dotnetRoot, "sdk"))
-                    .Select(path => new { Path = path, Version = ParseSdkVersion(Path.GetFileName(path)) })
-                    .Where(item => item.Version is not null)
-                    .OrderByDescending(item => item.Version)
-                    .Select(item => item.Path)
-                    .FirstOrDefault()
-                    ?? throw new InvalidOperationException("사용 가능한 .NET SDK를 찾을 수 없다.");
-                MSBuildLocator.RegisterMSBuildPath(sdkDirectory);
+                MSBuildLocator.RegisterMSBuildPath(FindLatestSdkDirectory());
             }
         }
+    }
+
+    /// <summary>등록할 MSBuild(=SDK) 디렉터리를 찾는다. doctor 진단도 같은 규칙을 쓴다.</summary>
+    public static string FindLatestSdkDirectory()
+    {
+        var runtimeDirectory = new DirectoryInfo(System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory());
+        var dotnetRoot = runtimeDirectory.Parent?.Parent?.Parent?.FullName
+            ?? throw new InvalidOperationException(".NET 설치 루트를 확인할 수 없다.");
+        var sdkRoot = Path.Combine(dotnetRoot, "sdk");
+        if (!Directory.Exists(sdkRoot))
+        {
+            throw new InvalidOperationException($"사용 가능한 .NET SDK를 찾을 수 없다: {sdkRoot}");
+        }
+
+        return Directory.EnumerateDirectories(sdkRoot)
+                   .Select(path => new { Path = path, Version = ParseSdkVersion(Path.GetFileName(path)) })
+                   .Where(item => item.Version is not null)
+                   .OrderByDescending(item => item.Version)
+                   .Select(item => item.Path)
+                   .FirstOrDefault()
+               ?? throw new InvalidOperationException("사용 가능한 .NET SDK를 찾을 수 없다.");
     }
 
     private static Version? ParseSdkVersion(string value)
@@ -107,7 +160,14 @@ public sealed class LoadedSolution(
     IReadOnlySet<ProjectId> analyzableProjectIds) : IAsyncDisposable
 {
     public Solution Solution { get; } = solution;
+
     public IReadOnlySet<ProjectId> AnalyzableProjectIds { get; } = analyzableProjectIds;
+
+    /// <summary>프로젝트별 로드·컴파일 결과. UI와 AI 문맥에 "무엇을 못 봤는지" 알리는 근거다.</summary>
+    public IReadOnlyList<AnalyzedProject> ProjectDiagnostics { get; init; } = [];
+
+    /// <summary>MSBuildWorkspace가 남긴 경고. 프로젝트 로드 실패의 실제 이유가 여기에 있는 경우가 많다.</summary>
+    public IReadOnlyList<string> WorkspaceFailures { get; init; } = [];
 
     public ValueTask DisposeAsync()
     {

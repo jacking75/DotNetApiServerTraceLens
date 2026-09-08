@@ -2,186 +2,210 @@
 
 # TraceLens
 
-A local development tool that lets you explore the call flow of an ASP.NET Core Web API codebase as a graph, and ask an AI coding agent (Claude Code, Codex CLI, etc.) about any selected code location right away.
+**A local development tool that shows the call path of an ASP.NET Core Web API together with the code behind it, and hands an AI coding agent the context it needs.**
 
-> For build instructions, the screen layout, all six views, AI agent integration, and real usage
-> scenarios in one place, open [`docs/manual.html`](docs/manual.html) in a browser.
+Everything here comes from reading your source **statically**. TraceLens does not collect runtime
+traces or timings — the "Trace" in the name means following call paths through code, not distributed
+tracing.
 
-## What this tool does
+## The loop, in about a minute
 
-Starting from an HTTP endpoint (entry point), it shows the real method call flow as it moves from controller → service → repository. Switch to the class diagram or the flow map to see how the whole codebase is shaped. In any view, clicking a box or a member row brings up the actual source at that location, and typing a question automatically captures the file path, line range, and symbol name and hands them to an AI coding agent.
+```
+1) tracelens analyze <your .sln or .csproj>       # analyzes and writes .tracelens/graph.json
+2) tracelens serve   --target <same path>         # opens the UI at http://127.0.0.1:25011
+3) pick an entry point → check the source → copy AI context   # evidence and limits come along
+4) after the AI edits code → "Re-analyze and compare"          # see what actually changed
+```
 
-> **Note:** TraceLens's own UI is Korean-only today — button and tab labels appear in Korean on
-> screen. This document explains everything in English; screen mockups below reproduce the actual
-> on-screen (Korean) text so you can match what's described here to what you'll actually see.
+Screen recordings are re-shot for each release. The commands and screens in this document match the
+current repository (main); where a capture does not exist yet, none is shown — no mockups are
+presented as real screens.
+
+## Getting started
+
+### What you need
+
+| Requirement | When it is needed |
+|---|---|
+| .NET 8 SDK or later | Always. It is what opens the project you analyze. |
+| Node.js 20 or later | **Only when building from source.** Not needed with the released ZIP or .NET tool. |
+| Claude Code CLI | Only for the ask panel's "Run with Claude Code". Copying context works without it. |
+| Codex CLI / VS Code | Only if you want to register the TraceLens MCP server directly ([docs/mcp-setup.md](docs/mcp-setup.md)). |
+
+### Start from the build output (no source tree, no Node.js)
+
+```powershell
+# Unpack the ZIP produced from this repository, then:
+.\tracelens.exe doctor --target C:\repos\MyApp\MyApp.sln   # check the environment first
+.\tracelens.exe demo --dir C:\temp\tracelens-demo          # copy the example project
+.\tracelens.exe analyze C:\temp\tracelens-demo\OrderApi\OrderApi.csproj
+.\tracelens.exe serve   --target C:\temp\tracelens-demo\OrderApi\OrderApi.csproj
+```
+
+To produce that build output yourself, run `.\pack.ps1` in the repository. It writes a Windows x64
+portable ZIP and a .NET tool package into `artifacts/`, along with a `manifest.txt` holding
+checksums, versions and the manual verification steps. The script only builds — it never publishes.
+
+Only combinations that have actually been verified are listed here.
+
+| Platform | Status |
+|---|---|
+| Windows 11 x64, .NET 8 runtime + .NET SDK | Verified with the portable ZIP: doctor, analyze, serve and source viewing |
+| macOS / Linux | Not verified yet. The code targets net8.0 and will likely run, but it is not listed as supported |
+
+Supported analysis targets are `.sln` and `.csproj`. `.slnx` is not supported yet because the
+MSBuildWorkspace in use cannot open it; `doctor` says so explicitly rather than failing obscurely.
+
+### Run from source
+
+```powershell
+git clone https://github.com/jacking75/DotNetApiServerTraceLens.git tracelens
+cd tracelens
+.\run.ps1
+```
+
+`run.ps1` installs client dependencies, builds the server, builds the client for production and
+starts the server — all in one go. Open <http://127.0.0.1:25011> and that is the whole app.
+
+| Option | Description |
+|---|---|
+| `.\run.ps1` | Builds the client and serves everything from one server. The everyday path. |
+| `.\run.ps1 -Dev` | Runs the API server (25011) and the Vite dev server (25012) together, for client work. |
+| `.\run.ps1 -SkipBuild` | Skips the build and runs immediately (Node.js is not needed in this mode). |
+| `.\run.ps1 -NoBrowser` | Does not open a browser. |
+
+### Commands
+
+```text
+tracelens doctor  [--target <path>] [--json]   Checks the environment. Never installs or changes settings.
+tracelens analyze <path> [--json]              Runs one analysis and prints a summary.
+tracelens serve   [--target <path>] [--port n] Starts the UI server (loopback only).
+tracelens mcp     --graph <graph.json path>    Starts the local stdio MCP server.
+tracelens demo    [--dir <destination>]        Copies the example project and explains what to look at.
+```
+
+## What is supported today
+
+The table separates what static analysis can confirm from what it cannot.
+
+| Area | Support | Notes |
+|---|---|---|
+| Controller entry points | Supported | `[HttpGet]`-family attributes plus `[Route]`. Two routes on one method become two endpoints. |
+| Minimal API entry points | Supported | `MapGet/MapPost/MapPut/MapDelete/MapPatch/MapMethods/Map`, `MapGroup` prefixes (including nesting), and method-group, lambda and local-function handlers. |
+| Registrations inside extension methods | Supported (estimated) | Follows `app.MapFeatureEndpoints()` style registration up to a depth of 4, and says that the prefix came from the call site. |
+| Dynamic routes | Not supported | If the route is not a constant, the literal source text is shown and the endpoint is marked **estimated**. |
+| Interface calls | Supported | Resolved to the implementation through DI registrations (`AddScoped<I, Impl>` and friends). Without a registration, it connects only when the solution has exactly one implementation, and marks that **estimated**. |
+| Keyed / conditional DI registrations | Not asserted | Which implementation runs cannot be decided statically, so no edge is created and the reason is recorded. |
+| Database and cache access | Supported (configurable) | Read from SQL literals and cache calls. Point `db.queryApis` in `tracelens.config.json` at your own wrapper types. |
+| Reflection, event subscriptions, message handlers | Not supported | Never turned into call edges. "No callers found" does not mean "safe to delete". |
+
+Every analysis carries **what it could not see**. The summary bar and the AI context both show
+`resolution rate = resolved supported call sites / inspected supported call sites`, how many projects
+had compile errors, and how many call sites stayed unresolved. That rate is not "accuracy".
 
 ## Six views
 
-Switch between **Call Flow · Class Diagram · Flow Map · Startup Flow · Data Access (DB · Cache) · Middleware** from the toolbar at the top (the tab buttons themselves are labeled in Korean: 호출 흐름 · 클래스 다이어그램 · 전체 흐름도 · 시작 흐름 · DB·캐시 · 미들웨어). Switching views swaps the left panel and the center canvas together as one set, while the detail/ask panel on the right stays put. The dividers between the three panels can be dragged to resize (double-click to reset), and the center canvas gets more room as you widen the window.
+The toolbar switches between **Call flow · Class diagram · Flow map · Startup flow · Data & cache ·
+Middleware**. The UI ships in Korean and English; pick the language in the header (the browser
+language is used as the default).
 
-### Call Flow — drill into one entry point step by step
+- **Call flow** — pick one entry point, draw to the first branch, then expand a level at a time with `⊕`.
+- **Class diagram** — the whole solution as UML boxes on one canvas, with density controls: collapse members, toggle each of the four relationship kinds, namespace checkboxes, and zoom. Past 150 classes it starts collapsed.
+- **Flow map** — an entry-point map; click a route row to enter that entry point's full, method-level path.
+- **Startup flow** — Program.cs read in source order: DI registrations with lifetimes, and the middleware pipeline order.
+- **Data & cache** — the storage access map, plus which steps of a transaction-free write path are not rolled back.
+- **Middleware** — `app.UseXxx()` order, the request/response halves of each middleware, and short-circuit points.
 
-Pick a route on the left and it first draws up to the nearest branch point from that entry point; click a node marked `⊕` to expand one level deeper at a time. The right panel shows the selected method's signature, access modifier, call relationships, and actual source.
+Findings always come with **evidence and a confidence level (certain / estimated)**, and rules that
+were not checked stay in the catalog marked "off", so you always know what was not looked at.
 
-### Class Diagram — the whole solution as UML, at a glance
+## Working with an AI agent
 
-Every type is drawn as a UML box (name / fields / methods, three tiers) on one canvas. The default layout is **tree (hierarchical)** — types are arranged in layers by relationship direction (for inheritance/implementation, the parent type sits to the left); edges that skip layers get routed through waypoints, and rows are reordered layer by layer to reduce crossings. Flip the direction with `→`/`↓`, or switch to **package** layout to group by namespace.
+1. Select something on screen: an entry point, method, class, finding or write path.
+2. In the ask panel pick an **intent** (understand / plan a change / review a change / investigate data) and a **length** (short, balanced, detailed).
+3. Check the preview: which files are included, whether source text is in there, how long it is, what was omitted.
+4. **Copy context** into whichever AI tool you use, or **Run with Claude Code** to ask right there.
 
-Four kinds of relationships are drawn as distinct line styles.
+The context is assembled in this order:
 
-| Relationship | Line style | Where it comes from |
-|---|---|---|
-| Inheritance | solid + hollow triangle | `baseTypeId` |
-| Implementation | dashed + hollow triangle | `interfaceIds` |
-| Association | solid + open arrow | the type of a field/property (mostly DI injection) |
-| Dependency | dashed + open arrow | call edges not already covered by the three relationships above |
+1. Your intent and question, plus the identifiers of what you selected
+2. Analysis time, snapshotId, freshness, analysis scope, and the significant unresolved reasons
+3. The selected method's signature and a **verified** source range (marked if it no longer matches the analysis)
+4. The representative call path from the entry point to the target, with the evidence for each call site (direct call / DI registration / single-implementation guess)
+5. Direct callers and callees, plus related database, cache and middleware findings
+6. Test candidates found in the graph — not the result of running any test
+7. What was omitted for length, and how to fetch more
 
-Since the point is to draw everything, instead of trimming nodes there are **density controls**: collapsing members (fields/methods), toggling each of the four relationship kinds individually (dependency is off by default), namespace checkboxes, "1 hop from selection only," and zoom at 50/75/100%/fit. Past 150 classes, it automatically starts with members collapsed, dependency off, and zoom-to-fit, and prompts you to narrow the scope.
+> The analysis is local, but **asking an external AI sends that context to that service.**
+> That is why there is a preview before you send, an option to leave source text out, and per-file
+> exclusion. Automatic secret detection alone is not treated as a safety guarantee.
 
-### Flow Map — from an entry-point map to the full path
+### Connecting it to your AI tool (MCP)
 
-The default screen is a class-level map with controller boxes and their routes listed as rows. Clicking a route row takes you into the **full, method-level call path** for that entry point, with a breadcrumb back to the map.
+TraceLens ships a local stdio MCP server. "Show MCP setup" in the ask panel prints a snippet filled
+in with your actual target and installed host — it never overwrites your existing configuration.
+[docs/mcp-setup.md](docs/mcp-setup.md) has the full walkthrough.
 
-Reached methods are grouped into class boxes, and lines connect row ↔ row to show which method calls which. Sub-calls hidden by the depth limit (2/3/4/all) appear as `+n` to the right of that row, and recursive self-calls are marked with `↺`.
+| Tool | What it returns |
+|---|---|
+| `get_analysis_status` | Target, timestamp, freshness, capabilities and a diagnostics summary |
+| `get_context` | The same task context the UI previews, with evidence, paths and limitations |
+| `get_entrypoint_flow` | One entry point's bounded call path and its boundaries |
+| `get_findings` | Database and middleware findings with confidence, plus the list of disabled rules |
+| `get_impact` | Entry points that may be affected by changing a method, with the evidence path |
+| `compare_snapshots` | Structural, body and finding differences against a saved baseline |
+| `get_node` · `get_source` · `get_callers` · `get_callees` · `get_entrypoints` · `search_symbol` | Nodes, source, adjacent calls, entry points and symbol search |
 
-### Startup Flow — Program.cs, in the order it actually runs
+Every tool **reads an already-saved analysis and never re-analyzes**. Responses carry a `snapshotId`;
+pass it back as `expectedSnapshotId` on follow-up calls to find out if the analysis changed underneath you.
 
-Reads Program.cs top to bottom and shows, as a two-track timeline (service registrations / middleware pipeline), **which interface is registered to which implementation with what lifetime (Scoped/Singleton/Transient)**, and the order of the `app.UseXxx()`/`MapXxx()` middleware and routing pipeline. Extension methods defined inside the solution (like `AddFixtureServices()`) start collapsed and expand on click to show what they actually register. This view isn't a call graph — it's a separate timeline built by reading only Program.cs.
+## Change impact and before/after comparison
 
-### Data Access (DB · Cache) — what changes, in what order, and what's left behind on failure
+- **Change impact**: select a method and press "Find affected APIs" to walk callers backwards to the HTTP entry points that reach it. The result is a list of **candidates** — it does not prove anything about reflection, external calls, event subscriptions or runtime DI selection.
+- **Before/after**: press "Save as before" to record a baseline, let the AI edit the code, then press "Re-analyze and compare". You get differences in endpoints, methods (signature and body), calls, data access and findings. If the analyzer, rules or scope differ, the panel says the comparison conditions are not the same. **"No differences" is not "safe", and is not "the tests pass".**
 
-Gathers **which storage is read/written and what** from SQL literals and cache calls, and presents it as a per-entry-point execution path · class × table access map · transaction boundaries · findings. The centerpiece of this view is **compensation analysis**.
+## Freshness and re-analysis
 
-It finds paths that touch storage more than once without a transaction, determines at each step whether the failure path (`catch` / early `return`) contains an undo operation, and lays out **a grid answering "if step i fails, what's left behind?"** A red cell means no undoing code was found there. It also catches the easy-to-miss case — via rule `COMP-006` — where a `catch` has an undo but an early-return path like `if (!ok) return` doesn't.
+Nothing is watched in the background and nothing re-analyzes itself. Re-analysis is always something
+you trigger. What you do get is a freshness indicator that always tells you whether the last analysis
+still matches the code.
 
-Sharding is opt-in: the SHARD rule group only turns on when `tracelens.config.json`'s `dataSources` defines a shard.
+- `fresh` — every recorded input matches what is on disk.
+- `stale` — something changed, was deleted, or is **newly added**, or a config input changed.
+- `unknown` — the check could not cover it (for example an analysis saved in an older format). It is never reported as `fresh` in that case.
 
-### Middleware — what a request passes through, and where it can short-circuit
+## How this relates to other tools
 
-Lays out the `app.UseXxx()` registration order as-is, and for middleware defined inside the solution, opens up the `InvokeAsync` body to split it into **on-request / on-response** sections around the `_next` call. Branches that end without calling `_next` are flagged as short-circuit points, shown together with their status code.
-It also catches things like authentication/authorization/CORS ordering, middleware that takes a Scoped service through its constructor, and middleware registered after endpoint mapping that never actually runs.
+Commercial and open-source tools that trace callers or do impact analysis already exist. NDepend, for
+example, offers impact exploration through callers and its own official MCP server
+([impact analysis docs](https://www.ndepend.com/docs/refactoring-impact-analysis),
+[MCP server repository](https://github.com/ndepend/NDepend.MCP.Server) — a separate license or trial
+is required).
 
-## Why this was built
+TraceLens aims narrower: tying **request-centric ASP.NET Core exploration, local static analysis,
+AI context with evidence attached, and database/cache compensation checking** into one workflow, under
+the MIT license. That is a positioning statement, not a measured claim of superiority.
 
-Getting your head around a large ASP.NET Core codebase — or explaining one to someone else — usually means reconstructing its structure by eye, which takes a long time. Existing open-source tools draw architecture diagrams well, but none of them support the "click a node, see the real code, and ask an AI agent about it right there" flow, so I built one.
+## Documentation
 
-## Key features
-
-- A call-flow graph that expands step by step, anchored on entry points (HTTP endpoints)
-- A UML class diagram connecting the whole solution via inheritance/implementation/association/dependency (tree layout / package layout)
-- An entry-point map, plus a method-level, full-path flow map you enter by clicking a route
-- A Startup Flow timeline that reads Program.cs in source order and shows DI registrations (with lifetimes) and the middleware pipeline order
-- Click-through from a node to its actual source, with breadcrumb navigation back
-- View/filter/selection state is persisted, so the screen you were looking at survives a refresh or re-analysis
-- Ask an AI coding agent about a selected location — three ways: copy to clipboard / local MCP direct integration (Claude Code headless invocation) / open in editor. TraceLens.Mcp can also be registered directly in a Claude Code or Codex CLI session (see `docs/mcp-setup.md`)
-- A freshness indicator showing whether the code still matches the last analysis, with manual re-analysis on demand
-- A DB/cache access map and **compensation (manual rollback) checking** — a grid showing what doesn't get undone on transaction-free write paths
-- Request/response sections, short-circuit points, and ordering checks for the middleware pipeline
-- Findings always come with an evidence chain and a confidence level (certain/inferred); rules that aren't checked stay listed as "off," so you always know what isn't being looked at
-- Analysis targets can be a solution (`.sln`) or a project (`.csproj`); pick one through a folder-browse dialog
-
-## Architecture
-
-```mermaid
-flowchart TB
-    subgraph Browser["Browser (React + TypeScript)"]
-        GV[Call Flow\nGraphView · Cytoscape.js]
-        CD[Class Diagram / Flow Map\nDiagramCanvas · DOM+SVG]
-        CP[Detail Panel\nMonaco Editor]
-        AP[AskPanel]
-        FB[FreshnessBadge]
-    end
-
-    subgraph Local["Local machine (localhost only)"]
-        Server[TraceLens.Server\nASP.NET Core Minimal API]
-        Analyzer[TraceLens.Analyzer\nRoslyn-based analyzer]
-        Mcp["TraceLens.Mcp\nlocal-only MCP server"]
-        CC[Claude Code CLI\nheadless invocation]
-        Ext["External CLI session\nClaude Code · Codex CLI"]
-    end
-
-    Target[(Analysis target\nASP.NET Core solution)]
-    Graph[(.tracelens/graph.json\n.tracelens/snapshot.json)]
-
-    GV -->|GET /api/graph| Server
-    CD -->|GET /api/graph, /api/graph/namespaces| Server
-    CP -->|GET /api/source| Server
-    AP -->|POST /api/ask| Server
-    FB -->|GET /api/freshness| Server
-    Server -->|runs analysis| Analyzer
-    Analyzer -->|parses| Target
-    Analyzer -->|saves results| Graph
-    Server -->|loads results| Graph
-    Server -.->|MCP Direct button| CC
-    CC -.->|queries tools| Mcp
-    Ext -.->|registers directly, queries tools| Mcp
-    Mcp -.->|reads source/nodes| Graph
-```
+- [docs/manual.html](docs/manual.html) — the manual: screen layout, all six views, AI integration, real usage walkthroughs
+- [docs/mcp-setup.md](docs/mcp-setup.md) — registering the MCP server with Claude Code, Codex CLI and VS Code
+- [docs/data-contract.md](docs/data-contract.md) — the `graph.json` schema, the API and MCP contracts, and migration rules
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to report a missed call, and what contributions are in scope
+- [CHANGELOG.md](CHANGELOG.md) — release notes (updated by hand)
+- [CLAUDE.md](CLAUDE.md) — repository instructions and design constraints for AI coding agents
 
 ## Tech stack
 
 | Area | Choice | Notes |
 |---|---|---|
-| Analyzer | C# / Roslyn (Microsoft.CodeAnalysis) | Extracts method call relationships and file/line info precisely |
-| Server | ASP.NET Core Minimal API | Serves the graph, serves source, and hosts the React static build |
-| Frontend | React + TypeScript (Vite) | Call Flow uses Cytoscape.js; Class Diagram/Flow Map render directly via DOM+SVG; the code view is Monaco Editor |
-| Data storage | JSON files (under `.tracelens/`) | Chosen for implementation simplicity; revisit if it ever needs to change |
-| Agent integration | Local MCP server (TraceLens.Mcp) + Claude Code CLI headless invocation | The MCP server is a standard stdio server, so it can also be registered directly with Claude Code, Codex CLI, etc. No remote exposure — local only |
+| Analysis | C# / Roslyn | Extracts method call relationships with exact file and line information |
+| Shared queries | `TraceLens.Context` | Index, context, impact, comparison and source-access policy. Shared by the server and MCP |
+| Server | ASP.NET Core Minimal API | Binds to loopback only. There is no option to expose it remotely |
+| Frontend | React + TypeScript (Vite) | Call flow uses Cytoscape.js; other diagrams are DOM+SVG; the code view is Monaco |
+| Storage | JSON under `.tracelens/` | Written to a temp file, verified, then swapped in |
+| Agent integration | Local stdio MCP plus optional Claude Code CLI invocation | Nothing is exposed remotely |
 
-## Getting started
+## License
 
-### Requirements
-
-- .NET 8 SDK or later
-- Node.js 20 or later
-- Claude Code CLI — only needed for the Ask panel's **MCP Direct** button (this button is Claude Code-only)
-- Codex CLI — only needed if you want to register TraceLens.Mcp directly in a Codex CLI session (see `docs/mcp-setup.md`)
-
-### Install and run (one command)
-
-```powershell
-git clone <repo-url> tracelens
-cd tracelens
-
-.\run.ps1
-```
-
-`run.ps1` installs client dependencies → builds the server → builds the client for production, all in one go, and starts the server. The client build output goes into `src/TraceLens.Server/wwwroot`, which the server hosts as-is, so all you need is <http://127.0.0.1:25011> in a browser (it opens automatically once ready).
-
-| Option | Description |
-|---|---|
-| `.\run.ps1` | Builds the client and runs it behind a single server (<http://127.0.0.1:25011>). Use this for everyday use. |
-| `.\run.ps1 -Dev` | Runs the API server (25011) and the Vite dev server (25012) together. Use this while editing the client, to see changes via HMR. Opens <http://localhost:25012>. |
-| `.\run.ps1 -SkipBuild` | Skips the build and runs immediately. |
-| `.\run.ps1 -NoBrowser` | Doesn't open a browser automatically. |
-
-Stop with Ctrl+C; in `-Dev` mode this also cleans up the background API server.
-
-### Publishing and running the build output only (no source tree)
-
-See "Deploying and running just the build output, without source" in `docs/manual.html` for the full `dotnet publish` workflow — useful when you want to run TraceLens from a build artifact alone, without the source tree or Node.js on the target machine.
-
-### Running directly (without the script)
-
-```bash
-# Backend
-dotnet build
-dotnet run --project src/TraceLens.Server
-
-# Frontend (in another terminal)
-cd client
-npm install
-npm run dev
-```
-
-### Pointing at an analysis target
-
-Type the path to analyze directly into the input field at the top of the screen, or use the **Browse…** button to pick a folder. You can point at either a solution (`.sln`) or a project (`.csproj`) — pointing at a `.csproj` analyzes only that project and the projects it references (handy for quickly looking at just the part you need inside a large solution).
-
-## Folder structure
-
-For the detailed folder structure and what each file is responsible for, see the "Repository structure" section of `CLAUDE.md`.
-
-## Current development stage
-
-Stages 1 through 6 are all implemented. For the current state and any remaining work, check `git log` and the code directly.
+MIT. See [LICENSE](LICENSE).

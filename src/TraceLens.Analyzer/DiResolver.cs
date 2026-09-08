@@ -1,24 +1,45 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
+using TraceLens.Analyzer.Models;
 
 namespace TraceLens.Analyzer;
+
+/// <summary>인터페이스 호출을 구현체로 이었는지, 못 이었다면 왜 못 이었는지.</summary>
+public sealed record DiResolution(
+    IMethodSymbol? Method,
+    CallResolution Resolution,
+    CallConfidence Confidence,
+    string Note)
+{
+    public static DiResolution Failed(string note) =>
+        new(null, CallResolution.Ambiguous, CallConfidence.Estimated, note);
+}
 
 /// <summary>
 /// 인터페이스 호출을 실제 구현체 메서드로 잇기 위한 정보를 모은다.
 /// DI 등록(<c>AddScoped</c>/<c>AddSingleton</c>/<c>TryAddTransient</c> 등)을 먼저 보고,
 /// 등록을 찾지 못하면 솔루션 안 구현체가 하나뿐일 때만 그 구현체로 잇는다.
+/// 등록 메서드는 이름만 보지 않고 실제 심볼이 <c>Microsoft.Extensions.DependencyInjection</c>의
+/// <c>IServiceCollection</c> 확장인지 확인한다. keyed 등록과 서로 다른 구현체의 중복 등록은 확정하지 않는다.
 /// </summary>
 public sealed class DiResolver(ILogger<DiResolver> logger)
 {
     /// <summary>DI 등록 호출이 들어 있을 수 있는 파일만 고르기 위한 텍스트 힌트.</summary>
     private static readonly string[] RegistrationHints = ["AddScoped", "AddSingleton", "AddTransient", "TryAdd", "AddKeyed"];
 
-    /// <summary>인터페이스 키 → DI로 등록된 구현체.</summary>
-    private readonly Dictionary<string, INamedTypeSymbol> registrations = new(StringComparer.Ordinal);
+    private const string DiNamespace = "Microsoft.Extensions.DependencyInjection";
+
+    /// <summary>인터페이스 키 → 찾은 DI 등록들.</summary>
+    private readonly Dictionary<string, List<Registration>> registrations = new(StringComparer.Ordinal);
 
     /// <summary>인터페이스 키 → 솔루션 안에서 그 인터페이스를 구현한 클래스들.</summary>
     private readonly Dictionary<string, List<INamedTypeSymbol>> implementations = new(StringComparer.Ordinal);
+
+    /// <param name="Conditional">if/switch/삼항 안에서 등록됐다. 실행 시 어느 쪽이 쓰일지 정적으로 확정할 수 없다.</param>
+    private sealed record Registration(INamedTypeSymbol Implementation, bool Keyed, bool Conditional);
+
+    public int RegistrationCount => registrations.Sum(entry => entry.Value.Count);
 
     public async Task BuildAsync(LoadedSolution loaded, CancellationToken cancellationToken = default)
     {
@@ -46,46 +67,83 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
 
         logger.LogInformation(
             "DI 등록 {RegistrationCount}건, 구현체가 있는 인터페이스 {InterfaceCount}종을 찾았다.",
-            registrations.Count,
+            RegistrationCount,
             implementations.Count);
     }
 
-    public IMethodSymbol? Resolve(IMethodSymbol interfaceMethod)
+    public DiResolution Resolve(IMethodSymbol interfaceMethod)
     {
         var interfaceType = interfaceMethod.ContainingType;
         if (interfaceType.DeclaringSyntaxReferences.Length == 0)
         {
             // 솔루션 밖(프레임워크/패키지) 인터페이스는 어차피 그래프 대상이 아니다.
-            return null;
+            return new DiResolution(null, CallResolution.External, CallConfidence.Certain, "솔루션 밖 인터페이스다.");
         }
 
         var key = GetTypeKey(interfaceType);
-        if (!registrations.TryGetValue(key, out var implementation))
+        if (registrations.TryGetValue(key, out var found) && found.Count > 0)
         {
-            implementations.TryGetValue(key, out var candidates);
-            if (candidates is not { Count: 1 })
+            var keyed = found.Where(item => item.Keyed).ToArray();
+            var plain = found.Where(item => !item.Keyed).ToArray();
+            var distinct = plain.Select(item => GetTypeKey(item.Implementation)).Distinct(StringComparer.Ordinal).ToArray();
+            if (distinct.Length > 1)
             {
-                logger.LogDebug(
-                    "구현체를 특정하지 못해 인터페이스 호출을 제외한다: {Method} (후보 {Count}개)",
-                    interfaceMethod.ToDisplayString(),
-                    candidates?.Count ?? 0);
-                return null;
+                return DiResolution.Failed($"DI 등록이 {distinct.Length}종이라 어느 구현체인지 확정할 수 없다: {string.Join(", ", distinct.Take(3))}");
             }
 
-            implementation = candidates[0];
+            if (distinct.Length == 1)
+            {
+                var registration = plain[0];
+                var implementation = registration.Implementation;
+                var resolvedMethod = FindImplementation(implementation, interfaceMethod);
+                if (resolvedMethod is null)
+                {
+                    return DiResolution.Failed($"등록한 구현체 {implementation.Name}에서 구현 메서드를 찾지 못했다.");
+                }
+
+                var conditional = plain.Any(item => item.Conditional);
+                var note = keyed.Length > 0
+                    ? "keyed 등록이 함께 있어 실행 시 다른 구현체가 쓰일 수 있다."
+                    : conditional
+                        ? "조건부(if/switch) 등록이라 실행 시 다른 구현체가 쓰일 수 있다."
+                        : $"DI 등록으로 {implementation.Name}에 연결했다.";
+                return new DiResolution(
+                    resolvedMethod,
+                    CallResolution.DiRegistration,
+                    conditional || keyed.Length > 0 ? CallConfidence.Estimated : CallConfidence.Certain,
+                    note);
+            }
+
+            return DiResolution.Failed("keyed 등록만 있어 호출 지점의 키를 알기 전에는 구현체를 확정할 수 없다.");
         }
 
-        var resolved = implementation.FindImplementationForInterfaceMember(interfaceMethod) as IMethodSymbol ??
-                       implementation.GetMembers(interfaceMethod.Name)
-                           .OfType<IMethodSymbol>()
-                           .FirstOrDefault(candidate => HasMatchingSignature(interfaceMethod, candidate));
-        if (resolved is null)
+        implementations.TryGetValue(key, out var candidates);
+        if (candidates is not { Count: 1 })
         {
-            logger.LogDebug("구현 메서드를 찾지 못해 인터페이스 호출을 제외한다: {Method}", interfaceMethod.ToDisplayString());
+            logger.LogDebug(
+                "구현체를 특정하지 못해 인터페이스 호출을 제외한다: {Method} (후보 {Count}개)",
+                interfaceMethod.ToDisplayString(),
+                candidates?.Count ?? 0);
+            return DiResolution.Failed(candidates is null || candidates.Count == 0
+                ? "DI 등록도 솔루션 안 구현체도 찾지 못했다."
+                : $"DI 등록이 없고 솔루션 안 구현체가 {candidates.Count}개라 확정할 수 없다.");
         }
 
-        return resolved;
+        var single = FindImplementation(candidates[0], interfaceMethod);
+        return single is null
+            ? DiResolution.Failed($"유일한 구현체 {candidates[0].Name}에서 구현 메서드를 찾지 못했다.")
+            : new DiResolution(
+                single,
+                CallResolution.SingleImplementation,
+                CallConfidence.Estimated,
+                $"DI 등록은 없지만 솔루션 안 구현체가 {candidates[0].Name} 하나뿐이라 연결했다.");
     }
+
+    private static IMethodSymbol? FindImplementation(INamedTypeSymbol implementation, IMethodSymbol interfaceMethod) =>
+        implementation.FindImplementationForInterfaceMember(interfaceMethod) as IMethodSymbol ??
+        implementation.GetMembers(interfaceMethod.Name)
+            .OfType<IMethodSymbol>()
+            .FirstOrDefault(candidate => HasMatchingSignature(interfaceMethod, candidate));
 
     private static async Task<bool> HasRegistrationHintAsync(Document document, CancellationToken cancellationToken)
     {
@@ -109,7 +167,7 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
                 .OfType<GenericNameSyntax>()
                 .FirstOrDefault(name =>
                     IsRegistrationName(name.Identifier.ValueText) && name.TypeArgumentList.Arguments.Count == 2);
-            if (genericName is null)
+            if (genericName is null || !IsServiceCollectionExtension(model, invocation, cancellationToken))
             {
                 continue;
             }
@@ -121,9 +179,70 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
                 continue;
             }
 
-            registrations[GetTypeKey(abstraction)] = implementation;
+            var key = GetTypeKey(abstraction);
+            if (!registrations.TryGetValue(key, out var list))
+            {
+                list = [];
+                registrations[key] = list;
+            }
+
+            list.Add(new Registration(
+                implementation,
+                genericName.Identifier.ValueText.Contains("Keyed", StringComparison.Ordinal),
+                IsConditional(invocation)));
             logger.LogDebug("DI 등록을 찾았다: {Abstraction} -> {Implementation}", abstraction, implementation);
         }
+    }
+
+    /// <summary>
+    /// 이름이 <c>Add*</c>라고 다 DI 등록은 아니다. 실제 심볼이
+    /// <c>Microsoft.Extensions.DependencyInjection</c>의 <c>IServiceCollection</c> 확장인지 확인한다.
+    /// </summary>
+    private static bool IsServiceCollectionExtension(
+        SemanticModel model,
+        InvocationExpressionSyntax invocation,
+        CancellationToken cancellationToken)
+    {
+        var symbol = model.GetSymbolInfo(invocation, cancellationToken).Symbol as IMethodSymbol ??
+                     model.GetSymbolInfo(invocation, cancellationToken).CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
+        if (symbol is null)
+        {
+            return false;
+        }
+
+        var target = symbol.ReducedFrom ?? symbol;
+        var namespaceName = target.ContainingNamespace?.ToDisplayString() ?? string.Empty;
+        if (!namespaceName.Equals(DiNamespace, StringComparison.Ordinal) &&
+            !namespaceName.StartsWith(DiNamespace + ".", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var receiverType = target.IsExtensionMethod && target.Parameters.Length > 0
+            ? target.Parameters[0].Type
+            : target.ReceiverType;
+        return receiverType is not null &&
+               (receiverType.Name == "IServiceCollection" ||
+                receiverType.AllInterfaces.Any(item => item.Name == "IServiceCollection"));
+    }
+
+    /// <summary>if/switch/삼항 안에서 등록됐는지. 실행 시 어느 등록이 적용될지 정적으로 확정할 수 없다는 표시다.</summary>
+    private static bool IsConditional(SyntaxNode invocation)
+    {
+        for (var current = invocation.Parent; current is not null; current = current.Parent)
+        {
+            if (current is IfStatementSyntax or SwitchStatementSyntax or SwitchExpressionSyntax or ConditionalExpressionSyntax)
+            {
+                return true;
+            }
+
+            if (current is MemberDeclarationSyntax or CompilationUnitSyntax)
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     /// <summary><c>AddScoped</c>/<c>AddSingleton</c>/<c>TryAddScoped</c>/<c>AddKeyedTransient</c> 같은 등록 메서드 이름인지 확인한다.</summary>

@@ -10,6 +10,9 @@
     -Dev를 주면 API 서버(25011)와 Vite 개발 서버(25012)를 함께 띄운다.
     클라이언트 코드를 고치면서 HMR로 확인할 때 쓴다.
 
+    배포물을 만들려면 .\pack.ps1 을 쓴다(소스·Node.js 없이 실행할 수 있는 ZIP과 .NET tool 패키지).
+    분석만 하거나 MCP만 띄우려면 CLI를 쓴다: dotnet run --project src/TraceLens.Cli -- analyze <대상>
+
 .EXAMPLE
     .\run.ps1
 
@@ -75,7 +78,10 @@ function Start-BrowserWhenReady {
 }
 
 Assert-Command 'dotnet' '.NET 8 이상 SDK를 설치해야 한다.'
-Assert-Command 'npm' 'Node.js 20 이상을 설치해야 한다.'
+# -SkipBuild면 클라이언트를 빌드하지 않으므로 npm이 없어도 된다(배포물만 쓰는 사용자를 막지 않는다).
+if (-not $SkipBuild) {
+    Assert-Command 'npm' 'Node.js 20 이상을 설치해야 한다. 빌드 없이 실행하려면 -SkipBuild를 준다.'
+}
 
 if (-not $SkipBuild) {
     if (-not (Test-Path (Join-Path $clientPath 'node_modules'))) {

@@ -1,58 +1,127 @@
-import { useEffect, useRef, useState } from 'react'
-import { askWithMcp, openInEditor } from '../api/client'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ApiError, askWithMcp, buildContext, getMcpSetup, openInEditor } from '../api/client'
+import { translateError, useI18n } from '../i18n/I18nProvider'
+import type { TranslationKey } from '../i18n/ko'
+import type { ContextBudget, ContextDocument, ContextIntent, McpSetupPreview, SelectionKind } from '../types/context'
 import type { AskMode } from '../types/graph'
+import { ContextPreview } from './ContextPreview'
 
-/** 질문 패널이 캡처하는 컨텍스트. 메서드뿐 아니라 클래스·네임스페이스 선택에도 대응한다. */
+/** 질문 패널이 다루는 선택. 실행 가능한 노드가 없어도 문맥은 만들 수 있다. */
 export interface AskContext {
-  /** MCP 연동과 에디터 열기에 쓰는 노드 id. 클래스·네임스페이스 선택에는 없을 수 있다. */
+  kind: SelectionKind
+  id: string
+  /** 에디터 열기에 쓰는 노드 id. 클래스·네임스페이스 선택에는 없을 수 있다. */
   nodeId: string | null
   lines: Array<{ label: string; value: string }>
-  clipboardText: string
 }
 
 interface AskPanelProps {
   context: AskContext | null
+  snapshotId: string
+  /** 문맥 복사를 마치면 첫 사용 안내의 마지막 단계가 끝난다. */
+  onContextCopied?: () => void
 }
 
-const modeLabels: Record<AskMode, string> = {
-  clipboard: '클립보드',
-  mcp: 'MCP 직접 연동',
-  editor: '에디터',
+const modeKeys: Record<AskMode, TranslationKey> = {
+  context: 'ask.modeContext',
+  mcp: 'ask.modeAgent',
+  editor: 'ask.modeEditor',
 }
 
-export function AskPanel({ context }: AskPanelProps) {
-  const [mode, setMode] = useState<AskMode>('clipboard')
+const intents: ReadonlyArray<{ value: ContextIntent; key: TranslationKey }> = [
+  { value: 'Explain', key: 'ask.intent.explain' },
+  { value: 'PlanChange', key: 'ask.intent.planChange' },
+  { value: 'ReviewChange', key: 'ask.intent.reviewChange' },
+  { value: 'InvestigateData', key: 'ask.intent.investigateData' },
+]
+
+const budgets: ReadonlyArray<{ value: ContextBudget; key: TranslationKey }> = [
+  { value: 'Short', key: 'ask.budget.short' },
+  { value: 'Balanced', key: 'ask.budget.balanced' },
+  { value: 'Detailed', key: 'ask.budget.detailed' },
+]
+
+/**
+ * 선택한 위치를 "작업 문맥"으로 바꿔 AI에 전달한다.
+ * 문맥은 서버의 `POST /api/context` 하나에서 나오므로 클립보드·인앱 실행·MCP가 같은 내용을 쓴다.
+ */
+export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps) {
+  const { t } = useI18n()
+  const [mode, setMode] = useState<AskMode>('context')
+  const [intent, setIntent] = useState<ContextIntent>('Explain')
+  const [budget, setBudget] = useState<ContextBudget>('Balanced')
+  const [includeSource, setIncludeSource] = useState(true)
   const [question, setQuestion] = useState('')
+  const [preview, setPreview] = useState<ContextDocument | null>(null)
   const [answer, setAnswer] = useState('')
   const [logs, setLogs] = useState<string[]>([])
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [setup, setSetup] = useState<McpSetupPreview | null>(null)
   const abortController = useRef<AbortController | null>(null)
-  const contextKey = context?.clipboardText ?? null
+  const contextKey = context ? `${context.kind}:${context.id}` : null
+
+  const describe = useCallback((reason: unknown, fallbackKey: TranslationKey) =>
+    reason instanceof ApiError ? translateError(t, reason.code, reason.message) : t(fallbackKey), [t])
 
   useEffect(() => {
     abortController.current?.abort()
     setAnswer('')
     setLogs([])
     setMessage(null)
+    setPreview(null)
     setBusy(false)
   }, [contextKey])
 
   useEffect(() => () => abortController.current?.abort(), [])
 
+  // 선택·목적·예산이 바뀌면 미리보기를 다시 만든다. 이 단계에는 LLM 호출이 없다.
+  useEffect(() => {
+    if (!context) return
+    let active = true
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const document = await buildContext({
+            kind: context.kind,
+            id: context.id,
+            intent,
+            budget,
+            question: question.trim(),
+            includeSource,
+            expectedSnapshotId: snapshotId || undefined,
+          })
+          if (active) {
+            setPreview(document)
+            setMessage(null)
+          }
+        } catch (reason) {
+          if (active) {
+            setPreview(null)
+            setMessage(describe(reason, 'ask.contextFailed'))
+          }
+        }
+      })()
+    }, 200)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [context, contextKey, intent, budget, question, includeSource, snapshotId, describe])
+
   const copy = async () => {
-    if (!context || !question.trim()) return
-    const text = `${context.clipboardText}\n\n질문: ${question.trim()}`
+    if (!preview) return
     try {
-      await navigator.clipboard.writeText(text)
-      setMessage('클립보드에 복사했다. Claude Code 터미널에 붙여넣으면 된다.')
+      await navigator.clipboard.writeText(preview.markdown)
+      setMessage(t('ask.copied'))
+      onContextCopied?.()
     } catch {
-      setMessage('클립보드에 접근하지 못했다. 브라우저 권한을 확인해야 한다.')
+      setMessage(t('ask.copyFailed'))
     }
   }
 
   const ask = async () => {
-    if (!context?.nodeId || !question.trim()) return
+    if (!context || !question.trim()) return
     abortController.current?.abort()
     const controller = new AbortController()
     abortController.current = controller
@@ -62,21 +131,28 @@ export function AskPanel({ context }: AskPanelProps) {
     setMessage(null)
     try {
       await askWithMcp(
-        { nodeId: context.nodeId, question: question.trim(), mode: 'mcp' },
+        {
+          kind: context.kind,
+          id: context.id,
+          nodeId: context.nodeId,
+          question: question.trim(),
+          mode: 'mcp',
+          intent,
+          budget,
+          expectedSnapshotId: snapshotId || undefined,
+        },
         (event) => {
           if (event.type === 'delta' && event.text) setAnswer((current) => current + event.text)
           if (event.type === 'log' && event.text) {
             const logText = event.text
             setLogs((current) => [...current, logText])
           }
-          if (event.type === 'error') setMessage(event.text ?? 'Claude Code 실행에 실패했다.')
+          if (event.type === 'error') setMessage(event.text ?? t('ask.agentFailed'))
         },
         controller.signal,
       )
     } catch (reason) {
-      if (!controller.signal.aborted) {
-        setMessage(reason instanceof Error ? reason.message : 'Claude Code 요청에 실패했다.')
-      }
+      if (!controller.signal.aborted) setMessage(describe(reason, 'ask.agentFailed'))
     } finally {
       if (!controller.signal.aborted) setBusy(false)
     }
@@ -89,37 +165,43 @@ export function AskPanel({ context }: AskPanelProps) {
     try {
       const result = await openInEditor(context.nodeId)
       if (result.opened) {
-        setMessage('선택한 위치를 에디터에서 열었다.')
+        setMessage(t('ask.editorOpened'))
       } else {
-        setMessage(result.error ?? 'code 명령을 실행하지 못해 URI 방식으로 다시 시도한다.')
+        setMessage(result.error ?? t('ask.editorFailed'))
         window.location.href = result.fallbackUri
       }
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : '에디터를 열지 못했다.')
+      setMessage(describe(reason, 'ask.editorFailed'))
     } finally {
       setBusy(false)
     }
   }
 
+  const showSetup = async () => {
+    try {
+      setSetup(await getMcpSetup())
+    } catch (reason) {
+      setMessage(describe(reason, 'ask.contextFailed'))
+    }
+  }
+
   const run = () => {
-    if (mode === 'clipboard') void copy()
+    if (mode === 'context') void copy()
     if (mode === 'mcp') void ask()
     if (mode === 'editor') void openEditor()
   }
 
-  const needsQuestion = mode !== 'editor'
-  // MCP 연동과 에디터 열기는 노드 id가 있어야 한다. 클래스·네임스페이스만 고른 상태면 클립보드만 쓸 수 있다.
-  const needsNodeId = mode !== 'clipboard'
-  const blocked = needsNodeId && !context?.nodeId
+  const needsQuestion = mode === 'mcp'
+  const blocked = mode === 'editor' && !context?.nodeId
 
   return (
-    <section className="panel ask-panel">
+    <section className="panel ask-panel" id="tracelens-ask-panel">
       <header>
-        <span>Claude에게 질문</span>
-        <small>{modeLabels[mode]}</small>
+        <span>{t('ask.title')}</span>
+        <small>{t(modeKeys[mode])}</small>
       </header>
-      <div className="ask-mode-tabs" role="tablist" aria-label="Claude Code 연동 방식">
-        {(Object.keys(modeLabels) as AskMode[]).map((item) => (
+      <div className="ask-mode-tabs" role="tablist" aria-label={t('ask.title')}>
+        {(Object.keys(modeKeys) as AskMode[]).map((item) => (
           <button
             type="button"
             role="tab"
@@ -128,7 +210,7 @@ export function AskPanel({ context }: AskPanelProps) {
             onClick={() => { setMode(item); setMessage(null) }}
             key={item}
           >
-            {modeLabels[item]}
+            {t(modeKeys[item])}
           </button>
         ))}
       </div>
@@ -138,39 +220,94 @@ export function AskPanel({ context }: AskPanelProps) {
             ? context.lines.map((line) => (
               <div key={line.label}>{line.label}: <b>{line.value}</b></div>
             ))
-            : '질문할 항목을 먼저 선택해야 한다.'}
+            : t('ask.selectFirst')}
         </div>
-        {blocked && context && (
-          <div className="panel-message tight">
-            이 선택에는 실행 가능한 노드가 없어서 클립보드 복사만 쓸 수 있다.
-          </div>
+
+        {blocked && context && <div className="panel-message tight">{t('ask.needNode')}</div>}
+
+        {mode !== 'editor' && context && (
+          <>
+            <div className="ask-options">
+              <label>
+                {t('ask.intent')}
+                <select value={intent} onChange={(event) => setIntent(event.target.value as ContextIntent)}>
+                  {intents.map((item) => <option key={item.value} value={item.value}>{t(item.key)}</option>)}
+                </select>
+              </label>
+              <label>
+                {t('ask.budget')}
+                <select value={budget} onChange={(event) => setBudget(event.target.value as ContextBudget)}>
+                  {budgets.map((item) => <option key={item.value} value={item.value}>{t(item.key)}</option>)}
+                </select>
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={!includeSource}
+                  onChange={(event) => setIncludeSource(!event.target.checked)}
+                />
+                {t('context.excludeSource')}
+              </label>
+            </div>
+            <textarea
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder={t('ask.questionPlaceholder')}
+              aria-label={t('ask.title')}
+              disabled={busy}
+            />
+          </>
         )}
-        {mode !== 'editor' && (
-          <textarea
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            placeholder="이 클래스가 어떤 인터페이스로 주입되는지, 이 메서드의 트랜잭션 경계가 어디인지 물어본다."
-            disabled={!context || busy}
-          />
-        )}
+
+        {mode !== 'editor' && preview && <ContextPreview context={preview} />}
+
         {mode === 'mcp' && (question.trim() || answer) && (
           <div className="ask-response" aria-live="polite">
             {question.trim() && <div className="chat-bubble user">{question.trim()}</div>}
-            {(answer || busy) && <div className="chat-bubble assistant">{answer || 'Claude Code가 확인 중이다…'}</div>}
-            {logs.length > 0 && <details><summary>실행 로그 {logs.length}줄</summary><pre>{logs.join('\n')}</pre></details>}
+            {(answer || busy) && <div className="chat-bubble assistant">{answer || t('ask.working')}</div>}
+            {logs.length > 0 && (
+              <details>
+                <summary>{t('ask.logs', { count: logs.length })}</summary>
+                <pre>{logs.join('\n')}</pre>
+              </details>
+            )}
           </div>
         )}
+
         <div className="ask-actions">
           <button
             type="button"
             className="primary"
             onClick={run}
-            disabled={!context || busy || blocked || (needsQuestion && !question.trim())}
+            disabled={!context || busy || blocked || (needsQuestion && !question.trim()) || (mode === 'context' && !preview)}
           >
-            {busy ? '처리 중…' : mode === 'clipboard' ? '클립보드 복사' : mode === 'mcp' ? '질문 보내기' : '에디터에서 열기'}
+            {busy
+              ? t('app.analyzing')
+              : mode === 'context' ? t('ask.copy') : mode === 'mcp' ? t('ask.send') : t('ask.openEditor')}
+          </button>
+          <button type="button" className="link-button" onClick={() => void showSetup()}>
+            {t('ask.mcpSetup')}
           </button>
           {message && <div className="copy-message">{message}</div>}
         </div>
+
+        {setup && (
+          <div className="mcp-setup">
+            <header>
+              <span>{t('ask.mcpSetupTitle')}</span>
+              <button type="button" className="link-button" onClick={() => setSetup(null)}>{t('ask.close')}</button>
+            </header>
+            <div className="hint">{t('ask.mcpSetupNote')}</div>
+            {setup.warning && <div className="hint warn">{setup.warning}</div>}
+            {setup.hosts.map((host) => (
+              <details key={host.host}>
+                <summary>{host.host} · <code>{host.file}</code></summary>
+                <div className="hint">{host.note}</div>
+                <pre>{host.content}</pre>
+              </details>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   )

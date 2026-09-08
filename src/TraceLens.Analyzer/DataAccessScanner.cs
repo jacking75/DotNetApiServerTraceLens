@@ -35,7 +35,7 @@ public enum SiteKind
 /// <param name="CalleeNodeId">솔루션 안 메서드면 그 노드 id. 외부 라이브러리면 null.</param>
 /// <param name="ShardKeyIdentifier">커넥션을 열 때 넘긴 첫 인자 식별자. 샤드 규칙이 쓴다.</param>
 /// <param name="AssignedVariable">커넥션을 받는 지역 변수 이름. 어느 커넥션으로 실행한 쿼리인지 잇는 데 쓴다.</param>
-public sealed record CallSite(
+public sealed record DataCallSite(
     int Position,
     int Line,
     string Name,
@@ -69,7 +69,7 @@ public sealed record FailurePath(
     string Kind,
     int Position,
     int Line,
-    IReadOnlyList<CallSite> Sites,
+    IReadOnlyList<DataCallSite> Sites,
     bool Guarded);
 
 /// <summary>메서드 하나에서 규칙 판정에 필요한 사실을 모은 것.</summary>
@@ -83,7 +83,7 @@ public sealed record MethodDataFacts(
     bool IsControllerAction,
     bool ReferencesUserContext,
     IReadOnlyList<string> RequestBoundParameters,
-    IReadOnlyList<CallSite> Sites,
+    IReadOnlyList<DataCallSite> Sites,
     IReadOnlyList<FailurePath> FailurePaths,
     bool HasTransaction,
     bool HasCommit);
@@ -261,7 +261,7 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             return null;
         }
 
-        var sites = new List<CallSite>();
+        var sites = new List<DataCallSite>();
         var transactionDepth = 0;
         foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>()
                      .OrderBy(node => node.SpanStart))
@@ -314,7 +314,7 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             sites.Any(site => site.Kind == SiteKind.TransactionEnd));
     }
 
-    private CallSite? BuildSite(
+    private DataCallSite? BuildSite(
         InvocationExpressionSyntax invocation,
         SemanticModel model,
         TraceLensConfig config,
@@ -413,7 +413,7 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             return null;
         }
 
-        return new CallSite(
+        return new DataCallSite(
             invocation.SpanStart,
             line,
             name,
@@ -440,10 +440,10 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
 
     /// <summary>인터페이스 호출은 DI 등록으로 구현체까지 연결해야 호출 그래프의 노드 id와 맞는다.</summary>
     private IMethodSymbol ResolveCallee(IMethodSymbol method) =>
-        method.ContainingType?.TypeKind == TypeKind.Interface ? diResolver.Resolve(method) ?? method : method;
+        method.ContainingType?.TypeKind == TypeKind.Interface ? diResolver.Resolve(method).Method ?? method : method;
 
     /// <summary>메서드 안의 <c>.Result</c>/<c>.Wait()</c>를 동기 대기 자리로 모은다.</summary>
-    private static IEnumerable<CallSite> EnumerateSyncWaits(SyntaxNode body)
+    private static IEnumerable<DataCallSite> EnumerateSyncWaits(SyntaxNode body)
     {
         foreach (var node in body.DescendantNodes())
         {
@@ -460,14 +460,14 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             }
 
             var line = node.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
-            yield return new CallSite(
+            yield return new DataCallSite(
                 node.SpanStart, line, text, text, null, node.ToString(), [], SiteKind.SyncWait,
                 string.Empty, string.Empty, AccessOperation.Other, node.ToString().Trim(),
                 false, false, false, false, false, false, false, null, false, null);
         }
     }
 
-    private static IReadOnlyList<FailurePath> CollectFailurePaths(SyntaxNode body, IReadOnlyList<CallSite> sites)
+    private static IReadOnlyList<FailurePath> CollectFailurePaths(SyntaxNode body, IReadOnlyList<DataCallSite> sites)
     {
         var paths = new List<FailurePath>();
         foreach (var clause in body.DescendantNodes().OfType<CatchClauseSyntax>())

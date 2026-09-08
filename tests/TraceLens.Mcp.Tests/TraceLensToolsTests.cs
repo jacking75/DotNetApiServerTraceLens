@@ -13,20 +13,20 @@ public sealed class TraceLensToolsTests
         await using var fixture = await ToolFixture.CreateAsync();
         var tools = new TraceLensTools(new GraphFileStore(fixture.GraphPath));
 
-        var node = await tools.GetNodeAsync("Fixture.Controller.Entry()", CancellationToken.None);
-        var source = await tools.GetSourceAsync("Controller.cs", 1, 2, CancellationToken.None);
-        var callers = await tools.GetCallersAsync("Fixture.Service.Run()", CancellationToken.None);
-        var callees = await tools.GetCalleesAsync("Fixture.Controller.Entry()", CancellationToken.None);
-        var entryPoints = await tools.GetEntryPointsAsync(CancellationToken.None);
-        var search = await tools.SearchSymbolAsync("service", CancellationToken.None);
+        var node = await tools.GetNodeAsync("Fixture.Controller.Entry()", null, CancellationToken.None);
+        var source = await tools.GetSourceAsync("Controller.cs", 1, 2, null, CancellationToken.None);
+        var callers = await tools.GetCallersAsync("Fixture.Service.Run()", null, null, null, CancellationToken.None);
+        var callees = await tools.GetCalleesAsync("Fixture.Controller.Entry()", null, null, null, CancellationToken.None);
+        var entryPoints = await tools.GetEntryPointsAsync(null, null, null, null, CancellationToken.None);
+        var search = await tools.SearchSymbolAsync("service", null, null, null, CancellationToken.None);
 
         Assert.Equal("Controller.Entry", node.Node.DisplayName);
         Assert.Contains("Entry", node.Source.Content, StringComparison.Ordinal);
         Assert.Equal(2, source.EndLine);
-        Assert.Single(callers);
-        Assert.Single(callees);
-        Assert.Single(entryPoints);
-        Assert.Equal("Fixture.Service.Run()", Assert.Single(search).Id);
+        Assert.Single(callers.Items);
+        Assert.Single(callees.Items);
+        Assert.Single(entryPoints.Items);
+        Assert.Equal("Fixture.Service.Run()", Assert.Single(search.Items).Id);
     }
 
     private sealed class ToolFixture(string directory, string graphPath) : IAsyncDisposable

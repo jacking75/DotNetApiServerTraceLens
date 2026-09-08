@@ -1,14 +1,25 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using TraceLens.Analyzer.Models;
 
 namespace TraceLens.Analyzer;
 
+/// <summary>
+/// 분석 진행 상태. 근거 없는 진행률(%) 대신 단계와 실제 처리 건수를 보여준다.
+/// </summary>
+/// <param name="Stage">load · entrypoints · scan · rules · save 중 하나.</param>
+public sealed record AnalysisProgress(string Stage, string Message, int? Count = null);
+
 public interface ITraceLensAnalyzer
 {
     /// <param name="targetPath">분석 대상 .sln 또는 .csproj 경로.</param>
-    Task<AnalysisResult> AnalyzeAsync(string targetPath, CancellationToken cancellationToken = default);
+    /// <param name="progress">단계별 진행 상태를 받을 곳. null이면 보고하지 않는다.</param>
+    Task<AnalysisResult> AnalyzeAsync(
+        string targetPath,
+        IProgress<AnalysisProgress>? progress = null,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class TraceLensAnalyzer(
@@ -18,6 +29,7 @@ public sealed class TraceLensAnalyzer(
     SolutionScanner solutionScanner,
     CallGraphWalker callGraphWalker,
     SnapshotHasher snapshotHasher,
+    AnalysisManifestBuilder manifestBuilder,
     StartupFlowScanner startupFlowScanner,
     DataAccessScanner dataAccessScanner,
     CompensationAnalyzer compensationAnalyzer,
@@ -25,14 +37,58 @@ public sealed class TraceLensAnalyzer(
     MiddlewareScanner middlewareScanner,
     ILogger<TraceLensAnalyzer> logger) : ITraceLensAnalyzer
 {
-    public async Task<AnalysisResult> AnalyzeAsync(string targetPath, CancellationToken cancellationToken = default)
+    /// <summary>분석기 버전. 스냅샷 비교의 전제 조건(같은 분석기로 만든 결과인지) 확인에 쓴다.</summary>
+    public static string AnalyzerVersion { get; } =
+        typeof(TraceLensAnalyzer).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? typeof(TraceLensAnalyzer).Assembly.GetName().Version?.ToString()
+        ?? "0.0.0";
+
+    /// <summary>DB·미들웨어 규칙 카탈로그의 버전. 규칙이 바뀌면 점검 비교 조건이 달라진다.</summary>
+    public const string RulesVersion = "1";
+
+    /// <summary>
+    /// 같은 대상의 동시 분석을 직렬화한다. 부분 JSON이 정상 그래프로 읽히는 것을 막는 첫 번째 방어선이다.
+    /// 대상이 다르면 서로 막지 않는다.
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> AnalysisGates =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    public async Task<AnalysisResult> AnalyzeAsync(
+        string targetPath,
+        IProgress<AnalysisProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var gate = AnalysisGates.GetOrAdd(Path.GetFullPath(targetPath), _ => new SemaphoreSlim(1, 1));
+        if (!await gate.WaitAsync(TimeSpan.Zero, cancellationToken))
+        {
+            logger.LogInformation("같은 대상의 분석이 진행 중이라 끝날 때까지 기다린다: {Target}", targetPath);
+            await gate.WaitAsync(cancellationToken);
+        }
+
+        try
+        {
+            return await AnalyzeCoreAsync(targetPath, progress, cancellationToken);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<AnalysisResult> AnalyzeCoreAsync(
+        string targetPath,
+        IProgress<AnalysisProgress>? progress,
+        CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
+        var startedAtUtc = DateTime.UtcNow;
         var fullTargetPath = Path.GetFullPath(targetPath);
         var targetDirectory = Path.GetDirectoryName(fullTargetPath)
             ?? throw new ArgumentException("분석 대상 디렉터리를 확인할 수 없다.", nameof(targetPath));
 
+        progress?.Report(new AnalysisProgress("load", "프로젝트를 여는 중이다."));
         await using var loaded = await solutionLoader.LoadAsync(fullTargetPath, cancellationToken);
+        progress?.Report(new AnalysisProgress("load", "프로젝트를 열었다.", loaded.AnalyzableProjectIds.Count));
         var solutionDirectory = ResolveRootDirectory(targetDirectory, loaded);
         if (!string.Equals(solutionDirectory, targetDirectory, StringComparison.OrdinalIgnoreCase))
         {
@@ -41,31 +97,63 @@ public sealed class TraceLensAnalyzer(
 
         var config = await TraceLensConfig.LoadAsync(solutionDirectory, cancellationToken);
         await diResolver.BuildAsync(loaded, cancellationToken);
-        var entryPoints = await entryPointScanner.ScanAsync(loaded, config, cancellationToken);
-        logger.LogInformation("진입점 {Count}개를 찾았다.", entryPoints.Count);
+        progress?.Report(new AnalysisProgress("entrypoints", "HTTP 진입점을 찾는 중이다."));
+        var entryPointScan = await entryPointScanner.ScanAsync(loaded, config, solutionDirectory, cancellationToken);
+        var entryPoints = entryPointScan.EntryPoints;
+        progress?.Report(new AnalysisProgress("entrypoints", "진입점을 찾았다.", entryPoints.Count));
 
         var isSolutionScope = config.AnalysisScope == AnalysisScope.Solution;
+        var handlerCallables = entryPoints
+            .Select(item => item.Handler)
+            .Where(item => item.Kind is CallableKind.Lambda or CallableKind.LocalFunction)
+            .DistinctBy(item => item.NodeId, StringComparer.Ordinal)
+            .ToArray();
+        progress?.Report(new AnalysisProgress("scan", "타입과 호출을 훑는 중이다."));
         var scan = await solutionScanner.ScanAsync(
             loaded,
             config,
             solutionDirectory,
             isSolutionScope,
+            handlerCallables,
             cancellationToken);
-        var (nodes, edges) = isSolutionScope
-            ? (scan.Nodes, scan.Edges)
-            : await WalkFromEntryPointsAsync(loaded, entryPoints, config, solutionDirectory, cancellationToken);
+        progress?.Report(new AnalysisProgress("scan", "클래스를 모았다.", scan.Classes.Count));
+
+        IReadOnlyList<GraphNode> nodes;
+        IReadOnlyList<GraphEdge> edges;
+        IReadOnlyList<CallSite> callSites;
+        CallResolutionStats stats;
+        var depthLimitReached = false;
+        var droppedCallSites = scan.DroppedCallSites;
+        if (isSolutionScope)
+        {
+            (nodes, edges, callSites, stats) = (scan.Nodes, scan.Edges, scan.CallSites, scan.Stats);
+        }
+        else
+        {
+            var walk = await callGraphWalker.WalkAsync(loaded, entryPoints, config, solutionDirectory, cancellationToken);
+            (nodes, edges, callSites, stats) = (walk.Nodes, walk.Edges, walk.CallSites, walk.Stats);
+            depthLimitReached = walk.DepthLimitReached;
+            droppedCallSites = walk.DroppedCallSites;
+        }
 
         var nodeIds = nodes.Select(node => node.Id).ToHashSet(StringComparer.Ordinal);
         var reachableEntryPoints = entryPoints
             .Select(item => item.EntryPoint)
             .Where(entryPoint => nodeIds.Contains(entryPoint.NodeId))
             .ToArray();
+
+        var manifestResult = await manifestBuilder.BuildAsync(loaded, fullTargetPath, solutionDirectory, cancellationToken);
+        // 노드·클래스가 없는 파일(시작 흐름만 있는 Program.cs 등)도 신선도 대상에 들어가도록 분석한 소스 전체를 해시한다.
         var fileHashes = await snapshotHasher.ComputeAsync(
             solutionDirectory,
-            nodes.Select(node => node.File).Concat(scan.Classes.Select(item => item.File)),
+            manifestResult.SourceFiles
+                .Concat(nodes.Select(node => node.File))
+                .Concat(scan.Classes.Select(item => item.File)),
             cancellationToken);
+        progress?.Report(new AnalysisProgress("scan", "메서드 노드를 모았다.", nodes.Count));
         var startupFlow = await startupFlowScanner.ScanAsync(loaded, config, solutionDirectory, cancellationToken);
 
+        progress?.Report(new AnalysisProgress("rules", "DB·캐시와 미들웨어 규칙을 확인하는 중이다."));
         DataAccessScanResult? dataScan = null;
         DataAccessDocument? dataAccess = null;
         if (config.IncludeDataAccess)
@@ -79,11 +167,36 @@ public sealed class TraceLensAnalyzer(
 
         var middleware = await middlewareScanner.ScanAsync(
             loaded, config, solutionDirectory, startupFlow, dataScan, cancellationToken);
+        progress?.Report(new AnalysisProgress(
+            "rules",
+            "점검을 마쳤다.",
+            (dataAccess?.Findings.Count ?? 0) + (middleware?.Findings.Count ?? 0)));
+
+        var changedDuringAnalysis = FindChangedInputs(
+            solutionDirectory, manifestResult, fileHashes.Keys, startedAtUtc);
+        var diagnostics = BuildDiagnostics(
+            loaded,
+            config,
+            stats,
+            manifestResult,
+            entryPointScan.Notes,
+            depthLimitReached,
+            droppedCallSites,
+            changedDuringAnalysis);
+
+        var inputFingerprint = SnapshotHasher.Fold(
+            fileHashes.Select(entry => entry.Key + "=" + entry.Value)
+                .Concat(manifestResult.Manifest.Inputs.Select(item => item.Path + "=" + item.Hash))
+                .Append("analyzer=" + AnalyzerVersion)
+                .Append("rules=" + RulesVersion)
+                .Append("scope=" + config.AnalysisScope));
+        var analyzedAt = DateTimeOffset.Now;
+        var snapshotId = CreateSnapshotId(analyzedAt, inputFingerprint);
 
         var document = new GraphDocument(
             GraphDocument.CurrentSchemaVersion,
             fullTargetPath,
-            DateTimeOffset.Now,
+            analyzedAt,
             reachableEntryPoints,
             scan.Classes,
             nodes,
@@ -93,13 +206,22 @@ public sealed class TraceLensAnalyzer(
             RootDirectory = solutionDirectory,
             StartupFlow = startupFlow,
             DataAccess = dataAccess,
-            Middleware = middleware
+            Middleware = middleware,
+            SnapshotId = snapshotId,
+            InputFingerprint = inputFingerprint,
+            Manifest = manifestResult.Manifest,
+            Diagnostics = diagnostics,
+            CallSites = callSites,
+            AnalyzerVersion = AnalyzerVersion,
+            RulesVersion = RulesVersion
         };
+
         var outputDirectory = Path.Combine(solutionDirectory, ".tracelens");
         Directory.CreateDirectory(outputDirectory);
         var outputPath = Path.Combine(outputDirectory, "graph.json");
         var json = JsonSerializer.Serialize(document, GraphDocument.JsonOptions);
-        await File.WriteAllTextAsync(outputPath, json, cancellationToken);
+        progress?.Report(new AnalysisProgress("save", "graph.json을 저장하는 중이다.", json.Length / 1024));
+        await WriteAtomicallyAsync(outputPath, json, cancellationToken);
 
         // members가 들어가면서 커진 만큼, 언제 includeMembers를 꺼야 할지 판단할 수 있게 크기를 남긴다.
         var sizeKb = json.Length / 1024;
@@ -123,6 +245,130 @@ public sealed class TraceLensAnalyzer(
             scan.MemberElapsedMs,
             json.Length,
             (dataAccess?.Findings.Count ?? 0) + (middleware?.Findings.Count ?? 0));
+    }
+
+    /// <summary>
+    /// 임시 파일에 완전히 쓰고, 다시 읽어 파싱되는지 확인한 다음에야 기존 파일을 교체한다.
+    /// 실패하면 이전 정상 그래프가 그대로 남는다.
+    /// </summary>
+    private static async Task WriteAtomicallyAsync(string outputPath, string json, CancellationToken cancellationToken)
+    {
+        var temporaryPath = outputPath + ".tmp";
+        await File.WriteAllTextAsync(temporaryPath, json, cancellationToken);
+        try
+        {
+            await using (var stream = File.OpenRead(temporaryPath))
+            {
+                _ = await JsonSerializer.DeserializeAsync<GraphDocument>(stream, GraphDocument.JsonOptions, cancellationToken)
+                    ?? throw new InvalidDataException("새로 만든 graph.json을 다시 읽지 못했다.");
+            }
+
+            File.Move(temporaryPath, outputPath, overwrite: true);
+        }
+        catch
+        {
+            TryDelete(temporaryPath);
+            throw;
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // 임시 파일을 못 지워도 분석 결과에는 영향이 없다.
+        }
+    }
+
+    /// <summary>분석 시작 이후에 수정된 입력 파일을 찾는다. 새 분석을 자동으로 다시 시도하지는 않는다.</summary>
+    private static IReadOnlyList<string> FindChangedInputs(
+        string rootDirectory,
+        AnalysisManifestResult manifestResult,
+        IEnumerable<string> hashedFiles,
+        DateTime startedAtUtc)
+    {
+        var changed = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var relativePath in hashedFiles.Concat(manifestResult.Manifest.Inputs.Select(item => item.Path)))
+        {
+            var fullPath = Path.Combine(rootDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            try
+            {
+                if (File.Exists(fullPath) && File.GetLastWriteTimeUtc(fullPath) > startedAtUtc)
+                {
+                    changed.Add(relativePath);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                changed.Add(relativePath);
+            }
+        }
+
+        return changed.ToArray();
+    }
+
+    private static AnalysisDiagnostics BuildDiagnostics(
+        LoadedSolution loaded,
+        TraceLensConfig config,
+        CallResolutionStats stats,
+        AnalysisManifestResult manifestResult,
+        IReadOnlyList<string> entryPointNotes,
+        bool depthLimitReached,
+        int droppedCallSites,
+        IReadOnlyList<string> changedDuringAnalysis)
+    {
+        var limitations = new List<string>(manifestResult.Manifest.Limitations);
+        if (droppedCallSites > 0)
+        {
+            limitations.Add($"호출 근거 {droppedCallSites}건은 상한(엣지당 {config.MaxCallSitesPerEdge}건, 경계 {config.MaxBoundaryCallSites}건) 때문에 목록에서 뺐다.");
+        }
+
+        if (depthLimitReached)
+        {
+            limitations.Add($"maxCallDepth({config.MaxCallDepth})에 도달해 더 내려가지 않은 경로가 있다.");
+        }
+
+        if (config.AnalysisScope == AnalysisScope.EntryPoints)
+        {
+            limitations.Add("analysisScope=entryPoints라 진입점에서 도달하지 못하는 메서드는 그래프에 없다.");
+        }
+
+        limitations.AddRange(loaded.WorkspaceFailures.Take(5).Select(message => "MSBuild: " + message));
+
+        var projects = loaded.ProjectDiagnostics;
+        return new AnalysisDiagnostics(
+            projects.Count,
+            projects.Count(item => item.Loaded),
+            projects.Count(item => item.ErrorCount > 0),
+            projects,
+            stats,
+            config.ExcludeNamespacePrefixes,
+            config.MaxCallDepth,
+            depthLimitReached,
+            config.AnalysisScope.ToString().ToLowerInvariant(),
+            limitations)
+        {
+            ChangedDuringAnalysis = changedDuringAnalysis.Count > 0,
+            ChangedDuringAnalysisFiles = changedDuringAnalysis,
+            EntryPointNotes = entryPointNotes
+        };
+    }
+
+    /// <summary>읽을 수 있으면서 실행마다 다른 값. 앞은 시각, 뒤는 입력 지문의 앞부분이다.</summary>
+    private static string CreateSnapshotId(DateTimeOffset analyzedAt, string inputFingerprint)
+    {
+        var stamp = analyzedAt.ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'");
+        var digest = inputFingerprint.StartsWith("sha256:", StringComparison.Ordinal)
+            ? inputFingerprint[7..15]
+            : Guid.NewGuid().ToString("N")[..8];
+        return $"{stamp}-{digest}";
     }
 
     /// <summary>이 크기를 넘으면 <c>includeMembers</c>를 끄라고 안내한다.</summary>
@@ -173,17 +419,6 @@ public sealed class TraceLensAnalyzer(
         }
 
         return null;
-    }
-
-    private async Task<(IReadOnlyList<GraphNode> Nodes, IReadOnlyList<GraphEdge> Edges)> WalkFromEntryPointsAsync(
-        LoadedSolution loaded,
-        IReadOnlyList<ScannedEntryPoint> entryPoints,
-        TraceLensConfig config,
-        string solutionDirectory,
-        CancellationToken cancellationToken)
-    {
-        var graph = await callGraphWalker.WalkAsync(loaded, entryPoints, config, solutionDirectory, cancellationToken);
-        return (graph.Nodes, graph.Edges);
     }
 }
 

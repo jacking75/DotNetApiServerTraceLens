@@ -480,3 +480,109 @@ table.findings .conf { color: #8a97a9; font-size: 10.5px; white-space: nowrap; }
 .sc-col li { color: #b8c5d7; font-size: 11.5px; line-height: 1.65; }
 .sc-col.skip li { color: #8b98ab; }
 .sc-note { margin-top: 9px; padding: 7px 9px; border-radius: 7px; font-size: 11px; line-height: 1.6; color: #a9d4ff; background: #152437; border: 1px solid #2f4d6d; }
+
+/* ------------------------------------------------------------------ 첫 화면 · 안내 · 문맥 (보급 개선) */
+
+.header-tools { display: flex; align-items: center; gap: 6px; }
+.header-tools .browse, .app-header .browse { color: #cbd8ea; background: #17202f; border: 1px solid #304059; border-radius: 8px; padding: 9px 13px; white-space: nowrap; }
+.header-tools .browse:hover:not(:disabled) { color: var(--text); border-color: #4d6383; }
+.lang-switch select { color: #cbd8ea; background: #17202f; border: 1px solid #304059; border-radius: 8px; padding: 9px 10px; }
+
+.link-button { color: var(--accent); background: none; border: 0; padding: 0; font-size: 11.5px; text-decoration: underline; text-underline-offset: 3px; }
+.link-button:hover { color: #b6e8ff; }
+
+.hint { color: var(--dim); font-size: 11.5px; line-height: 1.6; }
+.hint.warn { color: #ffc68e; }
+.ok { color: #9de2c7; }
+.bad { color: #ffb4b4; }
+
+.chip { display: inline-flex; align-items: center; gap: 4px; color: #a9bdd6; background: #16202f; border: 1px solid #2c3b52; border-radius: 999px; padding: 2px 8px; font-size: 11px; white-space: nowrap; }
+.chip.small { padding: 1px 6px; font-size: 10px; }
+.chip.warn { color: #ffc68e; border-color: #89552b; background: #33220f; }
+.chip.freshness-fresh { color: #9de2c7; border-color: #286c58; }
+.chip.freshness-stale { color: #ffc68e; border-color: #89552b; }
+.chip.freshness-unknown { color: #ffaaaa; border-color: #753942; }
+
+.analysis-progress { color: #a9e7ff; background: #12222f; border: 1px solid #2b4f66; border-radius: 8px; padding: 8px 14px; margin-bottom: 10px; font-size: 12px; }
+.analysis-notice { color: #ffc68e; background: #33220f; border: 1px solid #89552b; border-radius: 8px; padding: 8px 14px; margin-bottom: 10px; font-size: 12px; }
+
+/* 첫 화면 */
+.welcome { max-width: 1080px; margin: 24px auto; padding: 0 8px 40px; }
+.welcome h2 { margin: 0 0 8px; font-size: 22px; letter-spacing: -.02em; }
+.welcome-lead { color: #a9bdd6; font-size: 13.5px; line-height: 1.8; margin: 0 0 20px; }
+.welcome-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.welcome-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+.welcome-card.wide { grid-column: 1 / -1; margin-top: 14px; }
+.welcome-card h3 { margin: 0 0 6px; font-size: 15px; }
+.welcome-card p { color: #a9bdd6; font-size: 12.5px; line-height: 1.7; margin: 0 0 12px; }
+.welcome-card button { margin-right: 8px; }
+.welcome-card > button:not(.link-button) { color: #cbd8ea; background: #17202f; border: 1px solid #304059; border-radius: 8px; padding: 8px 14px; }
+.welcome-card > button.primary { color: #08111b; background: var(--accent); border: 0; font-weight: 750; }
+.welcome-card small { display: block; margin-top: 10px; color: var(--dim-2); font-size: 11px; }
+.scope-list, .recipe-list, .diagnostics-list { margin: 0; padding-left: 18px; color: #a9bdd6; font-size: 12.5px; line-height: 1.9; }
+.recipe-list { list-style: none; padding-left: 0; }
+.recipe-list li { padding: 6px 0; border-bottom: 1px solid #1c2636; }
+.recipe-button { color: var(--accent); background: none; border: 0; padding: 0; font-size: 13px; font-weight: 700; }
+.diagnostics-list { list-style: none; padding-left: 0; }
+.diagnostics-list li { padding: 4px 0; }
+.diagnostics-list .sev-error { color: #ffb4b4; }
+.diagnostics-list .sev-warning { color: #ffc68e; }
+
+/* 첫 사용 안내 */
+.walkthrough { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+.walkthrough header { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.walkthrough header small { color: var(--dim); font-weight: 400; margin-left: auto; }
+.walkthrough ol { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.9; color: var(--dim); }
+.walkthrough li.current { color: var(--text); }
+.walkthrough li.done { color: #9de2c7; }
+.walkthrough .check { margin-left: 6px; }
+
+/* 레시피 안내 띠 */
+.recipe-banner { background: #12222f; border: 1px solid #2b4f66; border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; font-size: 12px; }
+.recipe-banner ol { margin: 6px 0; padding-left: 18px; line-height: 1.8; color: #a9bdd6; }
+
+/* 문맥 미리보기 */
+.context-preview { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; font-size: 11.5px; }
+.context-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.context-files, .context-paths, .context-evidence, .context-limitations { margin: 6px 0; padding-left: 18px; color: var(--dim); line-height: 1.7; }
+.context-paths ol { padding-left: 16px; }
+.context-preview details { margin: 6px 0; }
+.context-preview summary { cursor: pointer; color: #a9bdd6; }
+.context-markdown { max-height: 320px; overflow: auto; background: #0c1320; border: 1px solid var(--border); border-radius: 8px; padding: 10px; white-space: pre-wrap; font-size: 11px; line-height: 1.6; }
+.ask-options { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; font-size: 11.5px; color: var(--dim); }
+.ask-options label { display: flex; align-items: center; gap: 5px; }
+.ask-options select { color: #cbd8ea; background: #0c1320; border: 1px solid var(--border); border-radius: 7px; padding: 4px 8px; }
+.ask-options label.checkbox { gap: 4px; }
+
+/* MCP 설정 미리보기 */
+.mcp-setup { margin-top: 10px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: #0e1626; }
+.mcp-setup header { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.mcp-setup pre { max-height: 220px; overflow: auto; background: #0c1320; border: 1px solid var(--border); border-radius: 8px; padding: 8px; font-size: 11px; }
+.mcp-setup summary { cursor: pointer; color: #a9bdd6; font-size: 11.5px; padding: 4px 0; }
+
+/* 변경 영향 */
+.impact-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; font-size: 11.5px; }
+.impact-panel header { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.impact-panel header button { color: #cbd8ea; background: #17202f; border: 1px solid #304059; border-radius: 7px; padding: 4px 10px; font-size: 11px; }
+.impact-list { list-style: none; margin: 6px 0; padding: 0; }
+.impact-list > li { padding: 6px 0; border-bottom: 1px solid #1c2636; }
+.impact-endpoint { display: flex; align-items: center; gap: 6px; width: 100%; color: var(--text); background: none; border: 0; padding: 2px 0; text-align: left; }
+.impact-endpoint .route { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.impact-endpoint .http-method { font-weight: 800; font-size: 10px; color: var(--accent); }
+.impact-path { margin: 4px 0 0; padding-left: 18px; color: var(--dim); line-height: 1.7; }
+
+/* 분석 전후 비교 */
+.diff-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; font-size: 11.5px; }
+.diff-panel header { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+.diff-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+.diff-actions button { color: #cbd8ea; background: #17202f; border: 1px solid #304059; border-radius: 7px; padding: 5px 10px; font-size: 11px; }
+.diff-actions button.primary { color: #08111b; background: var(--accent); border: 0; font-weight: 750; }
+.diff-actions label { display: flex; align-items: center; gap: 5px; color: var(--dim); }
+.diff-actions select { color: #cbd8ea; background: #0c1320; border: 1px solid var(--border); border-radius: 7px; padding: 4px 8px; max-width: 200px; }
+.diff-list { list-style: none; margin: 4px 0; padding: 0; }
+.diff-list li { padding: 4px 0; border-bottom: 1px solid #1c2636; }
+.diff-list code { color: var(--dim-2); font-size: 10.5px; }
+.diff-added .chip { color: #9de2c7; border-color: #286c58; }
+.diff-removed .chip { color: #ffb4b4; border-color: #753942; }
+.diff-notcomparable .chip { color: #ffc68e; border-color: #89552b; }
+.diff-panel summary, .impact-panel summary { cursor: pointer; color: #a9bdd6; padding: 4px 0; }

@@ -1,58 +1,39 @@
-using System.Collections.Concurrent;
-using System.Security.Cryptography;
 using TraceLens.Analyzer.Models;
+using TraceLens.Context;
 
 namespace TraceLens.Server;
 
 public interface IGraphFreshnessService
 {
-    Task<GraphFreshnessResult> CheckAsync(GraphDocument graph, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// 현재 소스와 분석이 같은지 확인한다. 이 확인은 파일 목록·해시 비교일 뿐이며 재분석을 실행하지 않는다.
+    /// 같은 스냅샷에 대한 동시 요청은 하나로 합쳐서 중복 해시를 막는다.
+    /// </summary>
+    Task<FreshnessReport> CheckAsync(GraphDocument graph, CancellationToken cancellationToken = default);
 }
 
-public sealed class GraphFreshnessService : IGraphFreshnessService
+public sealed class GraphFreshnessService(GraphFreshnessEvaluator evaluator) : IGraphFreshnessService
 {
-    /// <summary>솔루션 전체를 분석하면 해시 대상 파일이 많아지므로 제한된 병렬로 읽는다.</summary>
-    private const int MaxParallelHashing = 8;
+    private readonly object gate = new();
+    private string? inFlightKey;
+    private Task<FreshnessReport>? inFlight;
 
-    public async Task<GraphFreshnessResult> CheckAsync(
-        GraphDocument graph,
-        CancellationToken cancellationToken = default)
+    public Task<FreshnessReport> CheckAsync(GraphDocument graph, CancellationToken cancellationToken = default)
     {
-        var solutionDirectory = graph.RootDirectory;
-        if (string.IsNullOrEmpty(solutionDirectory))
+        var key = string.IsNullOrEmpty(graph.SnapshotId)
+            ? graph.AnalyzedAt.ToUnixTimeMilliseconds().ToString()
+            : graph.SnapshotId;
+
+        lock (gate)
         {
-            throw new InvalidOperationException("분석 루트 디렉터리를 확인할 수 없다.");
-        }
-
-        var changedFiles = new ConcurrentBag<string>();
-
-        await Parallel.ForEachAsync(
-            graph.FileHashes,
-            new ParallelOptions { MaxDegreeOfParallelism = MaxParallelHashing, CancellationToken = cancellationToken },
-            async (entry, token) =>
+            if (inFlight is { IsCompleted: false } && string.Equals(inFlightKey, key, StringComparison.Ordinal))
             {
-                var (relativePath, expectedHash) = entry;
-                var fullPath = Path.Combine(solutionDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
-                try
-                {
-                    await using var stream = File.OpenRead(fullPath);
-                    var hash = await SHA256.HashDataAsync(stream, token);
-                    var currentHash = "sha256:" + Convert.ToHexString(hash).ToLowerInvariant();
-                    if (!string.Equals(currentHash, expectedHash, StringComparison.Ordinal))
-                    {
-                        changedFiles.Add(relativePath);
-                    }
-                }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-                {
-                    changedFiles.Add(relativePath);
-                }
-            });
+                return inFlight;
+            }
 
-        return new GraphFreshnessResult(
-            changedFiles.IsEmpty,
-            changedFiles.OrderBy(file => file, StringComparer.Ordinal).ToArray());
+            inFlightKey = key;
+            inFlight = evaluator.EvaluateAsync(graph, cancellationToken);
+            return inFlight;
+        }
     }
 }
-
-public sealed record GraphFreshnessResult(bool IsFresh, IReadOnlyList<string> ChangedFiles);

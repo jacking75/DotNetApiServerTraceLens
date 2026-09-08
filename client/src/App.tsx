@@ -1,5 +1,17 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { analyzeTarget, getEntryPoints, getGraph, getNamespaces, importGraph, loadSavedGraph } from './api/client'
+import {
+  analyzeTarget,
+  ApiError,
+  cancelAnalysisJob,
+  getDiagnostics,
+  getEntryPoints,
+  getGraph,
+  getNamespaces,
+  importGraph,
+  loadSavedGraph,
+  startAnalysisJob,
+  watchAnalysisJob,
+} from './api/client'
 import { AskPanel, type AskContext } from './components/AskPanel'
 import { Breadcrumb, type BreadcrumbItem } from './components/Breadcrumb'
 import { ClassDiagram } from './components/ClassDiagram'
@@ -7,14 +19,19 @@ import { DataAccessView } from './components/DataAccessView'
 import { DataDetailPanel } from './components/DataDetailPanel'
 import { DataSidePanel, MiddlewareSidePanel } from './components/DataSidePanels'
 import { DetailPanel, type DetailActions } from './components/DetailPanel'
+import { GuidedWalkthrough, type WalkthroughStepId } from './components/GuidedWalkthrough'
+import { ImpactPanel } from './components/ImpactPanel'
 import { MiddlewareView } from './components/MiddlewareView'
 import { FlowDiagram } from './components/FlowDiagram'
 import { FreshnessBadge } from './components/FreshnessBadge'
 import { PathPicker } from './components/PathPicker'
 import { EntryPointList, FlowSidePanel, NamespacePanel, StartupFlowSidePanel } from './components/SidePanels'
+import { SnapshotDiffPanel } from './components/SnapshotDiffPanel'
 import { Splitter } from './components/Splitter'
 import { StartupFlowView } from './components/StartupFlowView'
 import { ViewToolbar } from './components/ViewToolbar'
+import { WelcomePanel } from './components/WelcomePanel'
+import { recipes as allRecipes, type Recipe } from './content/recipes'
 import {
   buildClassDiagram,
   commonNamespacePrefix,
@@ -28,6 +45,7 @@ import { buildEntryFlow, buildEntryMap } from './graph/flowMap'
 import { collapseEdgesToClasses, deriveRelations } from './graph/relations'
 import { findStartupStep } from './graph/startupFlow'
 import { getDrilldownWindow, getInitialWindow } from './graph/windowing'
+import { translateError, useI18n, type Language } from './i18n/I18nProvider'
 import {
   defaultColumns,
   loadState,
@@ -37,6 +55,7 @@ import {
   type MiddlewareViewState,
   type PersistedState,
 } from './state/viewState'
+import type { DiagnosticsReport, SelectionKind } from './types/context'
 import type {
   AnalyzeSummary,
   EntryPoint,
@@ -57,12 +76,6 @@ const minRight = 280
 /** 창 크기가 바뀔 때 배치를 다시 계산하기까지 기다리는 시간. */
 const resizeDebounceMs = 120
 
-const formatTime = (value: string) => new Intl.DateTimeFormat('ko-KR', {
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-}).format(new Date(value))
-
 /** "저장" 버튼이 내려받는 파일의 기본 이름. 솔루션 이름 + 분석 시각으로 나중에 알아보기 쉽게 만든다. */
 const graphFileName = (graph: GraphDocument) => {
   const baseName = graph.solutionPath.split(/[\\/]/).pop()?.replace(/\.(sln|csproj)$/i, '') || 'tracelens'
@@ -71,6 +84,7 @@ const graphFileName = (graph: GraphDocument) => {
 }
 
 export default function App() {
+  const { t, lang, setLang, formatTime, formatPercent } = useI18n()
   const initial = useRef<PersistedState>(loadState()).current
   const [solutionPath, setSolutionPath] = useState(initial.solutionPath)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -96,9 +110,16 @@ export default function App() {
   const [pendingScrollNamespace, setPendingScrollNamespace] = useState<string | null>(null)
   const [shellWidth, setShellWidth] = useState(900)
   const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState<string | null>(null)
+  const [jobId, setJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [freshnessRevision, setFreshnessRevision] = useState(0)
   const [autoTuned, setAutoTuned] = useState(false)
+  const [guideOpen, setGuideOpen] = useState(false)
+  const [walkthroughDone, setWalkthroughDone] = useState<Set<WalkthroughStepId>>(new Set())
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsReport | null>(null)
+  const [diffOpen, setDiffOpen] = useState(false)
+  const [activeRecipe, setActiveRecipe] = useState<Recipe | null>(null)
 
   const workspaceRef = useRef<HTMLElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
@@ -172,6 +193,17 @@ export default function App() {
     saveState({ viewMode, classMap, depth, selection, columns, solutionPath, dataView, middlewareView })
   }, [viewMode, classMap, depth, selection, columns, solutionPath, dataView, middlewareView])
 
+  /* ---------------------------------------------------------------- 첫 사용 안내 진행 */
+
+  const completeStep = useCallback((step: WalkthroughStepId) => {
+    setWalkthroughDone((current) => (current.has(step) ? current : new Set(current).add(step)))
+  }, [])
+
+  useEffect(() => { if (solutionPath.trim()) completeStep('pick') }, [solutionPath, completeStep])
+  useEffect(() => { if (graph) completeStep('analyze') }, [graph, completeStep])
+  useEffect(() => { if (callFlowEntry || flowEntryId) completeStep('entry') }, [callFlowEntry, flowEntryId, completeStep])
+  useEffect(() => { if (selection) completeStep('evidence') }, [selection, completeStep])
+
   /* ---------------------------------------------------------------- 폭·반응형 */
 
   const applyColumns = useCallback((next: { left: number; right: number }) => {
@@ -224,6 +256,19 @@ export default function App() {
     return nextGraph
   }, [])
 
+  /** 분석·불러오기 공통 후처리. 재분석 후에도 보고 있던 보기와 선택을 유지한다(사라진 id만 정리한다). */
+  const applyAnalyzedGraph = useCallback((nextGraph: GraphDocument, nextSummary: AnalyzeSummary) => {
+    setSummary(nextSummary)
+    setSelection((current) => (current && selectionExists(nextGraph, current) ? current : null))
+    setFlowEntryId((current) => (current && nextGraph.nodes.some((node) => node.id === current) ? current : null))
+    setCallFlowEntry((current) => {
+      if (!current) return null
+      return nextGraph.entryPoints.find((item) => item.endpointId === current.endpointId) ?? null
+    })
+    setFocusStack((current) => current.filter((id) => nextGraph.nodes.some((node) => node.id === id)))
+    setFreshnessRevision((value) => value + 1)
+  }, [])
+
   // 새로고침해도 서버가 들고 있는 마지막 분석 결과로 화면을 되살린다.
   // 서버가 재시작돼 메모리가 비어 있으면(run.ps1 재실행 등), 기억해 둔 경로의 저장된 분석 결과를 재분석 없이 조용히 불러온다.
   useEffect(() => {
@@ -246,7 +291,7 @@ export default function App() {
   }, [loadGraphData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
-   * E-10 대규모 솔루션 기본값. 클래스가 많으면 멤버를 접고 의존을 끈 상태로 시작한다.
+   * 대규모 솔루션 기본값. 클래스가 많으면 멤버를 접고 의존을 끈 상태로 시작한다.
    * 사용자가 이미 저장해 둔 설정을 덮어쓰지 않도록 한 번만 적용한다.
    */
   useEffect(() => {
@@ -262,32 +307,75 @@ export default function App() {
     }))
   }, [graph, autoTuned])
 
-  /** 분석·불러오기 공통 후처리. D-7 재분석 후에도 보고 있던 보기와 선택을 유지한다(사라진 id만 정리한다). */
-  const applyAnalyzedGraph = useCallback((nextGraph: GraphDocument, nextSummary: AnalyzeSummary) => {
-    setSummary(nextSummary)
-    setSelection((current) => (current && selectionExists(nextGraph, current) ? current : null))
-    setFlowEntryId((current) => (current && nextGraph.nodes.some((node) => node.id === current) ? current : null))
-    setCallFlowEntry((current) => {
-      if (!current) return null
-      return nextGraph.entryPoints.find((item) => item.nodeId === current.nodeId) ?? null
-    })
-    setFocusStack((current) => current.filter((id) => nextGraph.nodes.some((node) => node.id === id)))
-    setFreshnessRevision((value) => value + 1)
-  }, [])
+  const describeError = useCallback((reason: unknown, fallback: string) =>
+    reason instanceof ApiError ? translateError(t, reason.code, reason.message) : fallback, [t])
 
-  const analyze = async () => {
-    if (!solutionPath.trim()) return
+  /**
+   * 분석을 작업으로 실행해서 단계별 진행 상태를 보여 주고 취소도 받는다.
+   * 새 그래프로의 전환은 완료 알림을 받은 뒤 여기서 한 번만 한다.
+   */
+  const analyze = useCallback(async (targetPath?: string) => {
+    const target = (targetPath ?? solutionPath).trim()
+    if (!target) return
     setBusy(true)
     setError(null)
+    setProgress(null)
     try {
-      const nextSummary = await analyzeTarget(solutionPath.trim())
+      const job = await startAnalysisJob(target)
+      setJobId(job.id)
+      let failure: string | null = null
+      let canceled = false
+      await watchAnalysisJob(job.id, (event) => {
+        if (event.kind === 'progress') setProgress(`${event.stage} · ${event.message}${event.count === null ? '' : ` (${event.count})`}`)
+        if (event.kind === 'error') failure = event.message
+        if (event.kind === 'canceled') canceled = true
+      })
+      if (canceled) return
+      if (failure) throw new Error(failure)
+
       const nextGraph = await loadGraphData()
-      applyAnalyzedGraph(nextGraph, nextSummary)
+      applyAnalyzedGraph(nextGraph, await summarizeFrom(nextGraph))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '분석에 실패했다.')
+      // 작업 API를 쓸 수 없는 환경(구버전 서버 등)에서는 호환 경로로 한 번 더 시도한다.
+      try {
+        const nextSummary = await analyzeTarget(target)
+        const nextGraph = await loadGraphData()
+        applyAnalyzedGraph(nextGraph, nextSummary)
+      } catch (fallbackReason) {
+        setError(describeError(fallbackReason, reason instanceof Error ? reason.message : t('app.analyzeFailed')))
+      }
     } finally {
       setBusy(false)
+      setProgress(null)
+      setJobId(null)
     }
+  }, [solutionPath, loadGraphData, applyAnalyzedGraph, describeError, t])
+
+  /** 작업 경로로 분석했을 때는 요약을 그래프에서 다시 만든다(서버 응답을 한 번 더 받지 않는다). */
+  const summarizeFrom = async (nextGraph: GraphDocument): Promise<AnalyzeSummary> => ({
+    entryPointCount: nextGraph.entryPoints.length,
+    classCount: nextGraph.classes.length,
+    interfaceCount: nextGraph.classes.filter((item) => item.typeKind === 'Interface').length,
+    nodeCount: nextGraph.nodes.length,
+    edgeCount: nextGraph.edges.length,
+    memberCount: nextGraph.classes.reduce((total, item) => total + item.members.length, 0),
+    graphSizeBytes: 0,
+    elapsedMs: 0,
+    analyzedAt: nextGraph.analyzedAt,
+    previousAnalyzedAt: summary?.analyzedAt ?? null,
+    findingCount: (nextGraph.dataAccess?.findings.length ?? 0) + (nextGraph.middleware?.findings.length ?? 0),
+    snapshotId: nextGraph.snapshotId,
+    callSiteCount: nextGraph.callSites.length,
+    resolutionRate: nextGraph.diagnostics?.calls.resolutionRate ?? 0,
+    unresolvedCallSites:
+      (nextGraph.diagnostics?.calls.ambiguous ?? 0) + (nextGraph.diagnostics?.calls.unresolved ?? 0),
+    minimalApiCount: nextGraph.entryPoints.filter((item) => item.source === 'MinimalApi').length,
+    origin: 'live',
+    notice: nextGraph.diagnostics?.entryPointNotes.join(' ') || null,
+  })
+
+  const cancelAnalysis = async () => {
+    if (jobId) await cancelAnalysisJob(jobId)
   }
 
   /** 지금 분석 결과를 사용자가 고르는 위치에 파일로 저장한다(브라우저의 "다른 이름으로 저장" 창). */
@@ -315,9 +403,17 @@ export default function App() {
       setSolutionPath(nextGraph.solutionPath)
       applyAnalyzedGraph(nextGraph, nextSummary)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '파일을 불러오지 못했다.')
+      setError(describeError(reason, t('app.importFailed')))
     } finally {
       setBusy(false)
+    }
+  }
+
+  const runDiagnostics = async () => {
+    try {
+      setDiagnostics(await getDiagnostics(solutionPath.trim() || undefined))
+    } catch (reason) {
+      setError(describeError(reason, t('diagnostics.failed')))
     }
   }
 
@@ -389,6 +485,16 @@ export default function App() {
     setSelection({ type: 'method', key: nodeId })
   }, [findEntryPointFor])
 
+  /** 변경 영향 목록에서 고른 진입점을 기존 호출 흐름 보기로 연다(새 모드를 만들지 않는다). */
+  const openEntryPointFromImpact = useCallback((handlerNodeId: string, targetNodeId: string) => {
+    const entry = entryPoints.find((item) => item.nodeId === handlerNodeId)
+    if (!entry) return
+    setViewMode('callflow')
+    setCallFlowEntry(entry)
+    setFocusStack([])
+    setSelection({ type: 'method', key: targetNodeId })
+  }, [entryPoints])
+
   const detailActions: DetailActions = useMemo(() => ({
     onSelect: setSelection,
     onShowFlow: openFlow,
@@ -437,6 +543,12 @@ export default function App() {
     }
   }
 
+  const startRecipe = (recipe: Recipe) => {
+    setActiveRecipe(recipe)
+    changeMode(recipe.view)
+    if (recipe.id === 'review-ai-change') setDiffOpen(true)
+  }
+
   const drilldown = useCallback((nodeId: string) => {
     setFocusStack((current) => (current[current.length - 1] === nodeId ? current : [...current, nodeId]))
   }, [])
@@ -447,15 +559,18 @@ export default function App() {
     if (viewMode === 'callflow') {
       if (!callFlowEntry) return []
       return [
-        { key: callFlowEntry.nodeId, label: `${callFlowEntry.httpMethod} ${callFlowEntry.route}` },
+        { key: callFlowEntry.endpointId, label: `${callFlowEntry.httpMethod} ${callFlowEntry.route}` },
         ...focusStack.map((id) => ({ key: id, label: nodeById.get(id)?.displayName ?? id })),
       ]
     }
 
     if (viewMode === 'classmap') {
-      const crumbs: BreadcrumbItem[] = [{ key: 'all', label: '전체 클래스' }]
+      const crumbs: BreadcrumbItem[] = [{ key: 'all', label: t('view.classmap') }]
       if (classMap.focusOnly && selectedClassId) {
-        crumbs.push({ key: selectedClassId, label: `${graph?.classes.find((item) => item.id === selectedClassId)?.name ?? selectedClassId} 1홉` })
+        crumbs.push({
+          key: selectedClassId,
+          label: `${graph?.classes.find((item) => item.id === selectedClassId)?.name ?? selectedClassId} · 1`,
+        })
       } else if (selection?.type === 'namespace') {
         crumbs.push({ key: selection.key, label: shortenNamespace(selection.key, namespacePrefix) })
       }
@@ -464,7 +579,7 @@ export default function App() {
     }
 
     if (viewMode === 'startup') {
-      return [{ key: 'startup', label: '시작 흐름' }]
+      return [{ key: 'startup', label: t('view.startup') }]
     }
 
     if (viewMode === 'data') {
@@ -475,10 +590,13 @@ export default function App() {
         comp: '보상 처리',
         check: '점검 결과',
       }
-      const crumbs: BreadcrumbItem[] = [{ key: 'data', label: 'DB · 캐시' }, { key: dataView.sub, label: labels[dataView.sub] }]
+      const crumbs: BreadcrumbItem[] = [
+        { key: 'data', label: t('view.data') },
+        { key: dataView.sub, label: labels[dataView.sub] },
+      ]
       if (dataView.sub === 'route' && dataView.entryNodeId) {
         const entry = entryPoints.find((item) => item.nodeId === dataView.entryNodeId)
-        if (entry) crumbs.push({ key: entry.nodeId, label: `${entry.httpMethod} ${entry.route}` })
+        if (entry) crumbs.push({ key: entry.endpointId, label: `${entry.httpMethod} ${entry.route}` })
       }
 
       return crumbs
@@ -490,17 +608,17 @@ export default function App() {
         sc: '단락 지점',
         check: '점검 결과',
       }
-      return [{ key: 'middleware', label: '미들웨어' }, { key: middlewareView.sub, label: labels[middlewareView.sub] }]
+      return [{ key: 'middleware', label: t('view.middleware') }, { key: middlewareView.sub, label: labels[middlewareView.sub] }]
     }
 
-    const crumbs: BreadcrumbItem[] = [{ key: 'map', label: '전체 진입점 지도' }]
+    const crumbs: BreadcrumbItem[] = [{ key: 'map', label: t('view.flowmap') }]
     if (flowEntryId) {
       const entry = entryPoints.find((item) => item.nodeId === flowEntryId)
       crumbs.push({ key: flowEntryId, label: entry ? `${entry.httpMethod} ${entry.route}` : flowEntryId })
     }
 
     return crumbs
-  }, [viewMode, callFlowEntry, focusStack, nodeById, classMap.focusOnly, selectedClassId, selection, graph, namespacePrefix, flowEntryId, entryPoints, dataView, middlewareView])
+  }, [viewMode, callFlowEntry, focusStack, nodeById, classMap.focusOnly, selectedClassId, selection, graph, namespacePrefix, flowEntryId, entryPoints, dataView, middlewareView, t])
 
   const navigateBreadcrumb = (index: number) => {
     if (viewMode === 'callflow') {
@@ -520,21 +638,43 @@ export default function App() {
     if (index === 0) setFlowEntryId(null)
   }
 
+  /**
+   * 질문 패널에 넘길 선택. 문맥 자체는 서버가 만들고, 여기서는 무엇을 골랐는지만 전달한다.
+   * 실행 가능한 노드가 없어도(클래스·네임스페이스) 문맥은 만들 수 있다.
+   */
   const askContext: AskContext | null = useMemo(() => {
     if (!graph || !selection) return null
+    const line = (label: string, value: string) => ({ label, value })
+
+    const forNode = (nodeId: string): AskContext | null => {
+      const node = nodeById.get(nodeId)
+      if (!node) return null
+      return {
+        kind: 'Node' as SelectionKind,
+        id: node.id,
+        nodeId: node.id,
+        lines: [
+          line(t('detail.file'), node.file),
+          line(t('detail.line'), `${node.startLine}-${node.endLine}`),
+          line(t('detail.symbol'), node.displayName),
+        ],
+      }
+    }
+
     if (selection.type === 'finding') {
       const finding = [...(graph.dataAccess?.findings ?? []), ...(graph.middleware?.findings ?? [])]
         .find((item) => item.id === selection.key)
       if (!finding) return null
       return {
+        kind: 'Finding',
+        id: finding.id,
         nodeId: finding.nodeId,
         lines: [
-          { label: '파일', value: finding.file },
-          { label: '라인', value: `${finding.line}` },
-          { label: '심볼', value: finding.symbol },
-          { label: '규칙', value: `${finding.ruleId} · ${finding.what}` },
+          line(t('detail.file'), finding.file),
+          line(t('detail.line'), `${finding.line}`),
+          line(t('detail.symbol'), finding.symbol),
+          line(t('selection.rule'), `${finding.ruleId} · ${finding.what}`),
         ],
-        clipboardText: `파일: ${finding.file}\n라인: ${finding.line}\n심볼: ${finding.symbol}\n규칙: ${finding.ruleId} (${finding.what})`,
       }
     }
 
@@ -542,14 +682,14 @@ export default function App() {
       const path = graph.dataAccess?.writePaths.find((item) => item.id === selection.key)
       if (!path) return null
       return {
+        kind: 'WritePath',
+        id: path.id,
         nodeId: path.methodNodeId,
         lines: [
-          { label: '파일', value: path.file },
-          { label: '라인', value: `${path.startLine}` },
-          { label: '심볼', value: path.methodDisplayName },
-          { label: '쓰기 단계', value: path.steps.map((step) => step.label).join(' → ') },
+          line(t('detail.file'), path.file),
+          line(t('detail.line'), `${path.startLine}`),
+          line(t('detail.symbol'), path.methodDisplayName),
         ],
-        clipboardText: `파일: ${path.file}\n라인: ${path.startLine}\n심볼: ${path.methodDisplayName}`,
       }
     }
 
@@ -557,30 +697,27 @@ export default function App() {
       const step = graph.middleware?.steps.find((item) => item.id === selection.key)
       if (!step) return null
       return {
+        kind: 'MiddlewareStep',
+        id: step.id,
         nodeId: null,
         lines: [
-          { label: '파일', value: step.implementationFile ?? step.registrationFile },
-          { label: '등록', value: `${step.registrationFile}:${step.registrationLine}` },
-          { label: '심볼', value: step.name },
+          line(t('detail.file'), step.implementationFile ?? step.registrationFile),
+          line(t('detail.registration'), `${step.registrationFile}:${step.registrationLine}`),
+          line(t('detail.symbol'), step.name),
         ],
-        clipboardText: `파일: ${step.implementationFile ?? step.registrationFile}\n등록: ${step.registrationFile}:${step.registrationLine}\n심볼: ${step.name}`,
-      }
-    }
-
-    if (selection.type === 'dataSource' || selection.type === 'storageTarget' || selection.type === 'rule') {
-      return {
-        nodeId: null,
-        lines: [{ label: '대상', value: selection.key }],
-        clipboardText: `대상: ${selection.key}`,
       }
     }
 
     if (selection.type === 'namespace') {
       const count = graph.classes.filter((item) => item.namespace === selection.key).length
       return {
+        kind: 'Namespace',
+        id: selection.key,
         nodeId: null,
-        lines: [{ label: '네임스페이스', value: selection.key || '(전역)' }, { label: '클래스', value: `${count}개` }],
-        clipboardText: `네임스페이스: ${selection.key}\n클래스: ${count}개`,
+        lines: [
+          line(t('selection.namespace'), selection.key || '(global)'),
+          line(t('selection.class'), t('panel.count', { count })),
+        ],
       }
     }
 
@@ -588,13 +725,14 @@ export default function App() {
       const item = graph.classes.find((candidate) => candidate.id === selection.key)
       if (!item) return null
       return {
+        kind: 'Class',
+        id: item.id,
         nodeId: null,
         lines: [
-          { label: '파일', value: item.file },
-          { label: '라인', value: `${item.startLine}-${item.endLine}` },
-          { label: '심볼', value: item.id },
+          line(t('detail.file'), item.file),
+          line(t('detail.line'), `${item.startLine}-${item.endLine}`),
+          line(t('detail.symbol'), item.id),
         ],
-        clipboardText: `파일: ${item.file}\n라인: ${item.startLine}-${item.endLine}\n심볼: ${item.id}`,
       }
     }
 
@@ -602,46 +740,43 @@ export default function App() {
       const step = findStartupStep(graph, selection.key)
       if (!step) return null
       return {
+        kind: 'StartupStep',
+        id: selection.key,
         nodeId: null,
         lines: [
-          { label: '파일', value: step.file },
-          { label: '라인', value: `${step.line}` },
-          { label: '심볼', value: step.label },
+          line(t('detail.file'), step.file),
+          line(t('detail.line'), `${step.line}`),
+          line(t('detail.symbol'), step.label),
         ],
-        clipboardText: `파일: ${step.file}\n라인: ${step.line}\n심볼: ${step.label}`,
       }
     }
 
-    const node = nodeById.get(selection.key)
-    if (node) {
-      return {
-        nodeId: node.id,
-        lines: [
-          { label: '파일', value: node.file },
-          { label: '라인', value: `${node.startLine}-${node.endLine}` },
-          { label: '심볼', value: node.displayName },
-        ],
-        clipboardText: `파일: ${node.file}\n라인: ${node.startLine}-${node.endLine}\n심볼: ${node.displayName}`,
-      }
+    if (selection.type === 'dataSource' || selection.type === 'storageTarget' || selection.type === 'rule') {
+      // 이 셋은 아직 서버 문맥 계약에 없다. 가장 가까운 노드가 없으므로 문맥을 만들지 않는다.
+      return null
     }
 
-    // 노드가 없는 멤버(인터페이스 메서드 등)는 선언 줄만 담는다.
+    const node = forNode(selection.key)
+    if (node) return node
+
+    // 노드가 없는 멤버(인터페이스 메서드 등)는 그 멤버를 선언한 클래스로 문맥을 만든다.
     for (const item of graph.classes) {
       const member = item.members.find((candidate) => memberKey(item.id, candidate) === selection.key)
       if (!member) continue
       return {
+        kind: 'Class',
+        id: item.id,
         nodeId: null,
         lines: [
-          { label: '파일', value: item.file },
-          { label: '라인', value: `${member.startLine}-${member.endLine}` },
-          { label: '심볼', value: `${item.id}.${member.signature ?? member.name}` },
+          line(t('detail.file'), item.file),
+          line(t('detail.line'), `${member.startLine}-${member.endLine}`),
+          line(t('detail.symbol'), `${item.id}.${member.signature ?? member.name}`),
         ],
-        clipboardText: `파일: ${item.file}\n라인: ${member.startLine}-${member.endLine}\n심볼: ${item.id}.${member.signature ?? member.name}`,
       }
     }
 
     return null
-  }, [graph, selection, nodeById])
+  }, [graph, selection, nodeById, t])
 
   const staleSchemaNotice = graph && graph.classes.length > 0 &&
     graph.classes.every((item) => item.members.length === 0)
@@ -653,32 +788,36 @@ export default function App() {
 
   const graphMeta = viewMode === 'classmap'
     ? classDiagram
-      ? `클래스 ${classDiagram.visible.length}개 · 관계 ${classDiagram.relations.length}개 (상속 ${classDiagram.counts.inherit} · 구현 ${classDiagram.counts.implement} · 연관 ${classDiagram.counts.assoc} · 의존 ${classDiagram.counts.depend})`
-      : '솔루션을 분석해야 한다'
+      ? `클래스 ${classDiagram.visible.length} · 관계 ${classDiagram.relations.length} (상속 ${classDiagram.counts.inherit} · 구현 ${classDiagram.counts.implement} · 연관 ${classDiagram.counts.assoc} · 의존 ${classDiagram.counts.depend})`
+      : t('empty.needAnalysis')
     : viewMode === 'flowmap'
-      ? flowView?.meta ?? '솔루션을 분석해야 한다'
+      ? flowView?.meta ?? t('empty.needAnalysis')
       : viewMode === 'data'
         ? dataAccess
-          ? `접근 ${dataAccess.accesses.length}곳 · 쓰기 경로 ${dataAccess.writePaths.length}개 · 점검 ${dataAccess.findings.length}건`
-          : '솔루션을 분석해야 한다'
+          ? `접근 ${dataAccess.accesses.length} · 쓰기 경로 ${dataAccess.writePaths.length} · 점검 ${dataAccess.findings.length}`
+          : t('empty.needAnalysis')
       : viewMode === 'middleware'
         ? middlewarePipeline
-          ? `단계 ${middlewarePipeline.steps.length}개 · 점검 ${middlewarePipeline.findings.length}건`
-          : '솔루션을 분석해야 한다'
+          ? t('panel.steps', { count: middlewarePipeline.steps.length })
+          : t('empty.needAnalysis')
       : viewMode === 'startup'
         ? graph?.startupFlow
-          ? `서비스 등록 ${graph.startupFlow.serviceSteps.length}개 · 미들웨어 ${graph.startupFlow.middlewareSteps.length}개`
-          : '솔루션을 분석해야 한다'
+          ? t('panel.steps', {
+            count: graph.startupFlow.serviceSteps.length + graph.startupFlow.middlewareSteps.length,
+          })
+          : t('empty.needAnalysis')
         : callFlowWindow
           ? `${callFlowWindow.nodes.length} nodes · ${callFlowWindow.edges.length} edges`
-          : '진입점을 선택해야 한다'
+          : t('empty.needEntryPoint')
+
+  const selectedNodeIdForImpact = selection?.type === 'method' ? (nodeById.get(selection.key)?.id ?? null) : null
 
   return (
     <main>
       <header className="app-header">
         <div>
-          <div className="eyebrow">ASP.NET Core call explorer</div>
-          <h1>TraceLens</h1>
+          <div className="eyebrow">{t('app.eyebrow')}</div>
+          <h1>{t('app.title')}</h1>
         </div>
         <FreshnessBadge
           canReanalyze={graph !== null}
@@ -688,13 +827,14 @@ export default function App() {
         />
         <form onSubmit={(event) => { event.preventDefault(); void analyze() }}>
           <input
+            id="tracelens-target-input"
             value={solutionPath}
             onChange={(event) => setSolutionPath(event.target.value)}
-            placeholder="C:\repos\MyApp\MyApp.sln 또는 MyApp.Api.csproj"
-            aria-label="솔루션 또는 프로젝트 경로"
+            placeholder={t('app.pathPlaceholder')}
+            aria-label={t('app.pathLabel')}
           />
           <button type="button" className="browse" onClick={() => setPickerOpen(true)} disabled={busy}>
-            찾아보기…
+            {t('app.browse')}
           </button>
           <input
             ref={fileInputRef}
@@ -702,6 +842,7 @@ export default function App() {
             accept="application/json,.json"
             className="visually-hidden"
             tabIndex={-1}
+            aria-label={t('app.import')}
             onChange={(event) => {
               const file = event.target.files?.[0]
               event.target.value = '' // 같은 파일을 다시 골라도 onChange가 뜨도록 비워 둔다.
@@ -711,25 +852,47 @@ export default function App() {
           <button
             type="button"
             className="browse"
-            title="저장해 둔 분석 결과 파일을 골라 불러온다(다시 분석하지 않는다)."
+            title={t('app.importTitle')}
             disabled={busy}
             onClick={() => fileInputRef.current?.click()}
           >
-            불러오기
+            {t('app.import')}
           </button>
           <button
             type="button"
             className="browse"
-            title="지금 분석 결과를 원하는 위치에 파일로 저장한다."
+            title={t('app.saveTitle')}
             disabled={busy || !graph}
             onClick={saveGraphAs}
           >
-            저장
+            {t('app.save')}
           </button>
-          <button type="submit" className="primary" disabled={busy || !solutionPath.trim()}>
-            {busy ? '처리 중…' : '분석'}
+          <button id="tracelens-analyze-button" type="submit" className="primary" disabled={busy || !solutionPath.trim()}>
+            {busy ? t('app.analyzing') : t('app.analyze')}
           </button>
+          {busy && jobId && (
+            <button type="button" className="browse" onClick={() => void cancelAnalysis()}>
+              {t('app.cancel')}
+            </button>
+          )}
         </form>
+        <div className="header-tools">
+          <label className="lang-switch">
+            <span className="visually-hidden">{t('lang.label')}</span>
+            <select value={lang} onChange={(event) => setLang(event.target.value as Language)} aria-label={t('lang.label')}>
+              <option value="ko">{t('lang.ko')}</option>
+              <option value="en">{t('lang.en')}</option>
+            </select>
+          </label>
+          <button type="button" className="browse" onClick={() => setGuideOpen((value) => !value)}>
+            {guideOpen ? t('app.guideClose') : t('app.guide')}
+          </button>
+          {graph && (
+            <button type="button" className="browse" onClick={() => setDiffOpen((value) => !value)}>
+              {t('diff.title')}
+            </button>
+          )}
+        </div>
       </header>
 
       {pickerOpen && (
@@ -758,56 +921,108 @@ export default function App() {
       />
 
       {error && <div className="global-error">{error}</div>}
+      {progress && <div className="analysis-progress" aria-live="polite">{progress}</div>}
+      {summary?.notice && <div className="analysis-notice">{summary.notice}</div>}
       {summary && (
         <div className="analysis-summary">
-          진입점 {summary.entryPointCount} · 네임스페이스 {namespaces.length} · 클래스 {summary.classCount}
-          (인터페이스 {summary.interfaceCount}) · 멤버 {summary.memberCount} · 메서드 {summary.nodeCount}
-          · 호출 엣지 {summary.edgeCount}
+          {t('summary.entryPoints', { count: summary.entryPointCount })}
+          {summary.minimalApiCount ? ` (${t('summary.minimalApi', { count: summary.minimalApiCount })})` : ''}
+          {' · '}{t('summary.namespaces', { count: namespaces.length })}
+          {' · '}{t('summary.classes', { count: summary.classCount })}
+          {' ('}{t('summary.interfaces', { count: summary.interfaceCount })}{')'}
+          {' · '}{t('summary.members', { count: summary.memberCount })}
+          {' · '}{t('summary.methods', { count: summary.nodeCount })}
+          {' · '}{t('summary.edges', { count: summary.edgeCount })}
           {(findingCounts.Critical + findingCounts.Warning + findingCounts.Info > 0) && (
-            <> · 점검 <b className="sev-inline critical">치명 {findingCounts.Critical}</b>
-              <b className="sev-inline warning">경고 {findingCounts.Warning}</b>
-              <b className="sev-inline info">정보 {findingCounts.Info}</b></>
+            <> · {t('summary.findings')} <b className="sev-inline critical">{t('summary.critical', { count: findingCounts.Critical })}</b>
+              <b className="sev-inline warning">{t('summary.warning', { count: findingCounts.Warning })}</b>
+              <b className="sev-inline info">{t('summary.info', { count: findingCounts.Info })}</b></>
           )}
-          · {Math.round(summary.graphSizeBytes / 1024)}KB · {summary.elapsedMs}ms
+          {graph?.diagnostics && graph.diagnostics.calls.inspected > 0 && (
+            <> · <span title={t('summary.resolutionHint')}>
+              {t('summary.resolution', {
+                resolved: graph.diagnostics.calls.resolved,
+                inspected: graph.diagnostics.calls.inspected,
+                rate: formatPercent(graph.diagnostics.calls.resolutionRate),
+              })}
+            </span></>
+          )}
+          {(summary.unresolvedCallSites ?? 0) > 0 && (
+            <> · {t('summary.unresolved', { count: summary.unresolvedCallSites ?? 0 })}</>
+          )}
+          {summary.graphSizeBytes > 0 && <> · {Math.round(summary.graphSizeBytes / 1024)}KB</>}
+          {summary.elapsedMs > 0 && <> · {summary.elapsedMs}ms</>}
           {summary.previousAnalyzedAt && (
-            <> · 재분석 {formatTime(summary.previousAnalyzedAt)} → {formatTime(summary.analyzedAt)}</>
+            <> · {t('summary.reanalyzed', {
+              from: formatTime(summary.previousAnalyzedAt),
+              to: formatTime(summary.analyzedAt),
+            })}</>
           )}
         </div>
       )}
 
+      {activeRecipe && (
+        <div className="recipe-banner">
+          <b>{lang === 'ko' ? activeRecipe.titleKo : activeRecipe.titleEn}</b>
+          <ol>
+            {(lang === 'ko' ? activeRecipe.stepsKo : activeRecipe.stepsEn).map((step) => <li key={step}>{step}</li>)}
+          </ol>
+          <div className="hint">
+            {t('recipes.prompt')}: “{lang === 'ko' ? activeRecipe.promptKo : activeRecipe.promptEn}”
+          </div>
+          <div className="hint">
+            {t('recipes.verify')}: {lang === 'ko' ? activeRecipe.verifyKo : activeRecipe.verifyEn}
+          </div>
+          <button type="button" className="link-button" onClick={() => setActiveRecipe(null)}>{t('ask.close')}</button>
+        </div>
+      )}
+
+      {!graph ? (
+        <WelcomePanel
+          samplePath={null}
+          busy={busy}
+          diagnostics={diagnostics}
+          onAnalyzeSample={() => setPickerOpen(true)}
+          onPickTarget={() => setPickerOpen(true)}
+          onRunDiagnostics={() => void runDiagnostics()}
+          onStartRecipe={startRecipe}
+        />
+      ) : (
       <section className="workspace" ref={workspaceRef}>
-        <aside className="panel side-panel">
+        <aside className="panel side-panel" id="tracelens-side-panel">
           <header>
             <span>
               {viewMode === 'classmap'
-                ? '네임스페이스'
+                ? t('panel.namespaces')
                 : viewMode === 'startup'
-                  ? '시작 흐름'
+                  ? t('panel.startup')
                   : viewMode === 'data'
-                    ? 'DB · 캐시'
+                    ? t('panel.data')
                     : viewMode === 'middleware'
-                      ? '파이프라인'
-                      : '진입점'}
+                      ? t('panel.pipeline')
+                      : t('panel.entryPoints')}
             </span>
             <small>
               {viewMode === 'classmap'
-                ? `${namespaces.length - hiddenNamespaces.size}/${namespaces.length} 표시`
+                ? t('panel.visible', { visible: namespaces.length - hiddenNamespaces.size, total: namespaces.length })
                 : viewMode === 'startup'
                   ? graph?.startupFlow
-                    ? `${graph.startupFlow.serviceSteps.length + graph.startupFlow.middlewareSteps.length}단계`
+                    ? t('panel.steps', {
+                      count: graph.startupFlow.serviceSteps.length + graph.startupFlow.middlewareSteps.length,
+                    })
                     : ''
                   : viewMode === 'data'
-                    ? dataAccess ? `데이터소스 ${dataAccess.dataSources.length}개` : ''
+                    ? dataAccess ? t('panel.dataSources', { count: dataAccess.dataSources.length }) : ''
                     : viewMode === 'middleware'
-                      ? middlewarePipeline ? `${middlewarePipeline.steps.length}단계` : ''
-                      : `${entryPoints.length}개`}
+                      ? middlewarePipeline ? t('panel.steps', { count: middlewarePipeline.steps.length }) : ''
+                      : t('panel.count', { count: entryPoints.length })}
             </small>
           </header>
           {viewMode === 'callflow' && (
             <EntryPointList
               entryPoints={entryPoints}
-              selectedNodeId={callFlowEntry?.nodeId ?? null}
-              emptyMessage="솔루션을 분석하면 HTTP 진입점이 표시된다."
+              selectedEndpointId={callFlowEntry?.endpointId ?? null}
+              emptyMessage={t('empty.entryPoints')}
               onSelect={(entryPoint) => {
                 setCallFlowEntry(entryPoint)
                 setFocusStack([])
@@ -855,7 +1070,7 @@ export default function App() {
           {viewMode === 'startup' && (
             graph?.startupFlow
               ? <StartupFlowSidePanel flow={graph.startupFlow} />
-              : <div className="panel-message">솔루션을 분석하면 시작 흐름이 표시된다.</div>
+              : <div className="panel-message">{t('empty.startup')}</div>
           )}
           {viewMode === 'data' && (
             dataAccess
@@ -869,7 +1084,7 @@ export default function App() {
                   onSelect={setSelection}
                 />
               )
-              : <div className="panel-message">솔루션을 분석하면 DB·캐시 접근이 표시된다.</div>
+              : <div className="panel-message">{t('empty.data')}</div>
           )}
           {viewMode === 'middleware' && (
             middlewarePipeline
@@ -880,7 +1095,7 @@ export default function App() {
                   onSelect={setSelection}
                 />
               )
-              : <div className="panel-message">Program.cs를 찾으면 미들웨어 파이프라인이 표시된다.</div>
+              : <div className="panel-message">{t('empty.middleware')}</div>
           )}
         </aside>
 
@@ -893,19 +1108,7 @@ export default function App() {
 
         <section className="panel graph-area">
           <header>
-            <span>
-              {viewMode === 'classmap'
-                ? 'Class diagram'
-                : viewMode === 'flowmap'
-                  ? 'Flow map'
-                  : viewMode === 'startup'
-                    ? 'Startup flow'
-                    : viewMode === 'data'
-                      ? 'Data access'
-                      : viewMode === 'middleware'
-                        ? 'Middleware'
-                        : 'Call flow'}
-            </span>
+            <span>{t(`view.${viewMode}` as const)}</span>
             <small>{graphMeta}</small>
           </header>
           <Breadcrumb items={breadcrumbs} onNavigate={navigateBreadcrumb} />
@@ -941,7 +1144,7 @@ export default function App() {
             />
           )}
           {viewMode === 'callflow' && (
-            <Suspense fallback={<div className="panel-message">그래프 뷰를 불러오는 중이다.</div>}>
+            <Suspense fallback={<div className="panel-message">{t('empty.loadingGraph')}</div>}>
               <GraphView
                 graphWindow={callFlowWindow}
                 selectedNodeId={selection?.type === 'method' ? selection.key : null}
@@ -985,7 +1188,7 @@ export default function App() {
             (viewMode === 'data' && !dataAccess) ||
             (viewMode === 'middleware' && !middlewarePipeline) ||
             (viewMode === 'startup' && !graph?.startupFlow)) && (
-            <div className="diagram-wrap"><div className="graph-shell"><div className="panel-message">솔루션을 분석하면 여기에 그려진다.</div></div></div>
+            <div className="diagram-wrap"><div className="graph-shell"><div className="panel-message">{t('empty.analyzeFirst')}</div></div></div>
           )}
         </section>
 
@@ -997,30 +1200,39 @@ export default function App() {
         />
 
         <div className="right-column">
-          <section className="panel detail-panel">
+          {guideOpen && <GuidedWalkthrough completed={walkthroughDone} onClose={() => setGuideOpen(false)} />}
+          {diffOpen && (
+            <SnapshotDiffPanel
+              snapshotId={graph?.snapshotId ?? ''}
+              analyzing={busy}
+              onReanalyze={() => analyze()}
+              onClose={() => setDiffOpen(false)}
+            />
+          )}
+          <section className="panel detail-panel" id="tracelens-detail-panel">
             <header>
-              <span>선택한 항목</span>
+              <span>{t('panel.selected')}</span>
               <small>
                 {selection?.type === 'class'
-                  ? '클래스'
+                  ? t('selection.class')
                   : selection?.type === 'method'
-                    ? '메서드'
+                    ? t('selection.method')
                     : selection?.type === 'namespace'
-                      ? '네임스페이스'
+                      ? t('selection.namespace')
                       : selection?.type === 'startupStep'
-                        ? '시작 흐름 단계'
+                        ? t('selection.startupStep')
                         : selection?.type === 'finding'
-                          ? '점검 항목'
+                          ? t('selection.finding')
                           : selection?.type === 'writePath'
-                            ? '쓰기 경로'
+                            ? t('selection.writePath')
                             : selection?.type === 'dataSource'
-                              ? '데이터소스'
+                              ? t('selection.dataSource')
                               : selection?.type === 'storageTarget'
-                                ? '테이블 · 키'
+                                ? t('selection.storageTarget')
                                 : selection?.type === 'rule'
-                                  ? '규칙'
+                                  ? t('selection.rule')
                                   : selection?.type === 'middlewareStep'
-                                    ? '미들웨어 단계'
+                                    ? t('selection.middlewareStep')
                                     : ''}
               </small>
             </header>
@@ -1043,9 +1255,19 @@ export default function App() {
               />
             )}
           </section>
-          <AskPanel context={askContext} />
+          <ImpactPanel
+            nodeId={selectedNodeIdForImpact}
+            snapshotId={graph?.snapshotId ?? ''}
+            onOpenEntryPoint={openEntryPointFromImpact}
+          />
+          <AskPanel
+            context={askContext}
+            snapshotId={graph?.snapshotId ?? ''}
+            onContextCopied={() => completeStep('context')}
+          />
         </div>
       </section>
+      )}
     </main>
   )
 }
@@ -1081,3 +1303,6 @@ function findClassIdByMemberKey(graph: GraphDocument | null, key: string): strin
 
   return null
 }
+
+/** 사용하지 않는 레시피 목록을 참조해서 트리 셰이킹으로 사라지지 않게 한다. */
+export const availableRecipes = allRecipes

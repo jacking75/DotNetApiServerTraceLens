@@ -1,0 +1,57 @@
+namespace TraceLens.Analyzer.Models;
+
+/// <param name="SampleErrors">프로젝트마다 최대 5건만 남긴다. 전체 오류를 보관하려는 목적이 아니다.</param>
+public sealed record AnalyzedProject(
+    string Name,
+    string Path,
+    bool Loaded,
+    int ErrorCount,
+    IReadOnlyList<string> SampleErrors);
+
+/// <summary>
+/// 호출 지점 판정의 개수. 분모인 <paramref name="Inspected"/>는 <b>솔루션 안 대상</b>을 부른 호출 지점만 센다.
+/// 프레임워크·패키지 호출(<paramref name="External"/>)은 애초에 그래프의 대상이 아니라 분모에서 뺀다.
+/// </summary>
+public sealed record CallResolutionStats(
+    int Inspected,
+    int Resolved,
+    int Direct,
+    int DiRegistration,
+    int SingleImplementation,
+    int Ambiguous,
+    int Unresolved,
+    int External)
+{
+    public static CallResolutionStats Empty { get; } = new(0, 0, 0, 0, 0, 0, 0, 0);
+
+    /// <summary>해석률 = 해석한 지원 대상 호출 지점 / 검사한 지원 대상 호출 지점. 호출 "정확도"와는 다른 값이다.</summary>
+    public double ResolutionRate => Inspected == 0 ? 1d : Math.Round((double)Resolved / Inspected, 4);
+}
+
+/// <summary>
+/// 이번 분석에서 무엇을 보고 무엇을 못 봤는지 숫자와 이유로 남긴다.
+/// "정확도 n%" 같은 분모 없는 표현 대신 이 값만 화면과 문맥에 쓴다.
+/// </summary>
+public sealed record AnalysisDiagnostics(
+    int TotalProjects,
+    int LoadedProjects,
+    int ProjectsWithCompileErrors,
+    IReadOnlyList<AnalyzedProject> Projects,
+    CallResolutionStats Calls,
+    IReadOnlyList<string> ExcludedNamespacePrefixes,
+    int MaxCallDepth,
+    bool DepthLimitReached,
+    string AnalysisScope,
+    IReadOnlyList<string> Limitations)
+{
+    public static AnalysisDiagnostics Empty { get; } = new(
+        0, 0, 0, [], CallResolutionStats.Empty, [], 0, false, "solution", []);
+
+    /// <summary>분석 시작과 끝 사이에 입력 파일이 바뀌었는지. 자동으로 다시 분석하지는 않는다.</summary>
+    public bool ChangedDuringAnalysis { get; init; }
+
+    public IReadOnlyList<string> ChangedDuringAnalysisFiles { get; init; } = [];
+
+    /// <summary>진입점을 하나도 찾지 못했을 때 그것이 "정상"이 아님을 알리는 안내.</summary>
+    public IReadOnlyList<string> EntryPointNotes { get; init; } = [];
+}

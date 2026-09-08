@@ -5,6 +5,7 @@ import { buildClassDiagram, type ClassDiagramOptions } from '../graph/classDiagr
 import { buildEntryFlow, buildEntryMap } from '../graph/flowMap'
 import { collapseEdgesToClasses, deriveRelations } from '../graph/relations'
 import type { GraphClass, GraphDocument, GraphNode } from '../types/graph'
+import { entryPoint, graphDefaults, nodeDefaults } from '../types/testFactories'
 import { ClassDiagram } from './ClassDiagram'
 import { FlowDiagram } from './FlowDiagram'
 
@@ -20,6 +21,7 @@ const node = (id: string, classId: string): GraphNode => ({
   accessibility: 'Public',
   returnType: 'Task',
   parameterTypes: [],
+  ...nodeDefaults,
 })
 
 const graphClass = (id: string, overrides: Partial<GraphClass> = {}): GraphClass => ({
@@ -47,7 +49,7 @@ const graph: GraphDocument = {
   solutionPath: 'App.sln',
   rootDirectory: '.',
   analyzedAt: '2026-01-01T00:00:00Z',
-  entryPoints: [{ nodeId: 'App.Api.OrdersController.Create', httpMethod: 'POST', route: '/api/orders' }],
+  entryPoints: [entryPoint('App.Api.OrdersController.Create', 'POST', '/api/orders')],
   classes: [
     graphClass('App.Api.OrdersController', {
       kind: 'Controller',
@@ -80,6 +82,7 @@ const graph: GraphDocument = {
   ],
   edges: [{ from: 'App.Api.OrdersController.Create', to: 'App.Core.OrderService.CreateAsync' }],
   fileHashes: {},
+  ...graphDefaults,
   startupFlow: null,
   dataAccess: null,
   middleware: null,

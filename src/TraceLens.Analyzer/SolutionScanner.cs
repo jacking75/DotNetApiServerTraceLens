@@ -11,6 +11,8 @@ namespace TraceLens.Analyzer;
 /// 그 멤버를 문서 단위로 한 번씩 훑는다.
 /// 진입점에서 도달하지 못하는 클래스도 목록에 넣기 위해 항상 실행하고,
 /// <see cref="AnalysisScope.Solution"/>일 때는 같은 순회에서 호출 엣지까지 모은다.
+/// Minimal API 핸들러가 람다·로컬 함수인 경우에는 타입 멤버 순회로 잡히지 않으므로
+/// <paramref name="extraCallables"/>로 받아 같은 규칙으로 노드·엣지를 만든다.
 /// </summary>
 public sealed class SolutionScanner(
     NodeClassifier nodeClassifier,
@@ -22,6 +24,7 @@ public sealed class SolutionScanner(
         TraceLensConfig config,
         string solutionDirectory,
         bool collectCalls,
+        IReadOnlyList<AnalysisCallable> extraCallables,
         CancellationToken cancellationToken = default)
     {
         var classes = new Dictionary<string, ClassBuilder>(StringComparer.Ordinal);
@@ -29,9 +32,14 @@ public sealed class SolutionScanner(
         var edges = new HashSet<GraphEdge>();
         var pendingConstructors = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
         var memberStopwatch = new Stopwatch();
+        var collector = new CallSiteCollector(config.IncludeCallSites, config.MaxCallSitesPerEdge, config.MaxBoundaryCallSites);
+        var extraByDocument = extraCallables
+            .GroupBy(item => item.Declaration.SyntaxTree.FilePath, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.OrdinalIgnoreCase);
 
         foreach (var project in loaded.Solution.Projects.Where(project => loaded.AnalyzableProjectIds.Contains(project.Id)))
         {
+            var projectKey = project.AssemblyName;
             foreach (var document in project.Documents.Where(document => document.SourceCodeKind == SourceCodeKind.Regular))
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -90,9 +98,9 @@ public sealed class SolutionScanner(
                         continue;
                     }
 
-                    foreach (var (memberSyntax, method) in EnumerateMembers(typeSyntax, model, cancellationToken))
+                    foreach (var callable in EnumerateCallables(typeSyntax, model, projectKey, cancellationToken))
                     {
-                        var node = GraphNodes.Create(method, memberSyntax, solutionDirectory, builder.Kind);
+                        var node = GraphNodes.Create(callable, solutionDirectory, builder.Kind);
                         if (node is null)
                         {
                             continue;
@@ -105,17 +113,32 @@ public sealed class SolutionScanner(
                         }
 
                         nodes[node.Id] = node;
-                        foreach (var called in invocationResolver.ResolveCalls(
-                                     model,
-                                     memberSyntax,
-                                     solutionDirectory,
-                                     config,
-                                     cancellationToken))
-                        {
-                            edges.Add(new GraphEdge(node.Id, SymbolNames.GetNodeId(called)));
-                            QueueConstructorNode(called, solutionDirectory, config, nodes, pendingConstructors, cancellationToken);
-                        }
+                        AddCalls(model, callable, node.Id, solutionDirectory, config, nodes, edges, pendingConstructors, collector, cancellationToken);
                     }
+                }
+
+                if (!collectCalls || !extraByDocument.TryGetValue(document.FilePath ?? string.Empty, out var extras))
+                {
+                    continue;
+                }
+
+                // Minimal API 람다 핸들러: 타입 멤버가 아니므로 여기서 따로 노드를 만든다.
+                foreach (var callable in extras)
+                {
+                    var kind = nodeClassifier.Classify(callable.ContainingType, config);
+                    var node = GraphNodes.Create(callable, solutionDirectory, kind);
+                    if (node is null)
+                    {
+                        continue;
+                    }
+
+                    nodes[node.Id] = node;
+                    if (classes.TryGetValue(node.ClassId, out var owner))
+                    {
+                        owner.AddMethod(node.Id);
+                    }
+
+                    AddCalls(model, callable, node.Id, solutionDirectory, config, nodes, edges, pendingConstructors, collector, cancellationToken);
                 }
             }
         }
@@ -148,6 +171,7 @@ public sealed class SolutionScanner(
             memberCount,
             memberStopwatch.ElapsedMilliseconds);
 
+        var nodeIds = nodes.Keys.ToHashSet(StringComparer.Ordinal);
         return new SolutionScanResult(
             built,
             nodes.Values.OrderBy(node => node.Id, StringComparer.Ordinal).ToArray(),
@@ -157,7 +181,38 @@ public sealed class SolutionScanner(
                 .ThenBy(edge => edge.To, StringComparer.Ordinal)
                 .ToArray(),
             memberCount,
-            memberStopwatch.ElapsedMilliseconds);
+            memberStopwatch.ElapsedMilliseconds,
+            collector.Build(nodeIds),
+            collector.Stats,
+            collector.DroppedForLimit);
+    }
+
+    private void AddCalls(
+        SemanticModel model,
+        AnalysisCallable callable,
+        string fromNodeId,
+        string solutionDirectory,
+        TraceLensConfig config,
+        Dictionary<string, GraphNode> nodes,
+        HashSet<GraphEdge> edges,
+        Dictionary<string, GraphNode> pendingConstructors,
+        CallSiteCollector collector,
+        CancellationToken cancellationToken)
+    {
+        foreach (var call in invocationResolver.ResolveCalls(
+                     model, callable.Declaration, solutionDirectory, config, cancellationToken))
+        {
+            if (!call.IsEdge || call.Target is null)
+            {
+                collector.Add(fromNodeId, null, call);
+                continue;
+            }
+
+            var targetId = CallableIds.ForMethod(call.Target);
+            edges.Add(new GraphEdge(fromNodeId, targetId));
+            collector.Add(fromNodeId, targetId, call);
+            QueueConstructorNode(call.Target, solutionDirectory, config, nodes, pendingConstructors, cancellationToken);
+        }
     }
 
     /// <summary>멤버 수집이 분석 시간에서 차지하는 몫을 따로 재 둔다(설정으로 끌 수 있는 기능이라 비용을 알아야 한다).</summary>
@@ -185,36 +240,54 @@ public sealed class SolutionScanner(
         }
     }
 
-    /// <summary>노드로 만들 멤버를 돌려준다. 메서드와 명시적 생성자, 그리고 본문이 있는 프로퍼티를 대상으로 한다.</summary>
-    private static IEnumerable<(SyntaxNode Syntax, IMethodSymbol Method)> EnumerateMembers(
+    /// <summary>
+    /// 노드로 만들 callable을 돌려준다. 메서드와 명시적 생성자, 본문이 있는 프로퍼티,
+    /// 그리고 그 안에 선언된 로컬 함수를 대상으로 한다(로컬 함수는 별도 호출 대상이 될 수 있다).
+    /// </summary>
+    private static IEnumerable<AnalysisCallable> EnumerateCallables(
         TypeDeclarationSyntax typeSyntax,
         SemanticModel model,
+        string projectKey,
         CancellationToken cancellationToken)
     {
         foreach (var member in typeSyntax.Members)
         {
+            SyntaxNode? syntax = null;
+            IMethodSymbol? symbol = null;
             switch (member)
             {
-                case MethodDeclarationSyntax methodSyntax
-                    when model.GetDeclaredSymbol(methodSyntax, cancellationToken) is IMethodSymbol method:
-                    yield return (methodSyntax, method);
+                case MethodDeclarationSyntax methodSyntax:
+                    symbol = model.GetDeclaredSymbol(methodSyntax, cancellationToken) as IMethodSymbol;
+                    syntax = methodSyntax;
                     break;
 
-                case ConstructorDeclarationSyntax constructorSyntax
-                    when model.GetDeclaredSymbol(constructorSyntax, cancellationToken) is IMethodSymbol constructor:
-                    yield return (constructorSyntax, constructor);
+                case ConstructorDeclarationSyntax constructorSyntax:
+                    symbol = model.GetDeclaredSymbol(constructorSyntax, cancellationToken) as IMethodSymbol;
+                    syntax = constructorSyntax;
                     break;
 
                 // 자동 프로퍼티는 실행할 코드가 없으므로 본문이 있는 프로퍼티만 노드로 만든다.
                 case PropertyDeclarationSyntax propertySyntax when HasBody(propertySyntax):
                     var property = model.GetDeclaredSymbol(propertySyntax, cancellationToken) as IPropertySymbol;
-                    var accessor = property?.GetMethod ?? property?.SetMethod;
-                    if (accessor is not null)
-                    {
-                        yield return (propertySyntax, accessor);
-                    }
-
+                    symbol = property?.GetMethod ?? property?.SetMethod;
+                    syntax = propertySyntax;
                     break;
+            }
+
+            if (symbol is null || syntax is null)
+            {
+                continue;
+            }
+
+            yield return AnalysisCallable.ForMethod(symbol, syntax, projectKey);
+
+            foreach (var localFunction in syntax.DescendantNodes().OfType<LocalFunctionStatementSyntax>())
+            {
+                if (model.GetDeclaredSymbol(localFunction, cancellationToken) is IMethodSymbol local)
+                {
+                    yield return AnalysisCallable.ForLocalFunction(
+                        local, localFunction, projectKey, CallableIds.ForMethod(symbol));
+                }
             }
         }
     }
@@ -336,4 +409,7 @@ public sealed record SolutionScanResult(
     IReadOnlyList<GraphNode> Nodes,
     IReadOnlyList<GraphEdge> Edges,
     int MemberCount,
-    long MemberElapsedMs);
+    long MemberElapsedMs,
+    IReadOnlyList<CallSite> CallSites,
+    CallResolutionStats Stats,
+    int DroppedCallSites);

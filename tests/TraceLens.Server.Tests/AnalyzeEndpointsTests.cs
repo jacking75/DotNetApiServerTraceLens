@@ -133,7 +133,10 @@ public sealed class AnalyzeEndpointsTests
 
     private sealed class StubAnalyzer(AnalysisResult result) : ITraceLensAnalyzer
     {
-        public Task<AnalysisResult> AnalyzeAsync(string solutionPath, CancellationToken cancellationToken = default) =>
+        public Task<AnalysisResult> AnalyzeAsync(
+            string solutionPath,
+            IProgress<AnalysisProgress>? progress = null,
+            CancellationToken cancellationToken = default) =>
             Task.FromResult(result);
     }
 }
