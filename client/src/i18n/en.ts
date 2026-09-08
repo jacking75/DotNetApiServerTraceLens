@@ -343,6 +343,12 @@ export const en: Dictionary = {
   'detail.resolution.ambiguous': 'Several candidates, not resolved',
   'detail.resolution.unresolved': 'Symbol could not be resolved',
   'detail.resolution.external': 'Call outside the solution',
+  'detail.entryPointNotes': 'Endpoint notes',
+  'detail.callEvidence': 'Call evidence ({count})',
+  'detail.callEvidenceHint': 'Why this edge exists. Click a file:line to read the real code.',
+  'detail.boundaryCalls': 'Unresolved calls ({count})',
+  'detail.boundaryHintFull': 'Calls whose symbol could not be pinned down, or that had several candidates, so no edge was created. An empty list here does not mean "no calls".',
+  'detail.noEvidence': 'This analysis carries no call evidence (turned off in config, or an older format).',
 
   'picker.title': 'Pick a target',
   'picker.up': 'Parent folder',

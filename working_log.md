@@ -1,3 +1,21 @@
+## 2026-09-08 17:36 KST - README 재작성(무엇·왜·장점 중심)과 상세 패널의 호출 근거 표시
+
+- README.md와 README_kr.md를 같은 구조로 다시 썼다. "왜 필요한가"(도구 없을 때 vs 있을 때 5가지 상황),
+  "무엇이 다른가"(근거·못 본 것 표시·단일 문맥 계약·로컬 전용·명시적 신선도·ASP.NET Core 특화 6가지),
+  기능 상세(여섯 보기 · AI 문맥 · MCP · 변경 영향 · 전후 비교 · 신선도 · 저장/공유 · CLI/배포),
+  빠른 시작, 지원 범위, 아키텍처(mermaid), 기술 구성, 문서 순으로 배치했다.
+- README를 쓰다가 "상세 패널이 호출 근거를 보여 준다"는 서술이 실제와 다른 것을 발견했다. 문구를 낮추는
+  대신 로드맵 §7.2 요구대로 구현했다 — 메서드 상세에 **호출 근거**(대상·파일:줄·해석 종류·사유)와
+  **확정하지 못한 호출**(경계) 절을 넣고, 진입점의 추정 사유(notes)도 라우트 옆에 표시한다. i18n 키와
+  스타일을 함께 추가했다.
+- 브라우저로 확인했다. `POST /api/Orders` 선택 시 "호출 근거 (1) → OrderService.CreateAsync
+  Controllers/OrdersController.cs:22 [DI 등록으로 연결]"과 "확정하지 못한 호출 (0)"이 뜬다.
+- 확인 중에 `tracelens serve`가 CLI 출력 폴더에 복사된 `wwwroot`를 서빙해서, `npm run build`만 하고
+  `dotnet build`를 안 하면 옛 화면이 뜨는 것을 발견했다. CONTRIBUTING.md에 순서 주의사항을 적었다
+  (`pack.ps1`은 이미 순서를 지키고, `run.ps1`은 Server의 wwwroot를 직접 서빙해 영향이 없다).
+- 검증: `dotnet build` 경고 0개, `dotnet test` 84개 통과, `npm test` 41개 통과, `npm run build` 성공.
+  README의 표 열 수·상대 링크 대상·mermaid 괄호 균형을 스크립트로 확인했다.
+
 ## 2026-09-08 13:10 KST - 보급·바이브 코딩 로드맵(A~I) 전체 구현과 schema v7
 
 - **분석(C)**: `MinimalApiEntryPointScanner`를 추가해 `MapGet/MapPost/MapMethods/MapGroup`(중첩 포함)과 메서드 그룹·람다·로컬 함수 핸들러, 확장 메서드 안에 숨은 등록(깊이 4)까지 진입점으로 잡는다. 엔드포인트 ID를 핸들러 노드 ID와 분리해 한 메서드의 여러 라우트를 모두 남기고, `InvocationResolver`는 심볼 목록 대신 해석 결과(직접/DI/유일 구현체/모호/미해석)를 돌려준다. 모호한 후보를 첫 번째로 확정하던 동작을 없애고, 람다·로컬 함수 본문 호출이 부모 메서드의 직접 호출로 잡히지 않도록 callable 경계에서 순회를 멈춘다.

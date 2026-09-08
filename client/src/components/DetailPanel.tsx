@@ -2,7 +2,11 @@ import { lazy, Suspense, useMemo } from 'react'
 import { classMembers, memberKey, memberSign, shortenNamespace, stereotypeOf } from '../graph/classDiagram'
 import { relationLabels, type ClassRelation, type RelationType } from '../graph/relations'
 import { findStartupStep } from '../graph/startupFlow'
+import { useI18n } from '../i18n/I18nProvider'
+import type { TranslationKey } from '../i18n/ko'
 import type {
+  CallResolution,
+  CallSite,
   EntryPoint,
   GraphClass,
   GraphClassMember,
@@ -257,6 +261,12 @@ function MethodDetail({
   const callees = graph.edges.filter((edge) => edge.from === nodeId).map((edge) => edge.to)
   const callers = graph.edges.filter((edge) => edge.to === nodeId).map((edge) => edge.from)
 
+  // 호출 근거: 이 노드가 부르거나 이 노드를 부르는 확정 엣지의 실제 호출 줄.
+  const evidence = graph.callSites.filter(
+    (site) => site.to.length > 0 && (site.from === nodeId || site.to === nodeId))
+  // 경계: 확정하지 못해 엣지를 만들지 않은 호출. 목록이 비었다고 "호출 없음"이 아니다.
+  const boundaries = graph.callSites.filter((site) => site.to.length === 0 && site.from === nodeId)
+
   // 노드가 없으면(인터페이스 선언 등) 멤버 선언 줄을 대신 보여준다.
   const target: SourceTarget | null = node
     ? { file: node.file, startLine: node.startLine, endLine: node.endLine }
@@ -284,8 +294,19 @@ function MethodDetail({
         <dd>{member?.member.accessibility ?? node?.accessibility ?? 'Public'}</dd>
         <dt>선언 클래스</dt>
         <dd>{graphClass?.id ?? node?.classId ?? '-'}</dd>
-        {entry && <><dt>라우트</dt><dd>{entry.httpMethod} {entry.route}</dd></>}
+        {entry && (
+          <>
+            <dt>라우트</dt>
+            <dd>
+              {entry.httpMethod} {entry.route}
+              {entry.confidence === 'Estimated' && <span className="chip small warn">~</span>}
+            </dd>
+          </>
+        )}
       </dl>
+      {entry && entry.notes.length > 0 && (
+        <div className="detail-hint">{entry.notes.join(' ')}</div>
+      )}
 
       <PillSection
         title={`호출하는 대상 (${callees.length})`}
@@ -294,6 +315,14 @@ function MethodDetail({
       <PillSection
         title={`호출하는 쪽 (${callers.length})`}
         items={callers.map((id) => ({ label: nodeNameById.get(id) ?? id, onClick: () => actions.onSelect({ type: 'method', key: id }) }))}
+      />
+
+      <CallEvidenceSection
+        evidence={evidence}
+        boundaries={boundaries}
+        hasCallSites={graph.callSites.length > 0}
+        nodeId={nodeId}
+        nodeNameById={nodeNameById}
       />
 
       <div className="detail-section">
@@ -312,6 +341,76 @@ function MethodDetail({
         )}
       </div>
     </>
+  )
+}
+
+/**
+ * 호출 근거와 경계 목록.
+ * 엣지가 "왜" 생겼는지(직접 호출·DI 등록·유일 구현체 추정)와, 확정하지 못해 엣지를 만들지 않은 호출을 함께 보여 준다.
+ */
+function CallEvidenceSection({
+  evidence,
+  boundaries,
+  hasCallSites,
+  nodeId,
+  nodeNameById,
+}: {
+  evidence: CallSite[]
+  boundaries: CallSite[]
+  hasCallSites: boolean
+  nodeId: string
+  nodeNameById: Map<string, string>
+}) {
+  const { t } = useI18n()
+  const resolutionKeys: Record<CallResolution, TranslationKey> = {
+    Direct: 'detail.resolution.direct',
+    DiRegistration: 'detail.resolution.diRegistration',
+    SingleImplementation: 'detail.resolution.singleImplementation',
+    Ambiguous: 'detail.resolution.ambiguous',
+    Unresolved: 'detail.resolution.unresolved',
+    External: 'detail.resolution.external',
+  }
+
+  if (!hasCallSites) {
+    return (
+      <div className="detail-section">
+        <h4>{t('detail.callEvidence', { count: 0 })}</h4>
+        <div className="detail-hint">{t('detail.noEvidence')}</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="detail-section">
+      <h4>{t('detail.callEvidence', { count: evidence.length })}</h4>
+      <div className="detail-hint">{t('detail.callEvidenceHint')}</div>
+      <ul className="evidence-list">
+        {evidence.map((site, index) => (
+          <li key={`${site.from}-${site.to}-${site.file}-${site.line}-${index}`}>
+            <span className="evidence-dir">{site.from === nodeId ? '→' : '←'}</span>
+            <b>{nodeNameById.get(site.from === nodeId ? site.to : site.from) ?? (site.from === nodeId ? site.to : site.from)}</b>
+            <code>{site.file}:{site.line}</code>
+            <span className={`chip small${site.confidence === 'Estimated' ? ' warn' : ''}`}>
+              {t(resolutionKeys[site.resolution])}
+            </span>
+            {site.note && <div className="detail-hint">{site.note}</div>}
+          </li>
+        ))}
+      </ul>
+
+      <h4>{t('detail.boundaryCalls', { count: boundaries.length })}</h4>
+      <div className="detail-hint">{t('detail.boundaryHintFull')}</div>
+      <ul className="evidence-list">
+        {boundaries.map((site, index) => (
+          <li key={`${site.file}-${site.line}-${index}`}>
+            <b>{site.declaredTarget}</b>
+            <code>{site.file}:{site.line}</code>
+            <span className="chip small warn">{t(resolutionKeys[site.resolution])}</span>
+            {site.note && <div className="detail-hint">{site.note}</div>}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 

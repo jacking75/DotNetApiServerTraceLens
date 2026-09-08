@@ -340,6 +340,12 @@ export const ko = {
   'detail.resolution.ambiguous': '후보가 여러 개라 확정하지 못함',
   'detail.resolution.unresolved': '심볼을 해석하지 못함',
   'detail.resolution.external': '솔루션 밖 호출',
+  'detail.entryPointNotes': '진입점 참고',
+  'detail.callEvidence': '호출 근거 ({count})',
+  'detail.callEvidenceHint': '이 엣지가 왜 생겼는지다. 파일·줄을 눌러 실제 코드를 확인할 수 있다.',
+  'detail.boundaryCalls': '확정하지 못한 호출 ({count})',
+  'detail.boundaryHintFull': '심볼을 확정하지 못했거나 후보가 여러 개여서 엣지를 만들지 않은 호출이다. 이 목록이 비었다고 "호출 없음"으로 볼 수는 없다.',
+  'detail.noEvidence': '이 분석에는 호출 근거가 없다(설정에서 껐거나 옛 형식이다).',
 
   'picker.title': '분석 대상 고르기',
   'picker.up': '상위 폴더',
