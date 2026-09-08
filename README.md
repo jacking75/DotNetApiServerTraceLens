@@ -15,6 +15,10 @@ tracing.
 4) after the AI edits code → "Re-analyze and compare"          # see what actually changed
 ```
 
+![TraceLens Call Flow view analyzing a real ASP.NET Core service, with the detail panel showing call evidence for each edge](docs/screenshots/callflow.jpg)
+
+*Analyzing a real multi-controller service (41 entry points, 564 classes, 732 methods) — not a toy example. The detail panel on the right shows, for every edge, why it exists: direct call, resolved via DI registration, or an estimated single-implementation guess. More screens in [docs/manual.html](docs/manual.html).*
+
 ---
 
 ## Why you would want this

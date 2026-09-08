@@ -245,6 +245,23 @@
   .callout.note { background: var(--info-soft); border-color: transparent; }
   .callout.note strong { color: var(--info); }
 
+  figure.shot {
+    margin: 16px 0 22px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    background: var(--app-bg);
+  }
+  figure.shot img { display: block; width: 100%; height: auto; }
+  figure.shot figcaption {
+    padding: 10px 16px;
+    font-size: 12.8px;
+    color: var(--text-soft);
+    background: var(--card);
+    border-top: 1px solid var(--border);
+  }
+
   .kbd {
     display: inline-block;
     background: var(--card);
@@ -955,6 +972,10 @@ npm run dev</code></pre>
         클래스 다이어그램·전체 흐름도·시작 흐름에서 같은 메서드를 선택했을 때도 똑같이 나온다(상세
         패널을 공유하기 때문이다).
       </p>
+      <figure class="shot">
+        <img src="screenshots/callflow.jpg" alt="호출 흐름 보기 — 실제 ASP.NET Core 프로젝트(com2us-taskbar-hero의 GameServer)를 분석해 AdminBossRushController.RankWarmup 진입점을 펼치고, 오른쪽 상세 패널에 호출 근거 3건(직접 호출·DI 등록으로 연결)이 표시된 화면">
+        <figcaption>실제 프로젝트(GameServer, 진입점 41 · 클래스 564 · 메서드 732)를 분석한 화면. 오른쪽 상세 패널의 "호출 근거"에서 각 엣지가 직접 호출인지 DI 등록으로 이어졌는지 확인할 수 있다.</figcaption>
+      </figure>
 
       <h3 class="sub-h" id="view-classmap">클래스 다이어그램 — 솔루션 전체를 UML로 한 번에 본다</h3>
       <p>
@@ -1002,6 +1023,10 @@ npm run dev</code></pre>
         <li>줌 50 / 75 / 100% / 맞춤.</li>
       </ul>
       <p class="text-soft">클래스가 150개를 넘으면 멤버 접힘 + 의존 끔 + 맞춤 줌으로 자동으로 시작하고, 범위를 좁히라는 안내가 뜬다.</p>
+      <figure class="shot">
+        <img src="screenshots/classmap.jpg" alt="클래스 다이어그램 보기 — 왼쪽 네임스페이스 목록에서 GameServer.Controllers만 골라 좁힌 뒤, AdminApiControllerBase를 부모로 15개 컨트롤러가 상속선으로 뻗어나가는 트리 배치를 보여주는 화면">
+        <figcaption>클래스가 564개인 실제 솔루션에서 네임스페이스로 GameServer.Controllers만 좁혀서 본 트리 배치. AdminApiControllerBase를 상속하는 컨트롤러 15개가 한눈에 보인다.</figcaption>
+      </figure>
 
       <h3 class="sub-h" id="view-flowmap">전체 흐름도 — 진입점 지도에서 전 구간 흐름으로</h3>
       <p>
@@ -1011,6 +1036,10 @@ npm run dev</code></pre>
         ↔ 줄로 잇는다. 깊이 제한(2 / 3 / 4 / 전체)에 걸려 안 보이는 하위 호출은 그 줄 오른쪽에
         <code>+n</code>으로, 자기 자신을 부르는 재귀는 <code>↺</code>로 표시된다.
       </p>
+      <figure class="shot">
+        <img src="screenshots/flowmap.jpg" alt="전체 흐름도 보기 — POST /api/game/consumable/use 진입점의 전 구간 흐름. GameConsumableController부터 ConsumableService·ConsumableRepository·MasterDbProvider까지 메서드 단위로 클래스 박스가 이어진 화면">
+        <figcaption>진입점 지도에서 라우트(POST /api/game/consumable/use)를 눌러 들어간 메서드 단위 전 구간 흐름. 컨트롤러 → 서비스 → 리포지토리까지 실제 호출 경로가 그대로 보인다.</figcaption>
+      </figure>
 
       <h3 class="sub-h" id="view-startup">시작 흐름 — Program.cs가 실행되는 순서 그대로</h3>
       <p>
@@ -1021,6 +1050,10 @@ npm run dev</code></pre>
         같은)는 접혀 있다가 클릭하면 그 안에서 실제로 어떤 등록이 일어나는지 펼쳐 보여준다. 이 보기는
         호출 그래프가 아니라 Program.cs 하나만 읽는 별도의 타임라인이다.
       </p>
+      <figure class="shot">
+        <img src="screenshots/startup.jpg" alt="시작 흐름 보기 — Program.cs의 서비스 등록 57단계 중 GameDbFactory·IMasterDbLoader·IAuthTokenReader 등이 Singleton·Scoped 수명 배지와 함께 순서대로 나열된 화면">
+        <figcaption>Program.cs 하나를 소스 순서대로 읽어 만든 서비스 등록 타임라인(이 프로젝트는 전체 57단계). 각 등록에 Scoped/Singleton/Transient 수명 배지가 붙는다.</figcaption>
+      </figure>
 
       <h3 class="sub-h" id="view-data">DB · 캐시 — 무엇을 어떤 순서로 바꾸고, 실패하면 무엇이 남는가</h3>
       <p>
@@ -1047,6 +1080,10 @@ npm run dev</code></pre>
         경우에만 SHARD 규칙군과 "샤드 키" 단계가 켜진다. 상단 툴바의 "구성: 샤딩/단일 DB" 칩으로
         지금 어떤 설정으로 읽었는지 확인할 수 있다.
       </p>
+      <figure class="shot">
+        <img src="screenshots/data.jpg" alt="DB · 캐시 보상 처리 보기 — BossRushSeasonBatchScheduler.RunCycleAsync가 트랜잭션 없이 2단계로 저장소를 바꾸는 경로에서, 1번 SET season.SeasonId 단계가 실패해도 되돌리는 코드를 찾지 못해 실패 지점 격자에 빨간 칸으로 표시된 화면">
+        <figcaption>트랜잭션 없이 두 단계로 저장소를 바꾸는 실제 배치 코드의 보상 처리 판정. 1번에서 실패하면 무엇이 되돌아가지 않는지 격자로 보여준다(빨간 칸 = 되돌리는 코드를 찾지 못함).</figcaption>
+      </figure>
 
       <h3 class="sub-h" id="view-middleware">미들웨어 — 요청이 무엇을 통과하고 어디서 끊기는가</h3>
       <p>
@@ -1061,6 +1098,10 @@ npm run dev</code></pre>
         <tr><td>단락 지점</td><td>요청이 거기서 끊길 때 <b>실행되지 않는 것</b>과, 그래도 <b>실행되는 응답 후처리</b>를 나란히 보여준다.</td></tr>
         <tr><td>점검 결과</td><td>인증·인가·CORS 순서, 생성자에 Scoped 서비스를 받는 미들웨어, 엔드포인트 매핑 뒤에 등록해 실행되지 않는 미들웨어 등 MW 규칙 위반 목록.</td></tr>
       </table>
+      <figure class="shot">
+        <img src="screenshots/middleware.jpg" alt="미들웨어 보기 — RequestLoggingMiddleware부터 UseExceptionHandler·MapOpenApi·UseSwaggerUI·UseHttpsRedirection·GameAuthMiddleware까지 app.UseXxx() 등록 순서대로 파이프라인이 나열되고, UseSwaggerUI·UseHttpsRedirection 단계에 MW-012 점검 배지가 붙은 화면">
+        <figcaption>실제 Program.cs의 미들웨어 등록 순서 그대로 그린 파이프라인. UseSwaggerUI·UseHttpsRedirection처럼 조건부로 응답하고 끝나는 단계에는 실행 여부와 상태 코드, 점검 규칙(MW-012) 배지가 함께 붙는다.</figcaption>
+      </figure>
 
       <h4 class="mini-h">점검 결과 공통 규칙 — 확실도와 근거</h4>
       <p>DB·캐시와 미들웨어의 점검 결과는 항상 아래 두 배지를 함께 보여준다.</p>

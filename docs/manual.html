@@ -245,6 +245,23 @@
   .callout.note { background: var(--info-soft); border-color: transparent; }
   .callout.note strong { color: var(--info); }
 
+  figure.shot {
+    margin: 16px 0 22px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    background: var(--app-bg);
+  }
+  figure.shot img { display: block; width: 100%; height: auto; }
+  figure.shot figcaption {
+    padding: 10px 16px;
+    font-size: 12.8px;
+    color: var(--text-soft);
+    background: var(--card);
+    border-top: 1px solid var(--border);
+  }
+
   .kbd {
     display: inline-block;
     background: var(--card);
@@ -982,6 +999,10 @@ npm run dev</code></pre>
         way whenever you select the same method from Class Diagram, Full Flow Map, or Startup Flow,
         since they share the same detail panel.
       </p>
+      <figure class="shot">
+        <img src="screenshots/callflow.jpg" alt="Call Flow view — a real ASP.NET Core project (GameServer from com2us-taskbar-hero) analyzed, expanding the AdminBossRushController.RankWarmup entry point, with the detail panel on the right showing 3 pieces of call evidence (direct call, resolved via DI registration)">
+        <figcaption>A real project (GameServer: 41 entry points, 564 classes, 732 methods) after analysis. The detail panel's "call evidence" shows whether each edge is a direct call or was resolved through a DI registration.</figcaption>
+      </figure>
 
       <h3 class="sub-h" id="view-classmap">Class Diagram — the whole solution as UML, at a glance</h3>
       <p>
@@ -1032,6 +1053,10 @@ npm run dev</code></pre>
         <li>Zoom 50 / 75 / 100% / fit.</li>
       </ul>
       <p class="text-soft">Past 150 classes, it automatically starts with members collapsed + dependency off + zoom-to-fit, and prompts you to narrow the scope.</p>
+      <figure class="shot">
+        <img src="screenshots/classmap.jpg" alt="Class Diagram view — narrowed to just the GameServer.Controllers namespace via the left namespace list, showing a tree layout where 15 controllers inherit from AdminApiControllerBase">
+        <figcaption>A tree layout narrowed to just the GameServer.Controllers namespace in a real 564-class solution. The 15 controllers that inherit from AdminApiControllerBase are visible at a glance.</figcaption>
+      </figure>
 
       <h3 class="sub-h" id="view-flowmap">Flow Map — from an entry-point map to the full path</h3>
       <p>
@@ -1043,6 +1068,10 @@ npm run dev</code></pre>
         <code>+n</code> to the right of that row, and recursive self-calls are marked with
         <code>↺</code>.
       </p>
+      <figure class="shot">
+        <img src="screenshots/flowmap.jpg" alt="Flow Map view — the full path for the POST /api/game/consumable/use entry point, with class boxes chained method by method from GameConsumableController through ConsumableService, ConsumableRepository and MasterDbProvider">
+        <figcaption>The method-level full path reached by clicking a route (POST /api/game/consumable/use) on the entry-point map. The real call path from controller to service to repository is drawn as-is.</figcaption>
+      </figure>
 
       <h3 class="sub-h" id="view-startup">Startup Flow — Program.cs, in the order it actually runs</h3>
       <p>
@@ -1054,6 +1083,10 @@ npm run dev</code></pre>
         start collapsed and expand on click to show what they actually register. This view isn't
         a call graph — it's a separate timeline built by reading only Program.cs.
       </p>
+      <figure class="shot">
+        <img src="screenshots/startup.jpg" alt="Startup Flow view — the first steps of a 57-step service-registration timeline from Program.cs, showing GameDbFactory, IMasterDbLoader and IAuthTokenReader with Singleton/Scoped lifetime badges">
+        <figcaption>The service-registration timeline built by reading Program.cs top to bottom (57 steps in this project). Each registration carries a Scoped/Singleton/Transient lifetime badge.</figcaption>
+      </figure>
 
       <h3 class="sub-h" id="view-data">Data Access — what changes, in what order, and what's left behind on failure</h3>
       <p>
@@ -1084,6 +1117,10 @@ npm run dev</code></pre>
         "Config: sharded/single DB" chip in the top toolbar shows which configuration is
         currently in effect.
       </p>
+      <figure class="shot">
+        <img src="screenshots/data.jpg" alt="Data Access compensation view — BossRushSeasonBatchScheduler.RunCycleAsync touches storage in two steps with no transaction; step 1 (SET season.SeasonId) shows a red cell in the failure grid because no undo code was found">
+        <figcaption>Compensation verdicts for a real batch job that changes storage in two steps with no transaction. The grid shows what stays behind if step 1 fails (a red cell means no undoing code was found).</figcaption>
+      </figure>
 
       <h3 class="sub-h" id="view-middleware">Middleware — what a request passes through, and where it can short-circuit</h3>
       <p>
@@ -1099,6 +1136,10 @@ npm run dev</code></pre>
         <tr><td>Short-circuit points</td><td>Shows, side by side, <b>what doesn't run</b> when a request gets cut off there, and <b>what still runs</b> as response post-processing.</td></tr>
         <tr><td>Findings</td><td>A list of MW rule violations — authentication/authorization/CORS ordering, middleware that takes a Scoped service through its constructor, middleware registered after endpoint mapping that never runs, and so on.</td></tr>
       </table>
+      <figure class="shot">
+        <img src="screenshots/middleware.jpg" alt="Middleware view — the pipeline listed in app.UseXxx() registration order, from RequestLoggingMiddleware through UseExceptionHandler, MapOpenApi, UseSwaggerUI, UseHttpsRedirection to GameAuthMiddleware, with an MW-012 finding badge on the UseSwaggerUI and UseHttpsRedirection steps">
+        <figcaption>The pipeline drawn exactly in the order it's registered in the real Program.cs. Steps that conditionally short-circuit, like UseSwaggerUI and UseHttpsRedirection, carry their status code and a rule finding badge (MW-012).</figcaption>
+      </figure>
 
       <h4 class="mini-h">Findings, in general — confidence and evidence</h4>
       <p>Data Access and Middleware findings always come with these two badges together.</p>

@@ -1,3 +1,16 @@
+## 2026-09-08 18:41 KST - 실제 프로젝트 분석 스크린샷을 매뉴얼·README에 추가
+
+- `.\run.ps1`로 서버를 띄우고 실제 사내 프로젝트(`C:\WorkingDev\com2us-taskbar-hero`의 `GameServer.csproj`,
+  ASP.NET Core Web API, 진입점 41·클래스 564·메서드 732)를 분석해 여섯 가지 보기(호출 흐름·클래스
+  다이어그램·전체 흐름도·시작 흐름·DB·캐시·미들웨어)를 각각 브라우저로 캡처했다.
+- `docs/screenshots/` 아래 `callflow.jpg`·`classmap.jpg`·`flowmap.jpg`·`startup.jpg`·`data.jpg`·
+  `middleware.jpg` 6장을 추가하고, `docs/manual_kr.html`·`docs/manual.html`의 해당 보기 설명 뒤에
+  `<figure class="shot">`로 삽입했다(캡션 포함, 다크/라이트 테마 대응 CSS 새로 추가).
+- README.md·README_kr.md 상단 빠른 시작 코드 블록 바로 아래에 호출 흐름(호출 근거) 스크린샷 1장을
+  대표 이미지로 넣어, 실제 프로젝트를 분석한 실행 모습을 보여준다.
+- 로컬 `python -m http.server`로 `docs/`를 띄워 이미지 경로가 실제로 깨지지 않고 렌더링되는지 확인했다
+  (처음에 작업 디렉터리 착오로 `client/docs/screenshots/`에 잘못 저장돼 404가 났던 것을 바로잡았다).
+
 ## 2026-09-08 17:59 KST - 매뉴얼(한·영)을 최신 구현과 대조해 갱신
 
 - `docs/manual_kr.html`·`docs/manual.html`을 실제 구현(컴포넌트·i18n·CLI·MCP·설정)과 항목별로 대조했다.
