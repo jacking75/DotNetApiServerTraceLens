@@ -17,6 +17,46 @@ public sealed class DataAccessAnalysisTests(FixtureDataAppFixture fixture)
         return Assert.IsType<DataAccessDocument>(result.Graph.DataAccess);
     }
 
+    /// <summary>
+    /// 추정이 틀리는 것은 감수하지만 <b>확실로 틀리는</b> 판정은 도구의 신뢰를 직접 깎는다.
+    /// 저장 프로시저를 메서드 이름만 보고 Read로 단정하던 자리를 막는다.
+    /// </summary>
+    [Fact]
+    public async Task Scan_DoesNotAssertReadForStoredProcedures()
+    {
+        var data = await GetDataAccessAsync();
+
+        var read = data.Accesses.Single(access => access.Target == "usp_UpdateOrder");
+        Assert.Equal(AccessOperation.Unknown, read.Operation);
+        Assert.Equal(FindingConfidence.Estimated, read.Confidence);
+        Assert.Contains("본문을 읽지 않아", read.Note, StringComparison.Ordinal);
+
+        // Execute 계열은 쓰기 후보로 남기되 확실도를 낮춘다.
+        var write = data.Accesses.Single(access => access.Target == "usp_GrantReward");
+        Assert.Equal(AccessOperation.Write, write.Operation);
+        Assert.Equal(FindingConfidence.Estimated, write.Confidence);
+    }
+
+    /// <summary>
+    /// <c>new TransactionScope(...)</c>는 호출식이 아니라 객체 생성이라 예전에는 경계로 잡히지 않았다.
+    /// 그 결과 안에서 쓰는 코드가 "트랜잭션 없는 쓰기"로 COMP 규칙에 걸렸다.
+    /// </summary>
+    [Fact]
+    public async Task Scan_TreatsTransactionScopeAsATransactionBoundary()
+    {
+        var data = await GetDataAccessAsync();
+
+        var inScope = data.Accesses
+            .Where(access => access.MethodDisplayName.Contains("WriteInsideScopeAsync", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Equal(2, inScope.Length);
+        Assert.All(inScope, access => Assert.True(access.InTransaction, "TransactionScope 안의 쓰기는 트랜잭션 안으로 잡혀야 한다."));
+        Assert.DoesNotContain(
+            data.WritePaths,
+            path => path.MethodDisplayName.Contains("WriteInsideScopeAsync", StringComparison.Ordinal) && !path.InTransaction);
+    }
+
     [Fact]
     public async Task Scan_ReadsSqlTablesCacheKeysAndDataSources()
     {

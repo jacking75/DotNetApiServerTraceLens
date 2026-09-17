@@ -722,3 +722,7 @@ table.findings .conf { color: #8a97a9; font-size: 10.5px; white-space: nowrap; }
   padding: 6px 10px; border-bottom: 1px solid var(--border);
   color: var(--dim); font-size: 11px; line-height: 1.7;
 }
+
+/* T31 — 확장 메서드 안에서 펼친 하위 미들웨어 */
+.mw-nested { margin-left: 28px; }
+.mw-nested .mw-card { border-left: 2px solid var(--border-2); }

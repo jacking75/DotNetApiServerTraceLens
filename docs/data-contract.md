@@ -58,6 +58,10 @@
 |---|---|---|
 | `diagnostics.calls.externalByNamespace` | 솔루션 밖 호출을 네임스페이스로 묶은 상위 20개(건수·대표 타입). 알려진 프레임워크는 `diagnostics.limitations`에 한 줄로 승격된다. | 빈 목록 — 진단 패널의 해당 절을 그리지 않는다 |
 | `diagnostics.entryPointCandidates` | HTTP 밖 실행 단위 후보(`HostedService`·`MessageConsumer`·`SignalRHub`·`GrpcService`·`ScheduledJob`·`AzureFunction`·`HealthCheck`·`ConventionalRouting`). 진입점·엣지를 만들지 않는다. | 빈 목록 |
+| `middleware.steps[].type = "Extension"` | 솔루션 안 확장 메서드(`app.UseCompanyAuth()`). 본문에서 등록한 미들웨어를 하위 단계로 펼치고 `parentId`로 잇는다(깊이 2). 펼치지 못하면 그 사유를 `pre`에 적는다. | `Framework`로 읽는다 |
+| `middleware.steps[].parentId` | 이 단계를 펼쳐서 나온 상위 단계 ID. 최상위면 null. | null |
+| `dataAccess.accesses[].operation = "Unknown"` | 저장 프로시저처럼 본문을 읽지 않아 읽기/쓰기를 확정하지 못한 접근. 쓰기 경로 단계로 세지 않고 점검 결과 상단에 개수로만 나온다. | 이 값이 없던 문서에는 나오지 않는다 |
+| `dataAccess.transactions[].kind = "Scope"` | `using var scope = new TransactionScope(...)`로 연 주변 트랜잭션. `scope.Complete()`가 커밋이다. | `Explicit`로 읽는다 |
 | `dataAccess.notes` | 인식했지만 해석하지 않은 저장소 입력(EF Core·Mongo·NHibernate 타입이 있는데 접근 0건 등). 규칙 결과는 바꾸지 않는다. | 빈 목록 |
 
 ## 3. `graph.json` 최소 예제 (v7)

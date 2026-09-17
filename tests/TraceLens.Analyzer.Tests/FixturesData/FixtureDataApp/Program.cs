@@ -53,6 +53,7 @@ app.UseRouting();
 app.UseMiddleware<RateLimitMiddleware>();
 app.UseAuthorization();   // UseAuthentication 보다 먼저다 — MW-002.
 app.UseAuthentication();
+app.UseFixtureAuth();     // 솔루션 안 확장 메서드다 — Extension으로 분류하고 하위 ApiKeyMiddleware를 펼쳐야 한다.
 app.UseMiddleware<SessionValidationMiddleware>();
 app.UseMiddleware<MaintenanceMiddleware>();
 app.MapControllers();

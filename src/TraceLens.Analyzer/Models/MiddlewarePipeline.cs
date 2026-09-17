@@ -6,7 +6,13 @@ public enum MiddlewareType
     Custom,
 
     /// <summary><c>UseRouting</c>·<c>UseAuthentication</c>처럼 프레임워크가 제공하는 것. 이름과 순서만 안다.</summary>
-    Framework
+    Framework,
+
+    /// <summary>
+    /// 솔루션 안에 정의한 확장 메서드(<c>app.UseCompanyAuth()</c>). 본문을 열어 하위 등록을 펼칠 수 있다.
+    /// 프레임워크로 분류하면 "본문은 어셈블리 안에 있어 열어 볼 수 없다"는 <b>틀린</b> 설명이 붙는다.
+    /// </summary>
+    Extension
 }
 
 public enum ContextAccessMode
@@ -56,6 +62,12 @@ public sealed record MiddlewareStepInfo(
     /// 그 뒤에 등록한 미들웨어도 정상적으로 실행된다. v7 이전 문서에는 없고, 없으면 Middleware로 읽는다.
     /// </summary>
     public MiddlewareStepKind Kind { get; init; } = MiddlewareStepKind.Middleware;
+
+    /// <summary>
+    /// 이 단계를 펼쳐서 나온 상위 단계의 ID. 최상위면 null이다.
+    /// 확장 메서드 안에서 등록한 미들웨어를 접었다 펼 수 있게 한다. v7 이전 문서에는 없다.
+    /// </summary>
+    public string? ParentId { get; init; }
 }
 
 /// <summary>파이프라인 한 줄의 성격.</summary>

@@ -16,6 +16,28 @@ public sealed class MiddlewarePipelineTests(FixtureDataAppFixture fixture)
         return Assert.IsType<MiddlewarePipelineDocument>(result.Graph.Middleware);
     }
 
+    /// <summary>
+    /// 사내 파이프라인은 대부분 <c>app.UseCompanyAuth()</c> 같은 확장 메서드로 등록한다.
+    /// 예전에는 이를 프레임워크로 분류하고 "본문은 어셈블리 안에 있어 열어 볼 수 없다"는 틀린 설명을 붙였다.
+    /// </summary>
+    [Fact]
+    public async Task Pipeline_ExpandsExtensionMethodsDefinedInTheSolution()
+    {
+        var pipeline = await GetPipelineAsync();
+
+        var extension = pipeline.Steps.Single(step => step.Name == "UseFixtureAuth");
+        Assert.Equal(MiddlewareType.Extension, extension.Type);
+        Assert.Null(extension.ParentId);
+        Assert.DoesNotContain("어셈블리 안", extension.Pre ?? string.Empty, StringComparison.Ordinal);
+        Assert.Contains("솔루션 안 확장 메서드", extension.Pre ?? string.Empty, StringComparison.Ordinal);
+
+        // 하위 미들웨어가 펼쳐지고, 단락 판정은 펼친 하위 기준으로 이뤄진다.
+        var apiKey = pipeline.Steps.Single(step => step.Name == "ApiKeyMiddleware");
+        Assert.Equal(extension.Id, apiKey.ParentId);
+        Assert.Equal(MiddlewareType.Custom, apiKey.Type);
+        Assert.Equal("401", apiKey.ShortCircuit?.StatusCode);
+    }
+
     [Fact]
     public async Task Pipeline_KeepsRegistrationOrderAndSkipsHostCalls()
     {
@@ -32,6 +54,8 @@ public sealed class MiddlewarePipelineTests(FixtureDataAppFixture fixture)
             "RateLimitMiddleware",
             "UseAuthorization",
             "UseAuthentication",
+            "UseFixtureAuth",
+            "ApiKeyMiddleware",
             "SessionValidationMiddleware",
             "MaintenanceMiddleware",
             "MapControllers",

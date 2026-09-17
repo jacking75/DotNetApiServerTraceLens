@@ -17,7 +17,13 @@ public enum AccessOperation
 
     /// <summary>삭제. 캐시 무효화도 여기에 들어간다.</summary>
     Delete,
-    Other
+    Other,
+
+    /// <summary>
+    /// 읽기/쓰기를 확정하지 못했다. 저장 프로시저처럼 본문을 읽지 않는 호출이 여기 들어간다.
+    /// 규칙은 이 접근을 쓰기 경로 단계로 세지 않고 "확정하지 못한 접근"으로 따로 집계한다.
+    /// </summary>
+    Unknown
 }
 
 /// <summary>쓰기 한 단계가 실패했을 때 되돌려지는지에 대한 판정.</summary>
@@ -78,6 +84,12 @@ public enum TransactionScopeKind
 {
     /// <summary><c>BeginTransaction</c>/<c>Commit</c>을 이 메서드가 직접 부른다.</summary>
     Explicit,
+
+    /// <summary>
+    /// <c>using var scope = new TransactionScope(...)</c>로 연 주변 트랜잭션이다.
+    /// 호출식이 아니라 객체 생성이라 예전에는 경계로 잡히지 않아 "트랜잭션 없는 쓰기"로 오탐했다.
+    /// </summary>
+    Scope,
 
     /// <summary>
     /// 람다를 받아 그 안에서 트랜잭션을 여닫는 래퍼 메서드에 넘겼다(<c>TransactionAsync(async (db, tx) =&gt; …)</c>).

@@ -33,6 +33,7 @@ const operationKeys: Record<AccessOperation, TranslationKey> = {
   Write: 'op.write',
   Delete: 'op.delete',
   Other: 'op.other',
+  Unknown: 'op.unknown',
 }
 
 const selectionKindKeys: Record<SelectionKind, TranslationKey> = {

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { filterFindings } from '../graph/dataView'
 import type { MiddlewareViewState } from '../state/viewState'
 import type { MiddlewarePipelineDocument, MiddlewareStepInfo, Selection } from '../types/graph'
@@ -16,6 +16,10 @@ interface MiddlewareViewProps {
 
 export function MiddlewareView({ pipeline, view, selection, onSelect, onExplain }: MiddlewareViewProps) {
   const { t, lang } = useI18n()
+  /** 펼쳐 둔 확장 메서드 단계. 기본은 접힘이라 파이프라인 한 줄이 한 등록으로 읽힌다. */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  const childCount = (stepId: string) => pipeline.steps.filter((item) => item.parentId === stepId).length
+  const visibleSteps = pipeline.steps.filter((step) => !step.parentId || expanded.has(step.parentId))
   const findings = useMemo(
     () => filterFindings(pipeline.findings, { severity: view.severity, onlyCertain: false }),
     [pipeline.findings, view.severity])
@@ -46,8 +50,8 @@ export function MiddlewareView({ pipeline, view, selection, onSelect, onExplain 
         <span className="sub">{t('mw.lead')}</span>
       </div>
 
-      {pipeline.steps.map((step, index) => (
-        <div key={step.id}>
+      {visibleSteps.map((step, index) => (
+        <div key={step.id} className={step.parentId ? 'mw-nested' : undefined}>
           <div className="mwrow">
             <div className="mwnum">{step.order}</div>
             <button
@@ -61,11 +65,30 @@ export function MiddlewareView({ pipeline, view, selection, onSelect, onExplain 
                 findingsByStep.get(step.id)?.some((finding) => finding.severity === 'Warning') ? 'warn' : '',
                 selection?.type === 'middlewareStep' && selection.key === step.id ? 'selected' : '',
               ].filter(Boolean).join(' ')}
-              onClick={() => onSelect({ type: 'middlewareStep', key: step.id })}
+              onClick={() => {
+                onSelect({ type: 'middlewareStep', key: step.id })
+                if (step.type !== 'Extension') return
+                setExpanded((current) => {
+                  const next = new Set(current)
+                  if (!next.delete(step.id)) next.add(step.id)
+                  return next
+                })
+              }}
             >
               <div className="mw-top">
                 <span className="mw-name">{step.name}</span>
-                <span className="tag">{step.type === 'Custom' ? t('mw.custom') : t('mw.framework')}</span>
+                <span className="tag">
+                  {step.type === 'Custom'
+                    ? t('mw.custom')
+                    : step.type === 'Extension' ? t('mw.extension') : t('mw.framework')}
+                </span>
+                {step.type === 'Extension' && childCount(step.id) > 0 && (
+                  <span className="tag">
+                    {expanded.has(step.id)
+                      ? t('data.collapse')
+                      : t('mw.expandChildren', { count: childCount(step.id) })}
+                  </span>
+                )}
                 {step.kind === 'EndpointRegistration' && <span className="tag">{t('mw.registration')}</span>}
                 {step.kind === 'Terminal' && <span className="tag">{t('mw.terminal')}</span>}
                 {step.condition && <span className="tag replica">{t('mw.conditional')}</span>}
@@ -115,7 +138,7 @@ export function MiddlewareView({ pipeline, view, selection, onSelect, onExplain 
               )}
             </div>
           </div>
-          {index < pipeline.steps.length - 1 && <div className="pipe-arrow">↓</div>}
+          {index < visibleSteps.length - 1 && <div className="pipe-arrow">↓</div>}
         </div>
       ))}
 

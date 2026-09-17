@@ -113,3 +113,28 @@ public sealed class DeadHeaderMiddleware(RequestDelegate next)
         await next(context);
     }
 }
+
+/// <summary>401로 끊는 미들웨어. 확장 메서드로 감싼 뒤에도 단락 지점이 잡혀야 한다.</summary>
+public sealed class ApiKeyMiddleware(RequestDelegate next)
+{
+    public async Task InvokeAsync(HttpContext context)
+    {
+        if (!context.Request.Headers.ContainsKey("X-Api-Key"))
+        {
+            context.Response.StatusCode = 401;
+            return;
+        }
+
+        await next(context);
+    }
+}
+
+/// <summary>
+/// 사내 파이프라인이 흔히 쓰는 형태다. 프레임워크로 분류하면
+/// "본문은 어셈블리 안에 있어 열어 볼 수 없다"는 틀린 설명이 붙는다.
+/// </summary>
+public static class FixtureAuthPipeline
+{
+    public static IApplicationBuilder UseFixtureAuth(this IApplicationBuilder app) =>
+        app.UseMiddleware<ApiKeyMiddleware>();
+}

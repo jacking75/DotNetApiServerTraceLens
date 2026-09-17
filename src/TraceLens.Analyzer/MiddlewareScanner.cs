@@ -142,7 +142,9 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
         string? condition,
         List<MiddlewareStepInfo> steps,
         List<Finding> findings,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? parentId = null,
+        int depth = 0)
     {
         if (model.GetSymbolInfo(invocation, cancellationToken).Symbol is not IMethodSymbol symbol)
         {
@@ -173,7 +175,7 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
             {
                 await AppendStepAsync(
                     inner, model, loaded, config, solutionDirectory, programFile, dataAccess, lifetimes,
-                    predicate, steps, findings, cancellationToken);
+                    predicate, steps, findings, cancellationToken, parentId, depth);
             }
 
             return;
@@ -184,9 +186,10 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
 
         if (name == "UseMiddleware" && GetTypeArgument(invocation, model, cancellationToken) is { } middlewareType)
         {
-            steps.Add(await BuildCustomStepAsync(
+            var custom = await BuildCustomStepAsync(
                 id, order, middlewareType, invocation, loaded, solutionDirectory, programFile, line,
-                dataAccess, lifetimes, enclosingCondition, findings, cancellationToken));
+                dataAccess, lifetimes, enclosingCondition, findings, cancellationToken);
+            steps.Add(custom with { ParentId = parentId });
             return;
         }
 
@@ -199,7 +202,18 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
                 null, programFile, line,
                 analysis.Pre, analysis.Post, analysis.ShortCircuit,
                 analysis.ContextAccesses, [], [], false, false, enclosingCondition,
-                "Program.cs 안에 직접 쓴 인라인 미들웨어다."));
+                "호스트 구성 파일에 직접 쓴 인라인 미들웨어다.")
+            {
+                ParentId = parentId
+            });
+            return;
+        }
+
+        // 솔루션 안에 정의한 확장 메서드(app.UseCompanyAuth())는 프레임워크가 아니다. 본문을 열어 하위 등록을 펼친다.
+        if (!Known.ContainsKey(name) && await TryAppendExtensionAsync(
+                id, order, symbol, invocation, model, loaded, config, solutionDirectory, programFile, line,
+                dataAccess, lifetimes, enclosingCondition, steps, findings, parentId, depth, cancellationToken))
+        {
             return;
         }
 
@@ -229,8 +243,88 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
             enclosingCondition,
             null)
         {
-            Kind = kind
+            Kind = kind,
+            ParentId = parentId
         });
+    }
+
+    /// <summary>솔루션 안 확장 메서드를 펼치는 최대 깊이. 더 내려가면 파이프라인이 읽기 어려워진다.</summary>
+    private const int MaxExtensionDepth = 2;
+
+    /// <summary>
+    /// <c>app.UseCompanyAuth()</c>처럼 솔루션 안에 정의한 확장 메서드를 <see cref="MiddlewareType.Extension"/>으로
+    /// 분류하고, 본문에서 등록하는 미들웨어를 하위 단계로 펼친다.
+    ///
+    /// 펼치지 못하면(본문이 없거나 깊이 초과) "본문에서 미들웨어 등록을 찾지 못했다"로 적는다.
+    /// "어셈블리 안에 있어 열어 볼 수 없다"는 실제로 솔루션 밖일 때만 쓴다.
+    /// </summary>
+    private async Task<bool> TryAppendExtensionAsync(
+        string id,
+        int order,
+        IMethodSymbol symbol,
+        InvocationExpressionSyntax invocation,
+        SemanticModel model,
+        LoadedSolution loaded,
+        TraceLensConfig config,
+        string solutionDirectory,
+        string programFile,
+        int line,
+        DataAccessScanResult? dataAccess,
+        IReadOnlyDictionary<string, StartupLifetime> lifetimes,
+        string? condition,
+        List<MiddlewareStepInfo> steps,
+        List<Finding> findings,
+        string? parentId,
+        int depth,
+        CancellationToken cancellationToken)
+    {
+        var definition = symbol.ReducedFrom ?? symbol;
+        if (!definition.IsExtensionMethod)
+        {
+            return false;
+        }
+
+        var reference = definition.DeclaringSyntaxReferences.FirstOrDefault();
+        if (reference is null)
+        {
+            // 솔루션 밖 어셈블리다. 기존 프레임워크 경로가 맞는 설명을 붙인다.
+            return false;
+        }
+
+        var declaration = await reference.GetSyntaxAsync(cancellationToken) as MethodDeclarationSyntax;
+        var document = loaded.Solution.GetDocument(reference.SyntaxTree);
+        var bodyModel = document is null ? null : (await loaded.GetSemanticsAsync(document, cancellationToken))?.Model;
+        var file = SourcePaths.ToSolutionRelative(solutionDirectory, reference.SyntaxTree.FilePath);
+        var declarationLine = reference.SyntaxTree.GetLineSpan(reference.Span).StartLinePosition.Line + 1;
+
+        var body = (SyntaxNode?)declaration?.Body ?? declaration?.ExpressionBody?.Expression;
+        var inner = body is null || bodyModel is null || depth >= MaxExtensionDepth
+            ? []
+            : EnumerateApplicationCalls(body, bodyModel, cancellationToken).ToArray();
+
+        var note = depth >= MaxExtensionDepth
+            ? $"솔루션 안 확장 메서드다. 펼침 깊이 상한({MaxExtensionDepth})에 도달해 본문을 더 열지 않았다."
+            : inner.Length == 0
+                ? "솔루션 안 확장 메서드다. 본문에서 미들웨어 등록을 찾지 못했다."
+                : "솔루션 안 확장 메서드다. 본문에서 등록하는 미들웨어를 아래에 펼쳤다.";
+
+        steps.Add(new MiddlewareStepInfo(
+            id, order, FormatCall(symbol.Name, invocation), MiddlewareType.Extension, programFile, line,
+            null, file, declarationLine,
+            note, null, null, [], [], [], false, false, condition, null)
+        {
+            Kind = MiddlewareStepKind.Middleware,
+            ParentId = parentId
+        });
+
+        foreach (var call in inner)
+        {
+            await AppendStepAsync(
+                call, bodyModel!, loaded, config, solutionDirectory, file ?? programFile,
+                dataAccess, lifetimes, condition, steps, findings, cancellationToken, id, depth + 1);
+        }
+
+        return true;
     }
 
     private async Task<MiddlewareStepInfo> BuildCustomStepAsync(

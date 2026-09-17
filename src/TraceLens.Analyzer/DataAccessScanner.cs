@@ -352,10 +352,27 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         var wrapperCalls = CollectWrapperCalls(body, model, config, autoWrappers, cancellationToken);
         var sites = new List<DataCallSite>();
         var transactionDepth = 0;
-        foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>()
+        // 호출식과 객체 생성을 한 순서로 훑는다. `new TransactionScope(...)`는 호출식이 아니라
+        // ObjectCreationExpressionSyntax라 예전에는 트랜잭션 경계로 잡히지 않았다.
+        foreach (var node in body.DescendantNodes()
+                     .Where(node => node is InvocationExpressionSyntax or ObjectCreationExpressionSyntax)
                      .OrderBy(node => node.SpanStart))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (node is ObjectCreationExpressionSyntax creation)
+            {
+                var scopeSite = BuildTransactionScopeSite(creation, model, cancellationToken);
+                if (scopeSite is null)
+                {
+                    continue;
+                }
+
+                transactionDepth++;
+                sites.Add(scopeSite);
+                continue;
+            }
+
+            var invocation = (InvocationExpressionSyntax)node;
             var enclosingWrapper = FindEnclosingWrapper(invocation, wrapperCalls);
             var site = BuildSite(
                 invocation, model, config, solutionDirectory,
@@ -408,6 +425,59 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             sites.Any(site => site.Kind == SiteKind.TransactionEnd))
         {
             Wrappers = wrapperCalls.Select(item => item.Call).ToArray()
+        };
+    }
+
+    /// <summary>
+    /// <c>new TransactionScope(...)</c>을 트랜잭션 경계로 만든다.
+    /// 호출식이 아니라 객체 생성이라 예전에는 이 경계가 통째로 빠져, 안에서 쓰는 코드가
+    /// "트랜잭션 없는 쓰기"로 <b>확실</b>하게 오판정됐다(COMP-001/002 오탐).
+    ///
+    /// <c>using</c> 선언·블록이 경계 범위다. <c>scope.Complete()</c>는 평범한 호출이라
+    /// <see cref="SiteKind.TransactionEnd"/>로 따로 잡는다.
+    /// </summary>
+    private static DataCallSite? BuildTransactionScopeSite(
+        ObjectCreationExpressionSyntax creation,
+        SemanticModel model,
+        CancellationToken cancellationToken)
+    {
+        var type = model.GetTypeInfo(creation, cancellationToken).Type;
+        if (type is null ||
+            type.Name != "TransactionScope" ||
+            type.ContainingNamespace?.ToDisplayString() != "System.Transactions")
+        {
+            return null;
+        }
+
+        var line = creation.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+        var inUsing = HasAncestor(creation, node => node is UsingStatementSyntax) ||
+            creation.FirstAncestorOrSelf<LocalDeclarationStatementSyntax>()?.UsingKeyword.IsKind(SyntaxKind.UsingKeyword) == true;
+        return new DataCallSite(
+            creation.SpanStart,
+            line,
+            "TransactionScope",
+            "System.Transactions.TransactionScope..ctor",
+            null,
+            string.Empty,
+            [],
+            SiteKind.TransactionBegin,
+            string.Empty,
+            string.Empty,
+            AccessOperation.Other,
+            "new TransactionScope(...)",
+            HasAncestor(creation, node => node is ForStatementSyntax or ForEachStatementSyntax
+                or WhileStatementSyntax or DoStatementSyntax),
+            true,
+            HasAncestor(creation, node => node is CatchClauseSyntax),
+            HasAncestor(creation, node => node is TryStatementSyntax),
+            false,
+            false,
+            inUsing,
+            null,
+            false,
+            creation.FirstAncestorOrSelf<VariableDeclaratorSyntax>()?.Identifier.Text)
+        {
+            Note = "using 범위가 트랜잭션 경계다."
         };
     }
 
@@ -479,6 +549,11 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         {
             kind = SiteKind.TransactionEnd;
         }
+        else if (name == "Complete" && containingType?.Name == "TransactionScope")
+        {
+            // TransactionScope의 커밋이다. 이 호출이 없으면 범위를 벗어날 때 롤백된다.
+            kind = SiteKind.TransactionEnd;
+        }
         else if (isConnectionOpen)
         {
             kind = SiteKind.ConnectionOpen;
@@ -521,10 +596,34 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         else if (isSql || matchesQueryApi)
         {
             kind = SiteKind.Db;
-            operation = isSql ? ClassifySqlOperation(statement!) : ClassifyByName(name);
-            target = isSql ? ReadTableName(statement!) : statement ?? string.Empty;
             dataSource = string.Empty; // 커넥션 변수로 나중에 채운다.
-            display = statement ?? name;
+
+            // 저장 프로시저는 첫 인자가 SQL이 아니라 프로시저 이름이다.
+            // 메서드 이름(QueryAsync)만 보고 Read로 단정하면 "확실"로 틀린다.
+            if (IsStoredProcedureCall(invocation, arguments, model, cancellationToken))
+            {
+                target = statement ?? name;
+                display = $"EXEC {target}".Trim();
+                if (name.StartsWith("Execute", StringComparison.Ordinal))
+                {
+                    // Execute*는 쓰기 후보로 남기되 본문을 읽지 못했으므로 확실도를 낮춘다.
+                    operation = AccessOperation.Write;
+                    confidence = FindingConfidence.Estimated;
+                    note = "저장 프로시저 호출이다. 본문을 읽지 않아 어떤 테이블을 바꾸는지 확정하지 못했다.";
+                }
+                else
+                {
+                    operation = AccessOperation.Unknown;
+                    confidence = FindingConfidence.Estimated;
+                    note = "저장 프로시저는 본문을 읽지 않아 읽기/쓰기를 확정하지 못했다.";
+                }
+            }
+            else
+            {
+                operation = isSql ? ClassifySqlOperation(statement!) : ClassifyByName(name);
+                target = isSql ? ReadTableName(statement!) : statement ?? string.Empty;
+                display = statement ?? name;
+            }
         }
         else if (PatternMatch.MatchesAny(calleeSymbol, options.ExternalApis) ||
                  PatternMatch.MatchesAny(calleeSymbol, options.Compensation.Irreversible))
@@ -1039,6 +1138,35 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
     {
         var match = SqlTable.Match(sql);
         return match.Success ? match.Groups["table"].Value.Trim('[', ']') : string.Empty;
+    }
+
+    /// <summary>
+    /// <c>CommandType.StoredProcedure</c>를 인자(위치 또는 <c>commandType:</c> 명명 인자)에서 찾는다.
+    /// Dapper는 이 값이 있으면 첫 인자를 SQL이 아니라 <b>프로시저 이름</b>으로 읽는다.
+    /// </summary>
+    private static bool IsStoredProcedureCall(
+        InvocationExpressionSyntax invocation,
+        SeparatedSyntaxList<ArgumentSyntax> arguments,
+        SemanticModel model,
+        CancellationToken cancellationToken)
+    {
+        foreach (var argument in arguments)
+        {
+            if (argument.Expression is not MemberAccessExpressionSyntax member ||
+                member.Name.Identifier.ValueText != "StoredProcedure")
+            {
+                continue;
+            }
+
+            var type = model.GetTypeInfo(member.Expression, cancellationToken).Type
+                ?? (model.GetSymbolInfo(member.Expression, cancellationToken).Symbol as INamedTypeSymbol);
+            if (type?.Name == "CommandType")
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static AccessOperation ClassifyByName(string name)

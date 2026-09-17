@@ -433,7 +433,8 @@ export interface EditorResponse {
 /* ------------------------------------------------------------------ DB · 캐시 (스키마 v6) */
 
 export type StorageKind = 'Database' | 'Cache' | 'External'
-export type AccessOperation = 'Read' | 'Write' | 'Delete' | 'Other'
+/** `Unknown`은 저장 프로시저처럼 본문을 읽지 않아 읽기/쓰기를 확정하지 못한 접근이다. */
+export type AccessOperation = 'Read' | 'Write' | 'Delete' | 'Other' | 'Unknown'
 /** 쓰기 한 단계가 실패했을 때 되돌려지는지에 대한 판정. */
 export type CompensationKind = 'Transaction' | 'Yes' | 'PartialPaths' | 'No' | 'NotNeeded' | 'Irreversible'
 export type FindingSeverity = 'Critical' | 'Warning' | 'Info'
@@ -573,7 +574,8 @@ export interface DataAccessDocument {
 
 /* ------------------------------------------------------------------ 미들웨어 (스키마 v6) */
 
-export type MiddlewareType = 'Custom' | 'Framework'
+/** `Extension`은 솔루션 안 확장 메서드다. 본문을 열어 하위 등록을 펼칠 수 있다. */
+export type MiddlewareType = 'Custom' | 'Framework' | 'Extension'
 export type ContextAccessMode = 'Read' | 'Write'
 
 /**
@@ -623,6 +625,8 @@ export interface MiddlewareStepInfo {
   note: string | null
   /** v7부터 있다. 없으면 'Middleware'로 채운다. */
   kind: MiddlewareStepKind
+  /** 이 단계를 펼쳐서 나온 상위 단계의 ID. 최상위면 null이다. 옛 문서에는 없다. */
+  parentId?: string | null
 }
 
 export interface MiddlewarePipelineDocument {

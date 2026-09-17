@@ -8,6 +8,7 @@ import {
   severityLabelKeys,
 } from '../graph/dataView'
 import { useI18n } from '../i18n/I18nProvider'
+import { operationLabel } from '../i18n/labels'
 import { ruleText } from '../i18n/ruleText'
 import type { TranslationKey } from '../i18n/ko'
 import type { DataViewState } from '../state/viewState'
@@ -59,7 +60,7 @@ function AccessTags({ access }: { access: DataAccess }) {
   return (
     <>
       <span className={`tag ${access.storage === 'Cache' ? 'redis' : 'shard'}`}>{access.dataSource}</span>
-      <span className={`tag ${operation}`}>{access.operation}</span>
+      <span className={`tag ${operation}`}>{operationLabel(access.operation, t)}</span>
       {access.inTransaction && <span className="tag tx">{t('data.inTransaction')}</span>}
       {access.inLoop && <span className="tag write">{t('data.inLoop')}</span>}
     </>
@@ -107,7 +108,15 @@ export function DataAccessView({
     )
   }
 
-  return <FindingTable findings={findings} rules={data.rules} selection={selection} onSelect={onSelect} />
+  return (
+    <FindingTable
+      findings={findings}
+      rules={data.rules}
+      unconfirmedAccessCount={data.accesses.filter((access) => access.operation === 'Unknown').length}
+      selection={selection}
+      onSelect={onSelect}
+    />
+  )
 }
 
 /* ------------------------------------------------------------------ 실행 경로 */
@@ -577,22 +586,30 @@ function PathDetail({
 export function FindingTable({
   findings,
   rules,
+  unconfirmedAccessCount = 0,
   selection,
   onSelect,
 }: {
   findings: Finding[]
   /** 규칙 카탈로그. ID 아래에 이름을 함께 보여 주려면 필요하다. */
   rules: readonly RuleInfo[]
+  /** 읽기/쓰기를 확정하지 못한 접근 수(저장 프로시저 등). 규칙 판정에 들어가지 않았다는 사실을 먼저 말한다. */
+  unconfirmedAccessCount?: number
   selection: Selection | null
   onSelect: (selection: Selection) => void
 }) {
   const { t, lang } = useI18n()
+  const unconfirmed = unconfirmedAccessCount > 0
+    ? <div className="hint warn">{t('data.unconfirmedAccess', { count: unconfirmedAccessCount })}</div>
+    : null
+
   if (findings.length === 0) {
-    return <div className="panel-message">{t('data.noMatchingFinding')}</div>
+    return <div className="data-view">{unconfirmed}<div className="panel-message">{t('data.noMatchingFinding')}</div></div>
   }
 
   return (
     <div className="data-view">
+      {unconfirmed}
       <table className="findings">
         <thead>
           <tr>
