@@ -1072,7 +1072,15 @@ npm run dev</code></pre>
         <code>MapXxx()</code> 미들웨어·라우팅 파이프라인 순서를 타임라인 두 단(서비스 등록 /
         미들웨어 파이프라인)으로 보여준다. 솔루션 안에 정의된 확장 메서드(<code>AddFixtureServices()</code>
         같은)는 접혀 있다가 클릭하면 그 안에서 실제로 어떤 등록이 일어나는지 펼쳐 보여준다. 이 보기는
-        호출 그래프가 아니라 Program.cs 하나만 읽는 별도의 타임라인이다.
+        호출 그래프가 아니라 호스트 구성 파일만 읽는 별도의 타임라인이다.
+      </p>
+      <p>
+        <b>클래식 구조(.NET Core 3.1~5)도 읽는다.</b> <code>Program.cs</code>에 <code>CreateHostBuilder</code>만
+        있고 등록·파이프라인이 <code>Startup.cs</code>의 <code>ConfigureServices</code> /
+        <code>Configure</code>에 있으면 두 파일을 소스 순서대로 함께 읽어 한 타임라인으로 합친다.
+        수신자는 변수 이름이 아니라 <b>매개변수 타입</b>(<code>IServiceCollection</code> ·
+        <code>IApplicationBuilder</code>)으로 판정하므로 매개변수 이름이 <code>app</code>이 아니어도 된다.
+        호스트 구성을 하나도 찾지 못하면 그 사실이 <b>분석 진단의 한계</b>에 남는다 — 화면이 조용히 비지 않는다.
       </p>
       <figure class="shot">
         <img src="screenshots/startup.jpg" alt="시작 흐름 보기 — Program.cs의 서비스 등록 57단계 중 GameDbFactory·IMasterDbLoader·IAuthTokenReader 등이 Singleton·Scoped 수명 배지와 함께 순서대로 나열된 화면">

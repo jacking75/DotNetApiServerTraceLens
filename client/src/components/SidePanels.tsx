@@ -12,6 +12,9 @@ interface EntryPointListProps {
   emptyMessage: string
   /** 컨트롤러 이름으로도 거를 수 있게 노드 → 클래스 매핑을 받는다. */
   classIdOfMethod?: (nodeId: string) => string | undefined
+  /** HTTP 밖 실행 단위 수. 목록이 전부가 아니라는 사실을 목록 안에서 말한다. */
+  candidateCount: number
+  onShowDiagnostics: () => void
   onSelect: (entryPoint: EntryPoint) => void
 }
 
@@ -21,6 +24,8 @@ export function EntryPointList({
   selectedEndpointId,
   emptyMessage,
   classIdOfMethod,
+  candidateCount,
+  onShowDiagnostics,
   onSelect,
 }: EntryPointListProps) {
   const { t } = useI18n()
@@ -49,6 +54,14 @@ export function EntryPointList({
       {entryPoints.length === 0 && <div className="panel-message">{emptyMessage}</div>}
       {entryPoints.length > 0 && filtered.length === 0 && (
         <div className="panel-message">{t('side.entryPointsEmpty')}</div>
+      )}
+      {candidateCount > 0 && (
+        <div className="side-footnote">
+          {t('side.nonHttpUnits', { count: candidateCount })}
+          <button type="button" className="link-button" onClick={onShowDiagnostics}>
+            {t('hint.seeDiagnostics')}
+          </button>
+        </div>
       )}
       {filtered.map((entryPoint) => (
         <button

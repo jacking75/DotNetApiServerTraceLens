@@ -716,3 +716,9 @@ table.findings .conf { color: #8a97a9; font-size: 10.5px; white-space: nowrap; }
   padding: 8px 10px; margin: 4px 0; white-space: pre-wrap; font-size: 11.5px; overflow-x: auto;
 }
 .mcp-dialog .copy-block .link-button { margin-right: 8px; }
+
+/* T29 — 진입점 목록 아래 각주. 목록이 전부가 아니라는 사실을 그 자리에서 말한다. */
+.side-footnote {
+  padding: 6px 10px; border-bottom: 1px solid var(--border);
+  color: var(--dim); font-size: 11px; line-height: 1.7;
+}

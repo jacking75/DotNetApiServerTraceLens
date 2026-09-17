@@ -16,6 +16,13 @@ public sealed record AnalyzedProject(
 public sealed record ExternalCallGroup(string Namespace, int Count, string SampleType);
 
 /// <summary>
+/// HTTP 밖 실행 단위 후보. 진입점·엣지를 만들지 않고 종류별 개수와 이름만 남긴다.
+/// "변경 영향에 도달하는 진입점이 없다"가 무엇을 세지 않은 결과인지 알 수 있게 한다.
+/// </summary>
+/// <param name="Samples">최대 3개까지의 타입 이름.</param>
+public sealed record EntryPointCandidateGroup(string Kind, int Count, IReadOnlyList<string> Samples);
+
+/// <summary>
 /// 호출 지점 판정의 개수. 분모인 <paramref name="Inspected"/>는 <b>솔루션 안 대상</b>을 부른 호출 지점만 센다.
 /// 프레임워크·패키지 호출(<paramref name="External"/>)은 애초에 그래프의 대상이 아니라 분모에서 뺀다.
 /// </summary>
@@ -64,4 +71,7 @@ public sealed record AnalysisDiagnostics(
 
     /// <summary>진입점을 하나도 찾지 못했을 때 그것이 "정상"이 아님을 알리는 안내.</summary>
     public IReadOnlyList<string> EntryPointNotes { get; init; } = [];
+
+    /// <summary>HTTP 밖 실행 단위 후보(종류별). 진입점 수·엣지 수에는 영향을 주지 않는다.</summary>
+    public IReadOnlyList<EntryPointCandidateGroup> EntryPointCandidates { get; init; } = [];
 }

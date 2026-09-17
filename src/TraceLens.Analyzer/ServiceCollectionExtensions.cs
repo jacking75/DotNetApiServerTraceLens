@@ -8,6 +8,7 @@ public static class ServiceCollectionExtensions
         .AddScoped<SolutionLoader>()
         .AddScoped<EntryPointScanner>()
         .AddScoped<MinimalApiEntryPointScanner>()
+        .AddScoped<EntryPointCandidateScanner>()
         .AddScoped<DiResolver>()
         .AddScoped<NodeClassifier>()
         .AddScoped<InvocationResolver>()

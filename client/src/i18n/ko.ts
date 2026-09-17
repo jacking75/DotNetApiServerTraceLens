@@ -454,6 +454,7 @@ export const ko = {
   'side.unknownClass': '(알 수 없음)',
   'side.entryMap': '▦ 전체 진입점 지도',
   'side.entryPointsEmpty': '솔루션을 분석하면 진입점이 표시된다.',
+  'side.nonHttpUnits': 'HTTP 밖 실행 단위 {count}개는 이 목록에 없다.',
   'side.entrySearch': '라우트·동사·컨트롤러 검색',
   'side.allSteps': '전체 단계',
   'side.stepCount': '{count}개',

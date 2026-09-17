@@ -1098,6 +1098,9 @@ export default function App() {
           : t('empty.needEntryPoint')
 
   const selectedNodeIdForImpact = selection?.type === 'method' ? (nodeById.get(selection.key)?.id ?? null) : null
+  /** HTTP 밖 실행 단위 수. 진입점 목록이 전부가 아니라는 것을 그 자리에서 말한다. */
+  const nonHttpUnitCount = (graph?.diagnostics?.entryPointCandidates ?? [])
+    .reduce((total, group) => total + group.count, 0)
 
   /**
    * 빈 보기 문구. 분석 전에는 "분석하면 보인다", 분석 뒤에는 "찾지 못했다 + 다음 행동"으로 나눈다.
@@ -1504,6 +1507,8 @@ export default function App() {
               entryPoints={entryPoints}
               selectedEndpointId={callFlowEntry?.endpointId ?? null}
               emptyMessage={emptyMessage('empty.entryPoints', 'empty.noEntryPointsFound')}
+              candidateCount={nonHttpUnitCount}
+              onShowDiagnostics={() => setAnalysisDiagnosticsOpen(true)}
               classIdOfMethod={classIdOfMethod}
               onSelect={(entryPoint) => {
                 setCallFlowEntry(entryPoint)

@@ -457,6 +457,7 @@ export const en: Dictionary = {
   'side.unknownClass': '(unknown)',
   'side.entryMap': '▦ All entry points',
   'side.entryPointsEmpty': 'Entry points appear once the solution is analyzed.',
+  'side.nonHttpUnits': '{count} execution unit(s) outside HTTP are not in this list.',
   'side.entrySearch': 'Search route, verb or controller',
   'side.allSteps': 'All steps',
   'side.stepCount': '{count}',

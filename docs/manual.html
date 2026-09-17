@@ -1099,7 +1099,7 @@ npm run dev</code></pre>
         <figcaption>The method-level full path reached by clicking a route (POST /api/game/consumable/use) on the entry-point map. The real call path from controller to service to repository is drawn as-is.</figcaption>
       </figure>
 
-      <h3 class="sub-h" id="view-startup">Startup Flow — Program.cs, in the order it actually runs</h3>
+      <h3 class="sub-h" id="view-startup">Startup Flow — the host configuration, in the order it actually runs</h3>
       <p>
         Reads Program.cs top to bottom and shows, as a two-track timeline (service registrations /
         middleware pipeline), <b>which interface is registered to which implementation with what
@@ -1107,7 +1107,17 @@ npm run dev</code></pre>
         <code>app.UseXxx()</code> / <code>MapXxx()</code> middleware and routing pipeline.
         Extension methods defined inside the solution (like <code>AddFixtureServices()</code>)
         start collapsed and expand on click to show what they actually register. This view isn't
-        a call graph — it's a separate timeline built by reading only Program.cs.
+        a call graph — it's a separate timeline built by reading only the host configuration files.
+      </p>
+      <p>
+        <b>The classic layout (.NET Core 3.1-5) is read too.</b> When <code>Program.cs</code> only holds
+        <code>CreateHostBuilder</code> and the registrations and pipeline live in
+        <code>ConfigureServices</code> / <code>Configure</code> inside <code>Startup.cs</code>, both files
+        are read in source order and merged into one timeline. The receiver is decided by
+        <b>parameter type</b> (<code>IServiceCollection</code> / <code>IApplicationBuilder</code>), not by
+        variable name, so the parameter does not have to be called <code>app</code>.
+        If no host configuration is found at all, that fact is recorded under <b>limitations</b> in the
+        analysis diagnostics — the screen never goes quietly blank.
       </p>
       <figure class="shot">
         <img src="screenshots/startup.jpg" alt="Startup Flow view — the first steps of a 57-step service-registration timeline from Program.cs, showing GameDbFactory, IMasterDbLoader and IAuthTokenReader with Singleton/Scoped lifetime badges">

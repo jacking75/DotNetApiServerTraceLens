@@ -235,12 +235,22 @@ public sealed class TraceLensAnalyzer(
         stageTimer.Mark("rules");
         var changedDuringAnalysis = FindChangedInputs(
             solutionDirectory, manifestResult, fileHashes.Keys, startedAtUtc);
+        // 호스트 구성을 못 찾으면 로그만 남기고 끝내면 안 된다. 두 보기가 비는 이유가 결과에 남아야 한다.
+        var hostLimitations = startupFlows.Count == 0 && middlewarePipelines.Count == 0 && config.IncludeStartupFlow
+            ? new[]
+            {
+                "Program.cs/Startup.cs에서 호스트 구성을 찾지 못했다. 시작 흐름과 미들웨어 보기가 비는 이유다."
+            }
+            : [];
+
         var diagnostics = BuildDiagnostics(
             loaded,
             config,
             stats,
             manifestResult,
             entryPointScan.Notes,
+            entryPointScan.Candidates,
+            hostLimitations,
             depthLimitReached,
             droppedCallSites,
             changedDuringAnalysis,
@@ -388,12 +398,15 @@ public sealed class TraceLensAnalyzer(
         CallResolutionStats stats,
         AnalysisManifestResult manifestResult,
         IReadOnlyList<string> entryPointNotes,
+        IReadOnlyList<EntryPointCandidateGroup> entryPointCandidates,
+        IReadOnlyList<string> hostLimitations,
         bool depthLimitReached,
         int droppedCallSites,
         IReadOnlyList<string> changedDuringAnalysis,
         IReadOnlyList<ConfigIssue> configIssues)
     {
         var limitations = new List<string>(manifestResult.Manifest.Limitations);
+        limitations.AddRange(hostLimitations);
         limitations.AddRange(configIssues.Select(issue => $"설정: {issue.Message}"));
         if (droppedCallSites > 0)
         {
@@ -430,7 +443,8 @@ public sealed class TraceLensAnalyzer(
         {
             ChangedDuringAnalysis = changedDuringAnalysis.Count > 0,
             ChangedDuringAnalysisFiles = changedDuringAnalysis,
-            EntryPointNotes = entryPointNotes
+            EntryPointNotes = entryPointNotes,
+            EntryPointCandidates = entryPointCandidates
         };
     }
 

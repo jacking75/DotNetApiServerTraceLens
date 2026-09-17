@@ -281,6 +281,14 @@ public sealed class ImpactAnalyzer
             {
                 limitations.Add($"컴파일 오류가 있는 프로젝트가 {diagnostics.ProjectsWithCompileErrors}개라 호출 관계가 빠졌을 수 있다.");
             }
+
+            // "도달하는 진입점 없음"이 무엇을 세지 않은 결과인지 같은 자리에서 말한다.
+            foreach (var group in diagnostics.EntryPointCandidates)
+            {
+                limitations.Add(
+                    $"`{group.Kind}` {group.Count}개는 HTTP 진입점이 아니라 이 목록에 세지 않았다" +
+                    (group.Samples.Count > 0 ? $"({string.Join(", ", group.Samples)})." : "."));
+            }
         }
 
         if (hasUnreachable)

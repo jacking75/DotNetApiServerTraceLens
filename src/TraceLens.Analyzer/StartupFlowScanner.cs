@@ -59,34 +59,45 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
         CancellationToken cancellationToken)
     {
         var programDocument = host.Document;
-        var semantics = await loaded.GetSemanticsAsync(programDocument, cancellationToken);
-        if (semantics is null)
-        {
-            return null;
-        }
-
-        var (root, model) = (semantics.Root, semantics.Model);
-
         var context = new ScanContext(loaded, solutionDirectory);
         var serviceSteps = new List<StartupStep>();
         var middlewareSteps = new List<StartupStep>();
 
-        foreach (var invocation in EnumerateInvocations(root))
+        // 클래식 구조에서는 Program.cs에 호스트 빌더만 있고 등록·파이프라인은 Startup.cs에 있다.
+        // 두 문서를 소스 순서대로 읽어 한 타임라인으로 합친다.
+        var scanned = 0;
+        foreach (var document in host.Documents)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var phase = ClassifyPhase(GetReceiverType(invocation, model, cancellationToken));
-            if (phase is null)
+            var semantics = await loaded.GetSemanticsAsync(document, cancellationToken);
+            if (semantics is null)
             {
                 continue;
             }
 
-            var step = await BuildStepAsync(invocation, model, phase.Value, context, depth: 0, cancellationToken);
-            if (step is null)
+            scanned++;
+            var (root, model) = (semantics.Root, semantics.Model);
+            foreach (var invocation in EnumerateInvocations(root))
             {
-                continue;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                var phase = ClassifyPhase(GetReceiverType(invocation, model, cancellationToken));
+                if (phase is null)
+                {
+                    continue;
+                }
 
-            (phase.Value == Phase.Service ? serviceSteps : middlewareSteps).Add(step);
+                var step = await BuildStepAsync(invocation, model, phase.Value, context, depth: 0, cancellationToken);
+                if (step is null)
+                {
+                    continue;
+                }
+
+                (phase.Value == Phase.Service ? serviceSteps : middlewareSteps).Add(step);
+            }
+        }
+
+        if (scanned == 0)
+        {
+            return null;
         }
 
         if (context.Truncated)

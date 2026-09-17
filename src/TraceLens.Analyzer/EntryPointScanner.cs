@@ -11,6 +11,7 @@ namespace TraceLens.Analyzer;
 /// </summary>
 public sealed class EntryPointScanner(
     MinimalApiEntryPointScanner minimalApiScanner,
+    EntryPointCandidateScanner candidateScanner,
     ILogger<EntryPointScanner> logger)
 {
     public async Task<EntryPointScanResult> ScanAsync(
@@ -111,7 +112,18 @@ public sealed class EntryPointScanner(
                 : entryPoint with { EntryPoint = entryPoint.EntryPoint with { EndpointId = endpointId } });
         }
 
+        // HTTP 밖 실행 단위는 세기만 한다. 진입점·엣지를 만들지 않는다.
+        var candidates = await candidateScanner.ScanAsync(loaded, solutionDirectory, cancellationToken);
+
         var notes = new List<string>(minimalApi.Notes);
+        foreach (var group in candidates)
+        {
+            var names = group.Samples.Count > 0 ? $"({string.Join(", ", group.Samples)}) " : string.Empty;
+            notes.Add(
+                $"`{group.Kind}` {group.Count}개{names}는 HTTP 진입점이 아니라 호출 흐름의 출발점으로 잡지 않았다. " +
+                "변경 영향의 \"도달하는 진입점 없음\"은 이들을 세지 않은 결과다.");
+        }
+
         if (result.Count == 0)
         {
             notes.Add(
@@ -124,7 +136,7 @@ public sealed class EntryPointScanner(
             result.Count,
             result.Count(item => item.EntryPoint.Source == EndpointSource.Controller),
             result.Count(item => item.EntryPoint.Source == EndpointSource.MinimalApi));
-        return new EntryPointScanResult(result, notes);
+        return new EntryPointScanResult(result, notes) { Candidates = candidates };
     }
 
     private static string? ReadRoute(AttributeData attribute) =>
@@ -211,4 +223,8 @@ public sealed class EntryPointScanner(
 public sealed record ScannedEntryPoint(AnalysisCallable Handler, EntryPoint EntryPoint);
 
 /// <param name="Notes">지원하지 못한 등록 패턴과 "진입점 0개"에 대한 안내.</param>
-public sealed record EntryPointScanResult(IReadOnlyList<ScannedEntryPoint> EntryPoints, IReadOnlyList<string> Notes);
+public sealed record EntryPointScanResult(IReadOnlyList<ScannedEntryPoint> EntryPoints, IReadOnlyList<string> Notes)
+{
+    /// <summary>HTTP 밖 실행 단위 후보. 진입점 목록에는 넣지 않는다.</summary>
+    public IReadOnlyList<EntryPointCandidateGroup> Candidates { get; init; } = [];
+}

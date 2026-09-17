@@ -82,26 +82,38 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
         CancellationToken cancellationToken)
     {
         var program = host.Document;
-        var semantics = await loaded.GetSemanticsAsync(program, cancellationToken);
-        if (semantics is null)
-        {
-            return null;
-        }
-
-        var (root, model) = (semantics.Root, semantics.Model);
-
         var relativeProgram = SourcePaths.ToSolutionRelative(solutionDirectory, program.FilePath)
             ?? program.FilePath ?? "Program.cs";
         var steps = new List<MiddlewareStepInfo>();
         var findings = new List<Finding>();
         var lifetimes = BuildLifetimeMap(startupFlow);
 
-        foreach (var invocation in EnumerateApplicationCalls(root, model, cancellationToken))
+        // 클래식 구조에서는 `app.Use*`가 Startup.Configure 본문에 있다. 호스트의 모든 문서를 순서대로 읽는다.
+        var scanned = 0;
+        foreach (var document in host.Documents)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            await AppendStepAsync(
-                invocation, model, loaded, config, solutionDirectory, relativeProgram,
-                dataAccess, lifetimes, condition: null, steps, findings, cancellationToken);
+            var semantics = await loaded.GetSemanticsAsync(document, cancellationToken);
+            if (semantics is null)
+            {
+                continue;
+            }
+
+            scanned++;
+            var (root, model) = (semantics.Root, semantics.Model);
+            var relativeFile = SourcePaths.ToSolutionRelative(solutionDirectory, document.FilePath)
+                ?? document.FilePath ?? relativeProgram;
+            foreach (var invocation in EnumerateApplicationCalls(root, model, cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await AppendStepAsync(
+                    invocation, model, loaded, config, solutionDirectory, relativeFile,
+                    dataAccess, lifetimes, condition: null, steps, findings, cancellationToken);
+            }
+        }
+
+        if (scanned == 0)
+        {
+            return null;
         }
 
         MarkDeadSteps(steps);
