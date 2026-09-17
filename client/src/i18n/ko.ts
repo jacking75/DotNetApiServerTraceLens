@@ -683,6 +683,12 @@ export const ko = {
   /* 기준 정리 */
   'diff.prune': '오래된 기준 {count}개 정리',
   'diff.pruned': '기준 {count}개를 지웠다.',
+
+  /* 오류 배너 */
+  'error.UNEXPECTED_ERROR': '요청을 처리하지 못했다.',
+  'error.errorId': '오류 ID {id} — 문의할 때 이 값을 함께 알려주면 된다.',
+  'error.dismiss': '닫기',
+  'app.restoreFailed': '마지막 분석 결과를 되살리지 못했다: {reason}',
 } as const
 
 export type TranslationKey = keyof typeof ko

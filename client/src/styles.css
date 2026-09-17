@@ -612,3 +612,8 @@ table.findings .conf { color: #8a97a9; font-size: 10.5px; white-space: nowrap; }
 .modal header button { margin-left: auto; }
 .share-preview { background: #0d1421; border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 10px; max-height: 40vh; overflow: auto; white-space: pre-wrap; font-size: 12px; }
 .context-files .checkbox { display: flex; align-items: center; gap: 6px; }
+
+/* 오류 배너: 닫기 버튼과 오류 ID (T11) */
+.global-error { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.global-error .hint { color: inherit; opacity: .8; }
+.global-error button { margin-left: auto; }

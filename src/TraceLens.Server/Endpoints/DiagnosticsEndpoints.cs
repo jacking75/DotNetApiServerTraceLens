@@ -30,7 +30,11 @@ public static class DiagnosticsEndpoints
             Port = ServerHost.DefaultPort,
             McpHostCandidates = McpConfigWriter.GetHostCandidates()
         });
-        return Task.FromResult<IResult>(Results.Ok(report));
+        // 500 오류에 붙일 것을 사용자가 알 수 있도록 로그 위치와 최근 오류를 함께 준다(비밀값은 담지 않는다).
+        return Task.FromResult<IResult>(Results.Ok(report with
+        {
+            Log = new DiagnosticsLogInfo(ServerHost.LogFilePath, ServerHost.RecentErrors)
+        }));
     }
 
     /// <summary>지금 무엇을 분석했고 얼마나 신선한지. MCP의 <c>get_analysis_status</c>와 같은 내용이다.</summary>

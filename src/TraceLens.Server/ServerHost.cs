@@ -30,6 +30,14 @@ public static class ServerHost
     /// <summary>Vite 개발 서버 포트. 개발 중에만 CORS를 연다.</summary>
     private const int ViteDevPort = 25012;
 
+    /// <summary>이번 실행이 쓰는 로그 파일 경로. doctor와 진단 API가 알려 준다.</summary>
+    public static string? LogFilePath { get; private set; }
+
+    /// <summary>최근 오류 요약. 전체 로그를 붙이지 않고도 무엇이 났는지 보이게 한다.</summary>
+    public static IReadOnlyList<string> RecentErrors => fileLogger?.RecentErrors ?? [];
+
+    private static FileLoggerProvider? fileLogger;
+
     public static WebApplication Build(string[] args, ServerOptions? options = null)
     {
         var serverOptions = options ?? new ServerOptions();
@@ -52,6 +60,11 @@ public static class ServerHost
             options.EnableForHttps = true;
             options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(["application/json"]);
         });
+        // 분석 루트는 아직 모르므로 사용자 영역에 쓴다. 500 응답의 errorId를 여기서 되짚을 수 있어야 한다.
+        fileLogger = new FileLoggerProvider(new FileLoggerOptions(FileLoggerOptions.DefaultDirectory));
+        LogFilePath = fileLogger.CurrentFilePath;
+        builder.Logging.AddProvider(fileLogger);
+
         builder.Services.AddSingleton<IGraphStore, GraphStore>();
         builder.Services.AddSingleton<IGraphFreshnessService, GraphFreshnessService>();
         builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
@@ -62,6 +75,7 @@ public static class ServerHost
         builder.Services.AddTraceLensContext();
 
         var app = builder.Build();
+        app.UseTraceLensGuards(serverOptions.Port, ViteDevPort);
         app.UseResponseCompression();
         app.UseCors("ViteLocal");
         app.UseDefaultFiles();

@@ -117,6 +117,8 @@ export default function App() {
   const [progress, setProgress] = useState<string | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** 서버가 500과 함께 준 오류 ID. 로그에서 같은 값을 찾을 수 있다. */
+  const [errorId, setErrorId] = useState<string | null>(null)
   const [freshnessRevision, setFreshnessRevision] = useState(0)
   const [autoTuned, setAutoTuned] = useState(false)
   const [guideOpen, setGuideOpen] = useState(false)
@@ -296,8 +298,11 @@ export default function App() {
         const nextSummary = await loadSavedGraph(solutionPath.trim())
         const nextGraph = await loadGraphData()
         applyAnalyzedGraph(nextGraph, nextSummary)
-      } catch {
-        // 저장된 분석 결과도 없으면(첫 실행 등) 분석 전 상태로 그대로 둔다.
+      } catch (reason) {
+        // 저장된 결과가 없으면(첫 실행 등) 조용히 넘어가고, 그 밖의 실패는 사유를 보여 준다.
+        if (reason instanceof ApiError && reason.code !== 'NO_ANALYSIS') {
+          setError(t('app.restoreFailed', { reason: translateError(t, reason.code, reason.message) }))
+        }
       }
     })()
   }, [loadGraphData]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -319,8 +324,16 @@ export default function App() {
     }))
   }, [graph, autoTuned])
 
-  const describeError = useCallback((reason: unknown, fallback: string) =>
-    reason instanceof ApiError ? translateError(t, reason.code, reason.message) : fallback, [t])
+  const describeError = useCallback((reason: unknown, fallback: string) => {
+    if (reason instanceof ApiError) {
+      const id = (reason.details as { errorId?: string } | undefined)?.errorId ?? null
+      setErrorId(id)
+      return translateError(t, reason.code, reason.message)
+    }
+
+    setErrorId(null)
+    return fallback
+  }, [t])
 
   /**
    * 분석을 작업으로 실행해서 단계별 진행 상태를 보여 주고 취소도 받는다.
@@ -1025,7 +1038,19 @@ export default function App() {
         shardingEnabled={dataAccess?.shardingEnabled ?? false}
       />
 
-      {error && <div className="global-error">{error}</div>}
+      {error && (
+        <div className="global-error" role="alert">
+          <span>{error}</span>
+          {errorId && <span className="hint">{t('error.errorId', { id: errorId })}</span>}
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => { setError(null); setErrorId(null) }}
+          >
+            {t('error.dismiss')}
+          </button>
+        </div>
+      )}
       {progress && <div className="analysis-progress" aria-live="polite">{progress}</div>}
       {summary?.notice && <div className="analysis-notice">{summary.notice}</div>}
       {summary && (

@@ -686,4 +686,10 @@ export const en: Dictionary = {
   /* 기준 정리 */
   'diff.prune': 'Clean up {count} old baseline(s)',
   'diff.pruned': 'Deleted {count} baseline(s).',
+
+  /* 오류 배너 */
+  'error.UNEXPECTED_ERROR': 'The request could not be processed.',
+  'error.errorId': 'Error ID {id} — include this when reporting the problem.',
+  'error.dismiss': 'Dismiss',
+  'app.restoreFailed': 'Could not restore the last analysis: {reason}',
 }

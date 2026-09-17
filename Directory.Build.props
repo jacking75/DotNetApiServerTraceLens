@@ -1,8 +1,19 @@
-<Project>
+﻿<Project>
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!--
+    버전은 여기 한 곳에서만 바꾼다. pack.ps1 -Version은 이 값을 덮어쓴다.
+    이 값은 graph.json의 analyzerVersion과 스냅샷 비교의 전제 조건 확인에 그대로 들어간다.
+  -->
+  <PropertyGroup>
+    <Version>0.8.0</Version>
+    <InformationalVersion>0.8.0</InformationalVersion>
+    <!-- 커밋 해시가 붙으면 커밋마다 analyzerVersion이 달라져 스냅샷 비교 전제 조건이 매번 깨진다. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 </Project>

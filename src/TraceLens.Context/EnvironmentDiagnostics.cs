@@ -24,6 +24,10 @@ public sealed record DiagnosticItem(
     public string Detail { get; init; } = string.Empty;
 }
 
+/// <param name="LogFilePath">이번 실행이 쓰는 로그 파일. 없으면 null이다.</param>
+/// <param name="RecentErrors">최근 오류 요약(최대 3건). 비밀값·환경 변수는 담지 않는다.</param>
+public sealed record DiagnosticsLogInfo(string? LogFilePath, IReadOnlyList<string> RecentErrors);
+
 public sealed record DiagnosticsReport(
     bool CanAnalyze,
     string ToolVersion,
@@ -32,7 +36,11 @@ public sealed record DiagnosticsReport(
     string? SdkPath,
     IReadOnlyList<string> SupportedTargets,
     IReadOnlyDictionary<string, string> UnsupportedTargets,
-    IReadOnlyList<DiagnosticItem> Items);
+    IReadOnlyList<DiagnosticItem> Items)
+{
+    /// <summary>로그 파일 위치와 최근 오류. 호스트(서버)가 채워 넣고, 없으면 null이다.</summary>
+    public DiagnosticsLogInfo? Log { get; init; }
+}
 
 public sealed record DiagnosticsOptions
 {

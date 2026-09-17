@@ -227,7 +227,11 @@ public static class CommandRouter
             TargetPath = GetOption(args, "--target"),
             Port = TryGetInt(args, "--port") ?? ServerHost.DefaultPort,
             McpHostCandidates = McpConfigWriter.GetHostCandidates()
-        });
+        }) with
+        {
+            // 500이 났을 때 무엇을 첨부해야 하는지 알 수 있게 로그 위치를 함께 알려 준다.
+            Log = new DiagnosticsLogInfo(ServerHost.LogFilePath ?? FileLoggerOptions.DefaultDirectory, ServerHost.RecentErrors)
+        };
 
         if (HasFlag(args, "--json"))
         {
@@ -238,6 +242,7 @@ public static class CommandRouter
         }
 
         Console.WriteLine($"TraceLens {report.ToolVersion}");
+        Console.WriteLine($"  로그: {report.Log?.LogFilePath}");
         Console.WriteLine($"  런타임: {report.RuntimeVersion}");
         Console.WriteLine($"  운영체제: {report.OperatingSystem}");
         Console.WriteLine($"  지원 대상: {string.Join(", ", report.SupportedTargets)}");
