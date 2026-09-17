@@ -362,6 +362,8 @@ export interface AnalysisJobEvent {
   message: string
   count: number | null
   result: unknown
+  /** 실패 이벤트의 분류 코드. UI는 이 값으로 한 줄 요약과 다음 행동을 고른다. */
+  code?: string | null
 }
 
 /** 배포 패키지에 함께 들어가는 예제 하나. `available`이 false면 소스 폴더를 찾지 못한 것이다. */

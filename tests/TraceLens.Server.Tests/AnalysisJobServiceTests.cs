@@ -14,6 +14,29 @@ namespace TraceLens.Server.Tests;
 /// </summary>
 public sealed class AnalysisJobServiceTests
 {
+    /// <summary>
+    /// 실패 원문만 배너에 뜨면 신입은 다음에 무엇을 할지 알 수 없다.
+    /// 코드가 틀리면 "SDK가 없다"에 `dotnet restore` 안내가 붙는 식으로 잘못된 조치를 권하게 된다.
+    /// </summary>
+    [Theory]
+    [InlineData("MSBuildLocator가 등록할 MSBuild instance를 찾지 못했다.", AnalysisFailureClassifier.SdkNotFound)]
+    [InlineData("error NETSDK1004: 자산 파일 'obj/project.assets.json'이 없습니다.", AnalysisFailureClassifier.RestoreFailed)]
+    [InlineData("프로세스가 파일에 액세스할 수 없습니다. 다른 프로세스에서 사용 중입니다.", AnalysisFailureClassifier.FileLocked)]
+    [InlineData("대상을 찾을 수 없다: C:\nope\nope.sln", AnalysisFailureClassifier.TargetNotFound)]
+    [InlineData("알 수 없는 내부 오류", AnalysisFailureClassifier.AnalyzeFailed)]
+    public void Classify_MapsFailureMessagesToActionableCodes(string message, string expected)
+    {
+        Assert.Equal(expected, AnalysisFailureClassifier.Classify(new InvalidOperationException(message)));
+    }
+
+    [Fact]
+    public void Classify_MapsMissingTargetExceptionToTargetNotFound()
+    {
+        Assert.Equal(
+            AnalysisFailureClassifier.TargetNotFound,
+            AnalysisFailureClassifier.Classify(new FileNotFoundException()));
+    }
+
     [Fact]
     public async Task Start_RejectsSecondJobForTheSameTarget()
     {

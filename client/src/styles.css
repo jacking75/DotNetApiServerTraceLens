@@ -677,3 +677,25 @@ table.findings .conf { color: #8a97a9; font-size: 10.5px; white-space: nowrap; }
 /* T22 — 규칙 ID 아래에 이름을 함께 보여 준다. ID만 있으면 오타로 읽힌다. */
 .findings td.rule .rule-name { display: block; color: var(--dim-2); font-size: 10.5px; font-weight: 400; }
 .canvas-notice .link-button { margin-left: 8px; }
+
+/* T23 — 실패 배너: 한 줄 요약 · 다음 행동 · 접힌 원문 */
+.global-error .error-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.global-error details { margin-top: 6px; font-size: 11.5px; }
+.global-error details summary { cursor: pointer; color: var(--dim); }
+.global-error pre { margin: 4px 0 0; white-space: pre-wrap; font-size: 11px; color: var(--dim); }
+.warn-banner { display: flex; align-items: center; gap: 8px; }
+.diagnostics-modal-body { background: transparent; border: 0; padding: 0; }
+.panel-message.tight.warn .row { display: flex; gap: 10px; margin-top: 4px; }
+.raw-error { width: 100%; font-size: 11.5px; }
+.raw-error summary { cursor: pointer; color: var(--dim); }
+.raw-error pre { margin: 4px 0 0; white-space: pre-wrap; font-size: 11px; color: var(--dim); }
+
+/* T24 — 분석 진단 패널 */
+.diagnostics-panel section { border-top: 1px solid var(--border); padding: 10px 2px; }
+.diagnostics-panel section:first-of-type { border-top: 0; }
+.diagnostics-panel h4 { margin: 0 0 6px; font-size: 13px; }
+.diagnostics-panel h5 { margin: 8px 0 4px; font-size: 12px; color: var(--dim); }
+.diag-projects { margin: 6px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.8; }
+.diag-projects ul { margin: 2px 0 0; padding-left: 14px; color: var(--dim); }
+.diag-kv { margin: 4px 0 0; padding-left: 18px; color: var(--dim); font-size: 12px; line-height: 1.8; }
+.analysis-notice .link-button { margin-left: auto; }

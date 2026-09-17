@@ -179,6 +179,25 @@ export interface AnalyzedProject {
   sampleErrors: string[]
 }
 
+/**
+ * 솔루션 밖(프레임워크) 호출을 네임스페이스로 묶은 집계다.
+ * 엣지를 늘리지 않고 "무엇을 보고도 해석하지 않았는지"만 남긴다. 개별 호출 지점은 저장하지 않는다.
+ */
+export interface ExternalCallGroup {
+  namespace: string
+  count: number
+  /** 그 네임스페이스에서 본 타입 하나. 무엇을 가리키는지 알아보게 한다. */
+  sampleType: string
+}
+
+/** HTTP 밖 실행 단위 후보. 진입점으로 세지 않았다는 사실을 개수와 이름으로 남긴다. */
+export interface EntryPointCandidateGroup {
+  kind: string
+  count: number
+  /** 최대 3개까지의 타입 이름. */
+  samples: string[]
+}
+
 export interface CallResolutionStats {
   inspected: number
   resolved: number
@@ -190,6 +209,8 @@ export interface CallResolutionStats {
   external: number
   /** 해석한 지원 대상 호출 지점 / 검사한 지원 대상 호출 지점. 호출 정확도와는 다른 값이다. */
   resolutionRate: number
+  /** 솔루션 밖 호출의 네임스페이스별 상위 집계. 옛 그래프에는 없다. */
+  externalByNamespace?: ExternalCallGroup[]
 }
 
 export interface AnalysisDiagnostics {
@@ -206,6 +227,8 @@ export interface AnalysisDiagnostics {
   changedDuringAnalysis: boolean
   changedDuringAnalysisFiles: string[]
   entryPointNotes: string[]
+  /** HTTP 밖 실행 단위 후보(종류별). 옛 그래프에는 없다. */
+  entryPointCandidates?: EntryPointCandidateGroup[]
 }
 
 /** 시작 흐름 한 단계의 종류. */
@@ -397,6 +420,8 @@ export interface AskEvent {
   /** `run`은 실행 ID를 알려 주는 첫 이벤트다. 이 ID로 DELETE /api/ask/{runId}를 부르면 끊긴다. */
   type: 'run' | 'delta' | 'log' | 'error' | 'done'
   text: string | null
+  /** 오류 이벤트의 분류 코드. 텍스트 접두사를 파싱하지 않고 이 값으로 번역한다. */
+  code?: string | null
 }
 
 export interface EditorResponse {

@@ -48,6 +48,34 @@ public sealed class AskEndpointsTests
         Assert.Contains("C:\\Fixture\\.tracelens\\mcp.json", runner.StreamingRequest.Arguments);
     }
 
+    /// <summary>
+    /// CLI가 없을 때 UI가 텍스트 접두사를 파싱하지 않아도 되도록 code 필드를 함께 보낸다.
+    /// 이 필드가 빠지면 화면에 OS 예외 원문이 그대로 뜬다.
+    /// </summary>
+    [Fact]
+    public async Task HandleAsync_SendsAgentNotFoundCode_WhenCliIsMissing()
+    {
+        var graph = CreateGraph();
+        var store = new GraphStore();
+        store.Set(graph);
+        var runner = new StubProcessRunner { ThrowExecutableMissing = true };
+        var context = CreateHttpContext();
+
+        await AskEndpoints.HandleAsync(
+            new AskRequest(graph.Nodes[0].Id, "무슨 코드인가?", "mcp"),
+            context,
+            store,
+            runner,
+            new ClaudeCodeAgentRunner(runner),
+            new StubMcpConfigWriter(@"C:\Fixture\.tracelens\mcp.json"),
+            new ContextBuilder(new GraphFreshnessEvaluator()),
+            CancellationToken.None);
+
+        context.Response.Body.Position = 0;
+        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        Assert.Contains("\"code\":\"AGENT_NOT_FOUND\"", body, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task HandleAsync_ReturnsEditorFallback_WhenCodeCommandFails()
     {
@@ -181,11 +209,19 @@ public sealed class AskEndpointsTests
         public ProcessRequest? StreamingRequest { get; private set; }
         public ProcessRequest? Request { get; private set; }
 
+        /// <summary>실행 파일 자체가 없는 상황(CLI 미설치)을 흉내 낸다.</summary>
+        public bool ThrowExecutableMissing { get; init; }
+
         public async IAsyncEnumerable<ProcessOutputLine> RunStreamingAsync(
             ProcessRequest request,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             StreamingRequest = request;
+            if (ThrowExecutableMissing)
+            {
+                throw new System.ComponentModel.Win32Exception(2, "지정된 파일을 찾을 수 없습니다.");
+            }
+
             foreach (var line in StreamingOutput)
             {
                 cancellationToken.ThrowIfCancellationRequested();

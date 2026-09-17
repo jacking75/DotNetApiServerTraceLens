@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { recipes, type Recipe } from '../content/recipes'
 import { useI18n } from '../i18n/I18nProvider'
-import type { DiagnosticItem, DiagnosticsReport, SampleView } from '../types/context'
-import type { TranslationKey } from '../i18n/ko'
+import type { DiagnosticsReport, SampleView } from '../types/context'
+import { DiagnosticsCard } from './DiagnosticsCard'
 
 interface WelcomePanelProps {
   /** 이 빌드에 들어 있는 예제 목록. 비어 있으면 예제 버튼 대신 사유를 보여 준다. */
@@ -40,15 +40,6 @@ export function WelcomePanel({
   const { t, lang } = useI18n()
   const [showDiagnostics, setShowDiagnostics] = useState(false)
   const available = samples.filter((sample) => sample.available)
-
-  /** 점검 문장은 코드로 번역하고, 경로·포트 같은 값은 서버가 준 그대로 보여 준다. */
-  const translateByCode = (prefix: string, code: string, fallback: string) => {
-    const key = `${prefix}.${code}` as TranslationKey
-    const translated = t(key)
-    return translated === key ? fallback : translated
-  }
-
-  const describe = (item: DiagnosticItem) => translateByCode('diag', item.code, item.message)
 
   return (
     <div className="welcome">
@@ -120,26 +111,7 @@ export function WelcomePanel({
         </section>
       </div>
 
-      {showDiagnostics && diagnostics && (
-        <section className="welcome-card wide" aria-live="polite">
-          <h3>{t('diagnostics.title')}</h3>
-          <p className={diagnostics.canAnalyze ? 'ok' : 'bad'}>
-            {diagnostics.canAnalyze ? t('diagnostics.canAnalyze') : t('diagnostics.cannotAnalyze')}
-          </p>
-          <ul className="diagnostics-list">
-            {diagnostics.items.map((item) => (
-              <li key={item.code} className={`sev-${item.severity.toLowerCase()}`}>
-                <b>{item.code}</b> {describe(item)}
-                {item.detail && <div className="hint"><code>{item.detail}</code></div>}
-                {item.suggestedAction && (
-                  <div className="hint">→ {translateByCode('diagAction', item.code, item.suggestedAction)}</div>
-                )}
-              </li>
-            ))}
-          </ul>
-          <small>{t('diagnostics.supported', { list: diagnostics.supportedTargets.join(', ') })}</small>
-        </section>
-      )}
+      {showDiagnostics && <DiagnosticsCard report={diagnostics} />}
 
       <section className="welcome-card wide">
         <h3>{t('welcome.scopeTitle')}</h3>

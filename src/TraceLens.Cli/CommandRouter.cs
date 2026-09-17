@@ -165,7 +165,7 @@ public static class CommandRouter
                 return 0;
             }
 
-            PrintAnalyzeSummary(result);
+            PrintAnalyzeSummary(result, target);
             if (HasFlag(args, "--profile"))
             {
                 PrintProfile(result.Profile);
@@ -205,7 +205,7 @@ public static class CommandRouter
         Console.WriteLine($"  최대 작업 집합 {profile.PeakWorkingSetBytes / (1024 * 1024)}MB (프로세스 전체 값이다)");
     }
 
-    private static void PrintAnalyzeSummary(AnalysisResult result)
+    private static void PrintAnalyzeSummary(AnalysisResult result, string targetPath)
     {
         var graph = result.Graph;
         Console.WriteLine();
@@ -225,12 +225,34 @@ public static class CommandRouter
                 $"  호출 해석률 {diagnostics.Calls.Resolved}/{diagnostics.Calls.Inspected} " +
                 $"({diagnostics.Calls.ResolutionRate:P1}) · 모호 {diagnostics.Calls.Ambiguous} · 미해석 {diagnostics.Calls.Unresolved}");
             Console.WriteLine($"  프로젝트 {diagnostics.LoadedProjects}/{diagnostics.TotalProjects} (컴파일 오류 {diagnostics.ProjectsWithCompileErrors})");
+
+            // 어느 프로젝트가 왜 실패했는지 이름으로 말한다. 숫자만으로는 무엇을 고쳐야 할지 알 수 없다.
+            var failed = diagnostics.Projects
+                .Where(item => !item.Loaded || item.ErrorCount > 0)
+                .Take(3)
+                .ToArray();
+            foreach (var project in failed)
+            {
+                var state = project.Loaded ? $"컴파일 오류 {project.ErrorCount}건" : "로드 실패";
+                Console.WriteLine($"  × {project.Name} — {state}");
+                if (project.SampleErrors.Count > 0)
+                {
+                    Console.WriteLine($"      {project.SampleErrors[0]}");
+                }
+            }
+
+            if (failed.Length > 0)
+            {
+                Console.WriteLine($"  → `dotnet build \"{targetPath}\"`로 먼저 확인한다. 컴파일 오류가 있는 프로젝트의 호출 관계는 빠질 수 있다.");
+            }
+
             foreach (var note in diagnostics.EntryPointNotes)
             {
                 Console.WriteLine($"  ! {note}");
             }
 
-            foreach (var limitation in diagnostics.Limitations.Take(5))
+            // 한계는 전부 출력한다. 잘라 내면 "무엇을 보지 않았는지"가 조용히 사라진다.
+            foreach (var limitation in diagnostics.Limitations)
             {
                 Console.WriteLine($"  - {limitation}");
             }

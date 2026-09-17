@@ -22,6 +22,8 @@ import { DataAccessView } from './components/DataAccessView'
 import { DataDetailPanel } from './components/DataDetailPanel'
 import { DataSidePanel, MiddlewareSidePanel } from './components/DataSidePanels'
 import { DetailPanel, type DetailActions } from './components/DetailPanel'
+import { DiagnosticsCard } from './components/DiagnosticsCard'
+import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { GuidedWalkthrough, type WalkthroughStepId } from './components/GuidedWalkthrough'
 import { HelpDialog, HelpLink, type GlossaryTerm, type HelpTab } from './components/HelpDialog'
 import { ImpactPanel } from './components/ImpactPanel'
@@ -117,7 +119,15 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<string | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  /**
+   * 실패 배너. `summary`는 번역한 한 줄, `detail`은 서버·예외 원문(접어 둔다).
+   * `code`가 있으면 다음 행동(환경 점검·대상 다시 고르기)을 함께 보여 준다.
+   */
+  const [error, setError] = useState<{ summary: string; detail: string | null; code: string | null } | null>(null)
+  /** 헤더에서 언제든 열 수 있는 환경 점검 모달. 분석에 성공한 뒤에도 닫히지 않는다. */
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
+  /** 분석 진단 패널(그래프의 diagnostics). 환경 점검과는 다른 화면이다. */
+  const [analysisDiagnosticsOpen, setAnalysisDiagnosticsOpen] = useState(false)
   /** 서버가 500과 함께 준 오류 ID. 로그에서 같은 값을 찾을 수 있다. */
   const [errorId, setErrorId] = useState<string | null>(null)
   const [freshnessRevision, setFreshnessRevision] = useState(0)
@@ -427,7 +437,11 @@ export default function App() {
       } catch (reason) {
         // 저장된 결과가 없으면(첫 실행 등) 조용히 넘어가고, 그 밖의 실패는 사유를 보여 준다.
         if (reason instanceof ApiError && reason.code !== 'NO_ANALYSIS') {
-          setError(t('app.restoreFailed', { reason: translateError(t, reason.code, reason.message) }))
+          setError({
+            summary: t('app.restoreFailed', { reason: translateError(t, reason.code, reason.message) }),
+            detail: reason.message,
+            code: reason.code,
+          })
         }
       }
     })()
@@ -455,15 +469,24 @@ export default function App() {
     // fitZoom은 아래에서 선언한다. 이 effect는 렌더 뒤에 돌아서 그때는 이미 초기화돼 있다.
   }, [graph, autoTuned]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** 실패를 배너가 쓸 모양으로 바꾼다. 원문은 버리지 않고 `detail`에 남긴다. */
   const describeError = useCallback((reason: unknown, fallback: string) => {
     if (reason instanceof ApiError) {
       const id = (reason.details as { errorId?: string } | undefined)?.errorId ?? null
       setErrorId(id)
-      return translateError(t, reason.code, reason.message)
+      return {
+        summary: translateError(t, reason.code, reason.message),
+        detail: reason.message,
+        code: reason.code,
+      }
     }
 
     setErrorId(null)
-    return fallback
+    return {
+      summary: fallback,
+      detail: reason instanceof Error ? reason.message : null,
+      code: null,
+    }
   }, [t])
 
   /** 작업 경로로 분석했을 때는 요약을 그래프에서 다시 만든다(서버 응답을 한 번 더 받지 않는다). */
@@ -503,15 +526,25 @@ export default function App() {
     try {
       const job = await startAnalysisJob(target)
       setJobId(job.id)
-      let failure: string | null = null
+      let failure: { message: string; code: string | null } | null = null
       let canceled = false
       await watchAnalysisJob(job.id, (event) => {
         if (event.kind === 'progress') setProgress(`${event.stage} · ${event.message}${event.count === null ? '' : ` (${event.count})`}`)
-        if (event.kind === 'error') failure = event.message
+        if (event.kind === 'error') failure = { message: event.message, code: event.code ?? null }
         if (event.kind === 'canceled') canceled = true
       })
       if (canceled) return
-      if (failure) throw new Error(failure)
+      // 서버가 분류한 code로 한 줄 요약을 고르고, 예외 원문은 접어서 보여 준다.
+      if (failure !== null) {
+        const reason = failure as { message: string; code: string | null }
+        setError({
+          summary: reason.code ? translateError(t, reason.code, reason.message) : t('app.analyzeFailed'),
+          detail: reason.message,
+          code: reason.code,
+        })
+        setErrorId(null)
+        return
+      }
 
       const nextGraph = await loadGraphData()
       applyAnalyzedGraph(nextGraph, await summarizeFrom(nextGraph))
@@ -593,7 +626,7 @@ export default function App() {
         return
       }
 
-      setAdoptMessage(describeError(reason, t('app.importFailed')))
+      setAdoptMessage(describeError(reason, t('app.importFailed')).summary)
     }
   }
 
@@ -1066,6 +1099,28 @@ export default function App() {
 
   const selectedNodeIdForImpact = selection?.type === 'method' ? (nodeById.get(selection.key)?.id ?? null) : null
 
+  /**
+   * 빈 보기 문구. 분석 전에는 "분석하면 보인다", 분석 뒤에는 "찾지 못했다 + 다음 행동"으로 나눈다.
+   * 이미 분석한 사람에게 "솔루션을 분석하면 표시된다"는 실패로 읽힌다.
+   */
+  const emptyMessage = (beforeKey: TranslationKey, afterKey: TranslationKey) =>
+    graph ? t(afterKey) : t(beforeKey)
+
+  /** 분석 뒤 빈 보기에는 진단으로 가는 버튼을 붙인다. */
+  const emptyBlock = (beforeKey: TranslationKey, afterKey: TranslationKey) => (
+    <div className="panel-message">
+      {emptyMessage(beforeKey, afterKey)}
+      {graph && (
+        <>
+          {' '}
+          <button type="button" className="link-button" onClick={() => setAnalysisDiagnosticsOpen(true)}>
+            {t('hint.seeDiagnostics')}
+          </button>
+        </>
+      )}
+    </div>
+  )
+
   return (
     <main>
       <header className="app-header">
@@ -1156,6 +1211,13 @@ export default function App() {
           >
             ?
           </button>
+          <button
+            type="button"
+            className="browse"
+            onClick={() => { setDiagnosticsOpen(true); void runDiagnostics() }}
+          >
+            {t('diagnostics.open')}
+          </button>
           <a className="browse manual-link" href={`/manual/${lang}`} target="_blank" rel="noreferrer">
             {t('help.manual')}
           </a>
@@ -1218,23 +1280,49 @@ export default function App() {
 
       {error && (
         <div className="global-error" role="alert">
-          <span>{error}</span>
+          <div className="error-head">
+            <span>{error.summary}</span>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => { setDiagnosticsOpen(true); void runDiagnostics() }}
+            >
+              {t('diagnostics.open')}
+            </button>
+            <button type="button" className="link-button" onClick={() => setPickerOpen(true)}>
+              {t('error.pickTargetAgain')}
+            </button>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => { setError(null); setErrorId(null) }}
+            >
+              {t('error.dismiss')}
+            </button>
+          </div>
+          {error.detail && error.detail !== error.summary && (
+            <details>
+              <summary>{t('error.showRaw')}</summary>
+              <pre>{error.detail}</pre>
+            </details>
+          )}
           {errorId && <span className="hint">{t('error.errorId', { id: errorId })}</span>}
-          <button
-            type="button"
-            className="link-button"
-            onClick={() => { setError(null); setErrorId(null) }}
-          >
-            {t('error.dismiss')}
-          </button>
         </div>
       )}
       {progress && <div className="analysis-progress" aria-live="polite">{progress}</div>}
-      {summary?.notice && <div className="analysis-notice">{summary.notice}</div>}
+      {summary?.notice && (
+        <div className="analysis-notice warn-banner" role="status">
+          <span aria-hidden="true">⚠</span>
+          <b>{summary.notice}</b>
+          <button type="button" className="link-button" onClick={() => setAnalysisDiagnosticsOpen(true)}>
+            {t('hint.seeDiagnostics')}
+          </button>
+        </div>
+      )}
       {summary && (
         <div className="analysis-summary">
           {t('summary.entryPoints', { count: summary.entryPointCount })}
-          {summary.minimalApiCount ? ` (${t('summary.minimalApi', { count: summary.minimalApiCount })})` : ''}
+          {` (${t('summary.minimalApi', { count: summary.minimalApiCount ?? 0 })})`}
           {' · '}{t('summary.namespaces', { count: namespaces.length })}
           {' · '}{t('summary.classes', { count: summary.classCount })}
           {' ('}{t('summary.interfaces', { count: summary.interfaceCount })}{')'}
@@ -1248,10 +1336,11 @@ export default function App() {
           )}
           {graph?.diagnostics && graph.diagnostics.calls.inspected > 0 && (
             <> · <span title={t('summary.resolutionHint')}>
-              {t('summary.resolution', {
+              {t('summary.resolutionWithExternal', {
                 resolved: graph.diagnostics.calls.resolved,
                 inspected: graph.diagnostics.calls.inspected,
                 rate: formatPercent(graph.diagnostics.calls.resolutionRate),
+                external: graph.diagnostics.calls.external,
               })}
             </span><HelpLink term="resolutionRate" onOpen={openGlossary} /></>
           )}
@@ -1260,6 +1349,10 @@ export default function App() {
           )}
           {summary.graphSizeBytes > 0 && <> · {Math.round(summary.graphSizeBytes / 1024)}KB</>}
           {summary.elapsedMs > 0 && <> · {summary.elapsedMs}ms</>}
+          {' · '}
+          <button type="button" className="link-button" onClick={() => setAnalysisDiagnosticsOpen(true)}>
+            {t('diagPanel.open')}
+          </button>
           {summary.previousAnalyzedAt && (
             <> · {t('summary.reanalyzed', {
               from: formatTime(summary.previousAnalyzedAt),
@@ -1300,6 +1393,37 @@ export default function App() {
             <button type="button" className="link-button" onClick={() => setActiveRecipe(null)}>{t('ask.close')}</button>
           </div>
           {recipeCopied && <div className="hint">{recipeCopied}</div>}
+        </div>
+      )}
+
+      {analysisDiagnosticsOpen && (
+        <DiagnosticsPanel
+          diagnostics={graph?.diagnostics ?? null}
+          minimalApiCount={summary?.minimalApiCount ?? 0}
+          entryPointCount={entryPoints.length}
+          onClose={() => setAnalysisDiagnosticsOpen(false)}
+        />
+      )}
+
+      {diagnosticsOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setDiagnosticsOpen(false)}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('diagnostics.title')}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header>
+              <span>{t('diagnostics.title')}</span>
+              <button type="button" className="link-button" onClick={() => setDiagnosticsOpen(false)}>
+                {t('ask.close')}
+              </button>
+            </header>
+            {diagnostics
+              ? <DiagnosticsCard report={diagnostics} className="diagnostics-modal-body" />
+              : <div className="panel-message">{t('freshness.checking')}</div>}
+          </div>
         </div>
       )}
 
@@ -1378,7 +1502,7 @@ export default function App() {
             <EntryPointList
               entryPoints={entryPoints}
               selectedEndpointId={callFlowEntry?.endpointId ?? null}
-              emptyMessage={t('empty.entryPoints')}
+              emptyMessage={emptyMessage('empty.entryPoints', 'empty.noEntryPointsFound')}
               classIdOfMethod={classIdOfMethod}
               onSelect={(entryPoint) => {
                 setCallFlowEntry(entryPoint)
@@ -1427,7 +1551,7 @@ export default function App() {
           {viewMode === 'startup' && (
             graph?.startupFlow
               ? <StartupFlowSidePanel flow={graph.startupFlow} />
-              : <div className="panel-message">{t('empty.startup')}</div>
+              : emptyBlock('empty.startup', 'empty.noStartupFound')
           )}
           {viewMode === 'data' && (
             dataAccess
@@ -1441,7 +1565,7 @@ export default function App() {
                   onSelect={setSelection}
                 />
               )
-              : <div className="panel-message">{t('empty.data')}</div>
+              : emptyBlock('empty.data', 'empty.noDataAccessFound')
           )}
           {viewMode === 'middleware' && (
             middlewarePipeline
@@ -1452,7 +1576,7 @@ export default function App() {
                   onSelect={setSelection}
                 />
               )
-              : <div className="panel-message">{t('empty.middleware')}</div>
+              : emptyBlock('empty.middleware', 'empty.noMiddlewareFound')
           )}
         </aside>
 
@@ -1556,7 +1680,15 @@ export default function App() {
             (viewMode === 'data' && !dataAccess) ||
             (viewMode === 'middleware' && !middlewarePipeline) ||
             (viewMode === 'startup' && !graph?.startupFlow)) && (
-            <div className="diagram-wrap"><div className="graph-shell"><div className="panel-message">{t('empty.analyzeFirst')}</div></div></div>
+            <div className="diagram-wrap"><div className="graph-shell">
+              {viewMode === 'data'
+                ? emptyBlock('empty.data', 'empty.noDataAccessFound')
+                : viewMode === 'middleware'
+                  ? emptyBlock('empty.middleware', 'empty.noMiddlewareFound')
+                  : viewMode === 'startup'
+                    ? emptyBlock('empty.startup', 'empty.noStartupFound')
+                    : emptyBlock('empty.analyzeFirst', 'empty.noClassesFound')}
+            </div></div>
           )}
         </section>
 

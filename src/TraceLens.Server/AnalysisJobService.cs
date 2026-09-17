@@ -17,6 +17,63 @@ public enum AnalysisJobState
 public sealed record AnalysisJobEvent(string Kind, string Stage, string Message, int? Count = null)
 {
     public object? Result { get; init; }
+
+    /// <summary>
+    /// 실패 이벤트의 분류 코드. UI가 이 코드로 한 줄 요약과 다음 행동을 고른다.
+    /// 예외 원문은 <see cref="Message"/>에 그대로 남긴다(접어 두고 보여 준다).
+    /// </summary>
+    public string? Code { get; init; }
+}
+
+/// <summary>
+/// 분석 실패 예외를 UI가 다음 행동을 고를 수 있는 코드로 분류한다.
+/// 분류하지 못하면 <c>ANALYZE_FAILED</c>로 두고 원문을 그대로 전달한다 — 없는 원인을 지어내지 않는다.
+/// </summary>
+public static class AnalysisFailureClassifier
+{
+    public const string SdkNotFound = "SDK_NOT_FOUND";
+    public const string RestoreFailed = "RESTORE_FAILED";
+    public const string FileLocked = "FILE_LOCKED";
+    public const string TargetNotFound = "TARGET_NOT_FOUND";
+    public const string AnalyzeFailed = "ANALYZE_FAILED";
+
+    public static string Classify(Exception exception)
+    {
+        if (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return TargetNotFound;
+        }
+
+        var message = exception.Message;
+        if (Contains(message, "MSBuildLocator") || Contains(message, ".NET SDK") ||
+            Contains(message, "MSBuild instance") || Contains(message, "dotnet --list-sdks"))
+        {
+            return SdkNotFound;
+        }
+
+        if (Contains(message, "NETSDK1004") || Contains(message, "project.assets.json") ||
+            Contains(message, "NuGet") || Contains(message, "dotnet restore"))
+        {
+            return RestoreFailed;
+        }
+
+        if (exception is IOException || Contains(message, "being used by another process") ||
+            Contains(message, "다른 프로세스에서 사용 중") || Contains(message, "sharing violation"))
+        {
+            return FileLocked;
+        }
+
+        if (Contains(message, "찾을 수 없다") || Contains(message, "could not be found") ||
+            Contains(message, "does not exist"))
+        {
+            return TargetNotFound;
+        }
+
+        return AnalyzeFailed;
+    }
+
+    private static bool Contains(string text, string needle) =>
+        text.Contains(needle, StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed record AnalysisJob(
@@ -214,7 +271,10 @@ public sealed class AnalysisJobService(
             context.Job.Error = exception.Message;
             context.Job.FinishedAt = DateTimeOffset.Now;
             logger.LogWarning(exception, "분석 작업 {JobId}이(가) 실패했다.", context.Job.Id);
-            Publish(context, new AnalysisJobEvent("error", "error", exception.Message));
+            Publish(context, new AnalysisJobEvent("error", "error", exception.Message)
+            {
+                Code = AnalysisFailureClassifier.Classify(exception)
+            });
         }
         finally
         {

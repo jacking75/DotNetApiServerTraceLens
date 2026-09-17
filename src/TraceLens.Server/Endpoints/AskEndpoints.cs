@@ -210,7 +210,7 @@ public static class AskEndpoints
         {
             await WriteEventAsync(
                 context.Response,
-                new AskEvent("error", $"{AgentTimeout}: 에이전트가 {seconds}초 안에 끝나지 않아 프로세스를 끝냈다."),
+                new AskEvent("error", $"{AgentTimeout}: 에이전트가 {seconds}초 안에 끝나지 않아 프로세스를 끝냈다.", AgentTimeout),
                 CancellationToken.None);
         }
         catch (OperationCanceledException)
@@ -225,7 +225,8 @@ public static class AskEndpoints
                 new AskEvent(
                     "error",
                     $"{AgentNotFound}: {agentRunner.DisplayName} CLI를 찾을 수 없다({exception.Message}). " +
-                    "설치한 뒤 PATH에 있어야 한다. https://docs.claude.com/en/docs/claude-code 를 참고한다."),
+                    "설치한 뒤 PATH에 있어야 한다. https://docs.claude.com/en/docs/claude-code 를 참고한다.",
+                    AgentNotFound),
                 CancellationToken.None);
         }
         catch (Exception exception) when (
@@ -340,6 +341,7 @@ public sealed record AskRequest(string? NodeId, string? Question, string Mode)
 
 }
 
-public sealed record AskEvent(string Type, string? Text);
+/// <param name="Code">오류 이벤트의 분류 코드. UI가 이 값으로 번역하므로 텍스트 접두사를 파싱하지 않아도 된다.</param>
+public sealed record AskEvent(string Type, string? Text, string? Code = null);
 
 public sealed record EditorResponse(bool Opened, string FallbackUri, string? Error);
