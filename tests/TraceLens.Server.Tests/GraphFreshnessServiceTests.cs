@@ -83,6 +83,75 @@ public sealed class GraphFreshnessServiceTests
         Assert.Equal([fixture.RelativePath], deleted.ChangedFiles);
     }
 
+    /// <summary>
+    /// 같은 평가를 공유할 때 첫 호출자가 탭을 닫아도(토큰 취소) 두 번째 호출자는 계속 기다려야 한다.
+    /// 예전에는 공유 태스크를 첫 호출자의 토큰으로 돌려서 두 번째 탭이 500을 받았다.
+    /// </summary>
+    [Fact]
+    public async Task CheckAsync_DoesNotPropagateFirstCallerCancellation()
+    {
+        await using var fixture = await FreshnessFixture.CreateAsync();
+        var evaluator = new BlockingEvaluator();
+        var service = new GraphFreshnessService(evaluator);
+        using var firstCaller = new CancellationTokenSource();
+
+        var first = service.CheckAsync(fixture.GraphWithManifest, firstCaller.Token);
+        await evaluator.Started;
+        var second = service.CheckAsync(fixture.GraphWithManifest, CancellationToken.None);
+
+        await firstCaller.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+
+        evaluator.Release();
+        var report = await second;
+        Assert.Equal(FreshnessStatus.Fresh, report.Status);
+        Assert.Equal(1, evaluator.Evaluations);
+    }
+
+    /// <summary>
+    /// 두 번째 호출은 길이·수정 시각이 같은 파일의 해시를 다시 계산하지 않는다.
+    /// 실제로 바뀐 파일이 있으면 그 파일만 다시 계산한다.
+    /// </summary>
+    [Fact]
+    public async Task EvaluateAsync_SkipsHashingForUnchangedFiles()
+    {
+        await using var fixture = await FreshnessFixture.CreateAsync();
+        var evaluator = new GraphFreshnessEvaluator();
+
+        await evaluator.EvaluateAsync(fixture.GraphWithManifest);
+        var afterFirst = evaluator.HashComputations;
+        Assert.True(afterFirst > 0, "첫 호출은 실제로 해시를 계산해야 한다.");
+
+        await evaluator.EvaluateAsync(fixture.GraphWithManifest);
+        Assert.Equal(afterFirst, evaluator.HashComputations);
+
+        await File.WriteAllTextAsync(fixture.SourcePath, "변경된 코드");
+        await evaluator.EvaluateAsync(fixture.GraphWithManifest);
+        Assert.True(evaluator.HashComputations > afterFirst, "바뀐 파일은 다시 계산해야 한다.");
+    }
+
+    /// <summary>평가가 끝나는 시점을 테스트가 정하는 스텁.</summary>
+    private sealed class BlockingEvaluator : GraphFreshnessEvaluator
+    {
+        private readonly TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Started => started.Task;
+
+        public int Evaluations { get; private set; }
+
+        public void Release() => release.TrySetResult();
+
+        public override async Task<FreshnessReport> EvaluateAsync(
+            GraphDocument graph, CancellationToken cancellationToken = default)
+        {
+            Evaluations++;
+            started.TrySetResult();
+            await release.Task;
+            return new FreshnessReport(FreshnessStatus.Fresh, graph.AnalyzedAt, graph.SnapshotId, [], []);
+        }
+    }
+
     private sealed class FreshnessFixture(
         string directory,
         string sourcePath,
