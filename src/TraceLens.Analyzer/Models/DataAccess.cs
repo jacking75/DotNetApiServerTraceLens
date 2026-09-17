@@ -157,4 +157,11 @@ public sealed record DataAccessDocument(
     IReadOnlyList<TransactionScopeInfo> Transactions,
     IReadOnlyList<WritePath> WritePaths,
     IReadOnlyList<Finding> Findings,
-    IReadOnlyList<RuleInfo> Rules);
+    IReadOnlyList<RuleInfo> Rules)
+{
+    /// <summary>
+    /// 인식했지만 해석하지 않은 입력에 대한 사실. 규칙 결과에는 영향을 주지 않는다(규칙은 실제로 돌았다).
+    /// "접근 0건"이 "DB를 안 쓴다"인지 "우리가 못 읽었다"인지를 구분하게 한다.
+    /// </summary>
+    public IReadOnlyList<string> Notes { get; init; } = [];
+}

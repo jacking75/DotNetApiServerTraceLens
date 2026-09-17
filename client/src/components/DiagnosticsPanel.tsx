@@ -4,6 +4,8 @@ import type { AnalysisDiagnostics } from '../types/graph'
 
 interface DiagnosticsPanelProps {
   diagnostics: AnalysisDiagnostics | null
+  /** DB·캐시에서 인식했지만 해석하지 않은 입력. 빈 보기의 원인을 여기서 말한다. */
+  dataAccessNotes: readonly string[]
   /** 요약 줄에서 온 부가 수치. 진단에는 없지만 같은 화면에서 보는 편이 낫다. */
   minimalApiCount: number
   entryPointCount: number
@@ -17,6 +19,7 @@ interface DiagnosticsPanelProps {
  */
 export function DiagnosticsPanel({
   diagnostics,
+  dataAccessNotes,
   minimalApiCount,
   entryPointCount,
   onClose,
@@ -143,6 +146,15 @@ export function DiagnosticsPanel({
                 </ul>
               </section>
             ) : null}
+
+            {dataAccessNotes.length > 0 && (
+              <section>
+                <h4>{t('diagPanel.dataNotes')}</h4>
+                <ul className="diag-kv">
+                  {dataAccessNotes.map((line) => <li key={line}>{line}</li>)}
+                </ul>
+              </section>
+            )}
 
             <section>
               <h4>{t('diagPanel.limitations')}</h4>

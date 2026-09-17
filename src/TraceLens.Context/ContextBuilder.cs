@@ -643,6 +643,16 @@ public sealed class ContextBuilder(GraphFreshnessEvaluator freshnessEvaluator)
             limitations.Add($"DI 등록 없이 유일 구현체로 이은 호출이 {diagnostics.Calls.SingleImplementation}곳 있다(추정).");
         }
 
+        if (diagnostics.Calls.External > 0)
+        {
+            limitations.Add(
+                $"해석 {diagnostics.Calls.Resolved}/{diagnostics.Calls.Inspected} · " +
+                $"솔루션 밖 호출 {diagnostics.Calls.External}건은 분모에서 뺐다.");
+        }
+
+        // 인식했지만 해석하지 않은 입력(EF Core 등)은 문맥에도 그대로 넘긴다. 에이전트가 빈칸을 잘못 읽지 않게 한다.
+        limitations.AddRange(graph.DataAccess?.Notes ?? []);
+
         limitations.AddRange(diagnostics.Limitations);
         limitations.AddRange(diagnostics.EntryPointNotes);
         if (diagnostics.ChangedDuringAnalysis)

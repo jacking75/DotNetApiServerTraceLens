@@ -56,6 +56,7 @@ describe('DiagnosticsPanel', () => {
       <I18nProvider>
         <DiagnosticsPanel
           diagnostics={diagnostics}
+          dataAccessNotes={['저장소 접근을 한 건도 찾지 못했지만 솔루션에 DbContext가 있다.']}
           minimalApiCount={4}
           entryPointCount={8}
           onClose={() => {}}
@@ -68,12 +69,19 @@ describe('DiagnosticsPanel', () => {
     expect(screen.getByText('Missing.Tool')).toBeTruthy()
     expect(screen.getByText('호출 근거는 엣지당 3개까지만 남긴다.')).toBeTruthy()
     expect(screen.getByText(/솔루션 밖 호출 1168건은 해석률 분모에서 뺐다/)).toBeTruthy()
+    expect(screen.getByText(/솔루션에 DbContext가 있다/)).toBeTruthy()
   })
 
   it('진단이 없는 옛 그래프에는 사유를 말한다', () => {
     render(
       <I18nProvider>
-        <DiagnosticsPanel diagnostics={null} minimalApiCount={0} entryPointCount={0} onClose={() => {}} />
+        <DiagnosticsPanel
+          diagnostics={null}
+          dataAccessNotes={[]}
+          minimalApiCount={0}
+          entryPointCount={0}
+          onClose={() => {}}
+        />
       </I18nProvider>,
     )
 

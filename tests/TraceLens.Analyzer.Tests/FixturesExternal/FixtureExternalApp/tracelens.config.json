@@ -1,0 +1,4 @@
+{
+  "_comment": "EF Core 네임스페이스를 솔루션 밖처럼 다뤄 외부 호출 집계를 검증한다.",
+  "excludeNamespacePrefixes": ["Microsoft.EntityFrameworkCore"]
+}

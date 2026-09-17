@@ -23,6 +23,14 @@ public sealed record ResolvedCall(
 
     /// <summary>람다 본문 안에서 나온 호출인지. 실행 여부를 이 자리에서 증명할 수 없어 확실도를 낮춘다.</summary>
     public bool ViaLambda { get; init; }
+
+    /// <summary>
+    /// <see cref="CallResolution.External"/>일 때 대상 타입의 네임스페이스와 이름.
+    /// 엣지를 늘리는 데 쓰지 않고 "무엇을 보고도 해석하지 않았는지"를 집계하는 데만 쓴다.
+    /// </summary>
+    public string ExternalNamespace { get; init; } = string.Empty;
+
+    public string ExternalType { get; init; } = string.Empty;
 }
 
 /// <summary>
@@ -200,25 +208,53 @@ public sealed class InvocationResolver(DiResolver diResolver, ILogger<Invocation
             if (di.Method is null)
             {
                 return IsExcluded(calledMethod, config) || !IsDeclaredInSolution(calledMethod, solutionDirectory)
-                    ? new ResolvedCall(null, declaredTarget, CallResolution.External, CallConfidence.Certain, file, line, di.Note)
+                    ? WithExternalOrigin(
+                        new ResolvedCall(null, declaredTarget, CallResolution.External, CallConfidence.Certain, file, line, di.Note),
+                        calledMethod)
                     : new ResolvedCall(null, declaredTarget, CallResolution.Ambiguous, CallConfidence.Estimated, file, line, di.Note);
             }
 
             return IsSolutionMethod(di.Method, solutionDirectory, config)
                 ? new ResolvedCall(di.Method, declaredTarget, di.Resolution, di.Confidence, file, line, di.Note)
-                : new ResolvedCall(null, declaredTarget, CallResolution.External, CallConfidence.Certain, file, line,
-                    "구현체가 솔루션 밖에 있다.");
+                : WithExternalOrigin(
+                    new ResolvedCall(null, declaredTarget, CallResolution.External, CallConfidence.Certain, file, line,
+                        "구현체가 솔루션 밖에 있다."),
+                    di.Method);
         }
 
         if (!IsSolutionMethod(calledMethod, solutionDirectory, config))
         {
-            return new ResolvedCall(
-                null, declaredTarget, CallResolution.External, CallConfidence.Certain, file, line,
-                IsExcluded(calledMethod, config) ? "excludeNamespacePrefixes로 제외한 범위다." : "솔루션 밖 호출이다.");
+            return WithExternalOrigin(
+                new ResolvedCall(
+                    null, declaredTarget, CallResolution.External, CallConfidence.Certain, file, line,
+                    IsExcluded(calledMethod, config) ? "excludeNamespacePrefixes로 제외한 범위다." : "솔루션 밖 호출이다."),
+                calledMethod);
         }
 
         return new ResolvedCall(
             calledMethod, declaredTarget, CallResolution.Direct, CallConfidence.Certain, file, line, string.Empty);
+    }
+
+    /// <summary>
+    /// External 호출에 대상 네임스페이스·타입을 붙인다.
+    /// 해석 결과는 그대로 두고 집계용 정보만 더한다 — 엣지 수도 해석률도 바뀌지 않는다.
+    /// </summary>
+    private static ResolvedCall WithExternalOrigin(ResolvedCall call, IMethodSymbol? method)
+    {
+        var type = method?.ContainingType;
+        if (type is null)
+        {
+            return call;
+        }
+
+        var containingNamespace = type.ContainingNamespace is { IsGlobalNamespace: false } ns
+            ? ns.ToDisplayString()
+            : string.Empty;
+        return call with
+        {
+            ExternalNamespace = containingNamespace,
+            ExternalType = type.Name
+        };
     }
 
     private static string Describe(SyntaxNode syntax)

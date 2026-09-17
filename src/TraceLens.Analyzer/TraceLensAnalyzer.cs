@@ -412,6 +412,9 @@ public sealed class TraceLensAnalyzer(
 
         limitations.AddRange(loaded.WorkspaceFailures.Take(5).Select(message => "MSBuild: " + message));
 
+        // 인식은 했지만 해석하지 않은 프레임워크를 한 줄씩 남긴다. 결과의 빈칸을 사용자가 설명할 수 있어야 한다.
+        limitations.AddRange(UnreadFrameworks.Describe(stats.ExternalByNamespace));
+
         var projects = loaded.ProjectDiagnostics;
         return new AnalysisDiagnostics(
             projects.Count,

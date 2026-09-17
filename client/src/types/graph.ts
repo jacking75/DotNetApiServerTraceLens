@@ -567,6 +567,8 @@ export interface DataAccessDocument {
   writePaths: WritePath[]
   findings: Finding[]
   rules: RuleInfo[]
+  /** 인식했지만 해석하지 않은 입력에 대한 사실. 규칙 결과에는 영향을 주지 않는다. */
+  notes?: string[]
 }
 
 /* ------------------------------------------------------------------ 미들웨어 (스키마 v6) */

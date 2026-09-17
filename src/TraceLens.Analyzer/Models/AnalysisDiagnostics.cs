@@ -9,6 +9,13 @@ public sealed record AnalyzedProject(
     IReadOnlyList<string> SampleErrors);
 
 /// <summary>
+/// 솔루션 밖(프레임워크·패키지) 호출을 네임스페이스로 묶은 집계다.
+/// 엣지를 늘리지 않고 "무엇을 보고도 해석하지 않았는지"만 남긴다. 개별 호출 지점은 저장하지 않는다.
+/// </summary>
+/// <param name="SampleType">그 네임스페이스에서 본 타입 하나. 무엇을 가리키는지 알아보게 한다.</param>
+public sealed record ExternalCallGroup(string Namespace, int Count, string SampleType);
+
+/// <summary>
 /// 호출 지점 판정의 개수. 분모인 <paramref name="Inspected"/>는 <b>솔루션 안 대상</b>을 부른 호출 지점만 센다.
 /// 프레임워크·패키지 호출(<paramref name="External"/>)은 애초에 그래프의 대상이 아니라 분모에서 뺀다.
 /// </summary>
@@ -23,6 +30,9 @@ public sealed record CallResolutionStats(
     int External)
 {
     public static CallResolutionStats Empty { get; } = new(0, 0, 0, 0, 0, 0, 0, 0);
+
+    /// <summary>솔루션 밖 호출의 네임스페이스별 상위 집계(건수 내림차순). 해석률에는 영향을 주지 않는다.</summary>
+    public IReadOnlyList<ExternalCallGroup> ExternalByNamespace { get; init; } = [];
 
     /// <summary>해석률 = 해석한 지원 대상 호출 지점 / 검사한 지원 대상 호출 지점. 호출 "정확도"와는 다른 값이다.</summary>
     public double ResolutionRate => Inspected == 0 ? 1d : Math.Round((double)Resolved / Inspected, 4);

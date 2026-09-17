@@ -49,6 +49,17 @@
 5. **신선도 입력이 없으면 `fresh`라고 하지 않는다.** `manifest`가 없는 문서는 바뀐 파일이 없어도 `unknown`이다(새 파일·설정 변경을 확인할 방법이 없기 때문이다).
 6. **저장은 항상 원자적으로 한다.** 임시 파일에 완전히 쓰고, 다시 읽어 파싱되는지 확인한 다음에야 교체한다. 실패하면 이전 정상 그래프가 남는다.
 
+### v7의 부가 필드 (schema 번호를 올리지 않는다)
+
+아래 셋은 **추가 필드**다. 옛 그래프를 읽으면 빈 목록이 되고, 있으면 그대로 그린다.
+그래프의 노드·엣지·접근 수를 바꾸지 않으므로 스냅샷 비교에도 영향이 없다.
+
+| 필드 | 뜻 | 없으면 |
+|---|---|---|
+| `diagnostics.calls.externalByNamespace` | 솔루션 밖 호출을 네임스페이스로 묶은 상위 20개(건수·대표 타입). 알려진 프레임워크는 `diagnostics.limitations`에 한 줄로 승격된다. | 빈 목록 — 진단 패널의 해당 절을 그리지 않는다 |
+| `diagnostics.entryPointCandidates` | HTTP 밖 실행 단위 후보(`HostedService`·`MessageConsumer`·`SignalRHub`·`GrpcService`·`ScheduledJob`·`AzureFunction`·`HealthCheck`·`ConventionalRouting`). 진입점·엣지를 만들지 않는다. | 빈 목록 |
+| `dataAccess.notes` | 인식했지만 해석하지 않은 저장소 입력(EF Core·Mongo·NHibernate 타입이 있는데 접근 0건 등). 규칙 결과는 바꾸지 않는다. | 빈 목록 |
+
 ## 3. `graph.json` 최소 예제 (v7)
 
 값은 형태를 보여 주기 위한 예시이며 실제 분석 결과가 아니다.
@@ -131,7 +142,11 @@
     "calls": {
       "inspected": 28, "resolved": 28, "direct": 12, "diRegistration": 16,
       "singleImplementation": 0, "ambiguous": 0, "unresolved": 0, "external": 143,
-      "resolutionRate": 1.0
+      "resolutionRate": 1.0,
+      "externalByNamespace": [
+        { "namespace": "Microsoft.EntityFrameworkCore", "count": 96, "sampleType": "DbSet" },
+        { "namespace": "System.Transactions", "count": 4, "sampleType": "TransactionScope" }
+      ]
     },
     "excludedNamespacePrefixes": ["System", "Microsoft", "Swashbuckle"],
     "maxCallDepth": 8,
@@ -140,7 +155,10 @@
     "limitations": [],
     "changedDuringAnalysis": false,
     "changedDuringAnalysisFiles": [],
-    "entryPointNotes": []
+    "entryPointNotes": [],
+    "entryPointCandidates": [
+      { "kind": "HostedService", "count": 3, "samples": ["RankBatchWorker", "CleanupWorker"] }
+    ]
   },
   "startupFlow": null,
   "dataAccess": null,

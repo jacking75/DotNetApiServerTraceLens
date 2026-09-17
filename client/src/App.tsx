@@ -1399,6 +1399,7 @@ export default function App() {
       {analysisDiagnosticsOpen && (
         <DiagnosticsPanel
           diagnostics={graph?.diagnostics ?? null}
+          dataAccessNotes={graph?.dataAccess?.notes ?? []}
           minimalApiCount={summary?.minimalApiCount ?? 0}
           entryPointCount={entryPoints.length}
           onClose={() => setAnalysisDiagnosticsOpen(false)}

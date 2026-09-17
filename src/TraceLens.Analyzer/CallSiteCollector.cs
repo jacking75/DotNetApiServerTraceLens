@@ -22,12 +22,28 @@ internal sealed class CallSiteCollector(bool enabled, int maxPerEdge, int maxBou
     private int external;
     private int droppedForLimit;
 
+    /// <summary>
+    /// 솔루션 밖 호출을 네임스페이스로 센다. 개별 호출 지점은 저장하지 않는다(파일 크기).
+    /// 키가 상한을 넘으면 새 네임스페이스는 "기타"로 합친다.
+    /// </summary>
+    private readonly Dictionary<string, (int Count, string SampleType)> externalByNamespace =
+        new(StringComparer.Ordinal);
+
+    /// <summary>집계할 네임스페이스 키의 상한. 넘으면 새 키를 만들지 않고 "기타"에 더한다.</summary>
+    private const int MaxExternalNamespaceKeys = 200;
+
+    /// <summary>화면·문맥에 내보내는 상위 네임스페이스 수.</summary>
+    private const int TopExternalNamespaces = 20;
+
+    private const string OtherNamespace = "(기타)";
+
     public void Add(string fromNodeId, string? toNodeId, ResolvedCall call)
     {
         switch (call.Resolution)
         {
             case CallResolution.External:
                 external++;
+                CountExternal(call);
                 return;
             case CallResolution.Direct:
                 inspected++;
@@ -108,8 +124,30 @@ internal sealed class CallSiteCollector(bool enabled, int maxPerEdge, int maxBou
         .ThenBy(site => site.Line)
         .ToArray();
 
+    private void CountExternal(ResolvedCall call)
+    {
+        var key = call.ExternalNamespace.Length > 0 ? call.ExternalNamespace : "(global)";
+        if (!externalByNamespace.ContainsKey(key) && externalByNamespace.Count >= MaxExternalNamespaceKeys)
+        {
+            key = OtherNamespace;
+        }
+
+        externalByNamespace.TryGetValue(key, out var entry);
+        externalByNamespace[key] = (
+            entry.Count + 1,
+            entry.SampleType ?? (call.ExternalType.Length > 0 ? call.ExternalType : string.Empty));
+    }
+
     public CallResolutionStats Stats => new(
-        inspected, resolved, direct, diRegistration, singleImplementation, ambiguous, unresolved, external);
+        inspected, resolved, direct, diRegistration, singleImplementation, ambiguous, unresolved, external)
+    {
+        ExternalByNamespace = externalByNamespace
+            .OrderByDescending(item => item.Value.Count)
+            .ThenBy(item => item.Key, StringComparer.Ordinal)
+            .Take(TopExternalNamespaces)
+            .Select(item => new ExternalCallGroup(item.Key, item.Value.Count, item.Value.SampleType ?? string.Empty))
+            .ToArray()
+    };
 
     /// <summary>상한 때문에 목록에서 뺀 근거 수. 0이 아니면 제한을 화면·문맥에 알린다.</summary>
     public int DroppedForLimit => droppedForLimit;

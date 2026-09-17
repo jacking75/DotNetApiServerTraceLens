@@ -45,7 +45,10 @@ public sealed class TraceLensTools(GraphFileStore store)
             graph.Edges.Count,
             graph.CallSites.Count > 0,
             graph.Diagnostics,
-            issues.Select(issue => $"{issue.Code}: {issue.Message}").ToArray());
+            issues.Select(issue => $"{issue.Code}: {issue.Message}").ToArray())
+        {
+            DataAccessNotes = graph.DataAccess?.Notes ?? []
+        };
     }
 
     [McpServerTool(Name = "get_context")]
@@ -500,4 +503,11 @@ public sealed record AnalysisStatusResult(
     int EdgeCount,
     bool HasCallSites,
     AnalysisDiagnostics? Diagnostics,
-    IReadOnlyList<string> GraphIssues);
+    IReadOnlyList<string> GraphIssues)
+{
+    /// <summary>
+    /// DB·캐시에서 인식했지만 해석하지 않은 입력에 대한 사실(EF Core만 쓰는 프로젝트 등).
+    /// 접근이 0건일 때 "DB를 안 쓴다"로 읽지 않게 한다.
+    /// </summary>
+    public IReadOnlyList<string> DataAccessNotes { get; init; } = [];
+}

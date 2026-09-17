@@ -387,7 +387,10 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
                 FindingIds = pathFindings.TryGetValue(analysis.Path.Id, out var ids) ? ids : []
             }).ToArray(),
             findings,
-            BuildRuleCatalog(sharding));
+            BuildRuleCatalog(sharding))
+        {
+            Notes = BuildNotes(scan, options)
+        };
 
         logger.LogInformation(
             "DB·캐시 점검 {Count}건(치명 {Critical} · 경고 {Warning} · 정보 {Info}).",
@@ -436,6 +439,35 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
                 yield return child;
             }
         }
+    }
+
+    /// <summary>
+    /// 인식했지만 해석하지 않은 입력을 사실로 남긴다.
+    /// 규칙 결과는 손대지 않는다 — 규칙은 실제로 돌았고, 입력이 비었을 뿐이다.
+    /// </summary>
+    private static IReadOnlyList<string> BuildNotes(DataAccessScanResult scan, DataAccessOptions options)
+    {
+        if (scan.Accesses.Count > 0)
+        {
+            return [];
+        }
+
+        var notes = new List<string>();
+        if (scan.OrmTypeHints.Count > 0)
+        {
+            notes.Add(
+                $"저장소 접근을 한 건도 찾지 못했지만 솔루션에 {string.Join(", ", scan.OrmTypeHints)}이(가) 있다. " +
+                "지금 버전은 SQL 리터럴·Dapper·SqlKata·설정한 queryApis만 읽는다.");
+        }
+
+        if (options.QueryApis.SequenceEqual(DataAccessOptions.Default.QueryApis, StringComparer.Ordinal))
+        {
+            notes.Add(
+                "db.queryApis가 기본값이다. 사내 데이터 래퍼를 쓴다면 `tracelens init`으로 설정 파일을 만들고 " +
+                "db.queryApis에 그 API 패턴을 적어야 접근을 읽는다.");
+        }
+
+        return notes;
     }
 
     private static IReadOnlyList<DataSourceInfo> BuildDataSources(DataAccessScanResult scan, DataAccessOptions options)

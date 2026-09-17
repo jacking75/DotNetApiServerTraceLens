@@ -117,7 +117,14 @@ public sealed record DataAccessScanResult(
     IReadOnlyList<DataAccess> Accesses,
     IReadOnlyList<TransactionScopeInfo> Transactions,
     IReadOnlyDictionary<string, string> DataSourceKinds,
-    IReadOnlyDictionary<string, string> MethodDataSources);
+    IReadOnlyDictionary<string, string> MethodDataSources)
+{
+    /// <summary>
+    /// 솔루션에서 본 ORM 타입 이름(예: <c>DbContext</c> 파생, <c>IMongoCollection</c>, <c>ISession</c>).
+    /// 접근이 0건인데 이것이 있으면 "DB를 안 쓴다"가 아니라 "우리가 못 읽었다"는 뜻이다.
+    /// </summary>
+    public IReadOnlyList<string> OrmTypeHints { get; init; } = [];
+}
 
 /// <summary>
 /// 솔루션을 한 번 훑어 DB·캐시 접근과, 보상 처리·규칙 판정에 필요한 구조 정보를 모은다.
@@ -148,6 +155,7 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
     {
         var methods = new List<MethodDataFacts>();
         var accesses = new List<DataAccess>();
+        var ormHints = new SortedSet<string>(StringComparer.Ordinal);
         var transactions = new List<TransactionScopeInfo>();
         var dataSourceKinds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var seenAccesses = new HashSet<(string File, int Line, string Target, AccessOperation Operation)>();
@@ -178,6 +186,7 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
                 }
 
                 var (root, model) = (semantics.Root, semantics.Model);
+                CollectOrmHints(root, ormHints);
 
                 foreach (var member in root.DescendantNodes().OfType<MemberDeclarationSyntax>())
                 {
@@ -224,7 +233,51 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             "DB·캐시 접근 {AccessCount}곳 · 트랜잭션 {TransactionCount}개를 찾았다.",
             accesses.Count,
             transactions.Count);
-        return new DataAccessScanResult(methods, accesses, transactions, dataSourceKinds, methodDataSources);
+        return new DataAccessScanResult(methods, accesses, transactions, dataSourceKinds, methodDataSources)
+        {
+            OrmTypeHints = [.. ormHints]
+        };
+    }
+
+    /// <summary>
+    /// 이 버전이 읽지 않는 ORM의 흔적을 이름만으로 모은다.
+    /// 심볼 해석 없이 구문만 보므로 비용이 거의 없고, 패키지가 없는 픽스처에서도 같은 판단을 한다.
+    /// 여기서 모은 것은 <b>접근을 만들지 않는다</b> — "못 읽었다"를 말하는 데만 쓴다.
+    /// </summary>
+    private static void CollectOrmHints(SyntaxNode root, SortedSet<string> hints)
+    {
+        foreach (var type in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
+        {
+            foreach (var baseType in type.BaseList?.Types ?? default)
+            {
+                var name = baseType.Type switch
+                {
+                    SimpleNameSyntax simple => simple.Identifier.ValueText,
+                    QualifiedNameSyntax qualified => qualified.Right.Identifier.ValueText,
+                    _ => null
+                };
+                if (name is "DbContext" or "IdentityDbContext")
+                {
+                    hints.Add("DbContext");
+                }
+            }
+        }
+
+        foreach (var name in root.DescendantNodes().OfType<SimpleNameSyntax>())
+        {
+            switch (name.Identifier.ValueText)
+            {
+                case "IMongoCollection":
+                    hints.Add("IMongoCollection<>");
+                    break;
+                case "IMongoDatabase":
+                    hints.Add("IMongoDatabase");
+                    break;
+                case "ISessionFactory":
+                    hints.Add("ISessionFactory");
+                    break;
+            }
+        }
     }
 
     /// <summary>기본 데이터소스 이름. 커넥션을 어디서 열었는지 못 찾았을 때 쓴다.</summary>

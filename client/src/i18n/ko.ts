@@ -804,6 +804,7 @@ export const ko = {
   'diagPanel.excluded': '제외한 네임스페이스: {list}',
   'diagPanel.entryPointCandidates': 'HTTP 밖 실행 단위 후보',
   'diagPanel.entryPointCandidatesNote': '이번 분석은 HTTP 진입점만 호출 흐름의 출발점으로 잡는다. 아래는 세지 않은 실행 단위다.',
+  'diagPanel.dataNotes': 'DB · 캐시에서 인식했지만 해석하지 않은 입력',
   'diagPanel.limitations': '한계',
   'diagPanel.changedDuringAnalysis': '분석 중 바뀐 파일',
   'summary.resolutionWithExternal': '호출 해석률 {resolved}/{inspected} ({rate}) · 외부 호출 {external}은 분모에서 뺌',

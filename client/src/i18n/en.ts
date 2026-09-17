@@ -809,6 +809,7 @@ export const en: Dictionary = {
   'diagPanel.excluded': 'Excluded namespaces: {list}',
   'diagPanel.entryPointCandidates': 'Execution units outside HTTP',
   'diagPanel.entryPointCandidatesNote': 'This analysis starts call flows only from HTTP entry points. The units below were not counted.',
+  'diagPanel.dataNotes': 'Data and cache input seen but not interpreted',
   'diagPanel.limitations': 'Limitations',
   'diagPanel.changedDuringAnalysis': 'Files changed during the analysis',
   'summary.resolutionWithExternal': 'Call resolution {resolved}/{inspected} ({rate}) · {external} external call(s) excluded',

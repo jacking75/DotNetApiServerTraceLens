@@ -222,8 +222,13 @@ public static class CommandRouter
         if (diagnostics is not null)
         {
             Console.WriteLine(
-                $"  호출 해석률 {diagnostics.Calls.Resolved}/{diagnostics.Calls.Inspected} " +
-                $"({diagnostics.Calls.ResolutionRate:P1}) · 모호 {diagnostics.Calls.Ambiguous} · 미해석 {diagnostics.Calls.Unresolved}");
+                $"  호출 해석 {diagnostics.Calls.Resolved}/{diagnostics.Calls.Inspected} " +
+                $"({diagnostics.Calls.ResolutionRate:P1}) · 외부 호출 {diagnostics.Calls.External}은 분모에서 뺌 · " +
+                $"모호 {diagnostics.Calls.Ambiguous} · 미해석 {diagnostics.Calls.Unresolved}");
+            foreach (var note in graph.DataAccess?.Notes ?? [])
+            {
+                Console.WriteLine($"  ! {note}");
+            }
             Console.WriteLine($"  프로젝트 {diagnostics.LoadedProjects}/{diagnostics.TotalProjects} (컴파일 오류 {diagnostics.ProjectsWithCompileErrors})");
 
             // 어느 프로젝트가 왜 실패했는지 이름으로 말한다. 숫자만으로는 무엇을 고쳐야 할지 알 수 없다.
