@@ -323,7 +323,9 @@ suggested next action — so a failed setup tells you what to fix instead of jus
 
 `.\pack.ps1` builds a Windows x64 portable ZIP and a .NET tool package into `artifacts/`, with
 checksums, versions and manual verification steps in `manifest.txt`. It builds only; it never
-publishes.
+publishes. `-Runtimes @('win-x64','linux-x64','osx-arm64')` produces one ZIP per RID —
+**building a ZIP is not the same as supporting that OS**, and the support table below stays as it is
+until someone runs doctor, analyze, serve and source viewing there.
 
 Long analyses report progress by **stage** (load · entrypoints · scan · rules · save) with real
 counts — no invented percentage — and can be **canceled**, which keeps the previous analysis intact.

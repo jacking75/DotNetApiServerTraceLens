@@ -41,7 +41,7 @@
 
 - [x] [T17. 분석 범위 확장(DI 등록 패턴 · virtual/override 디스패치 · 다중 호스트 · 최상위 문)](#t17) — 완료 2026-09-17 15:44 KST (5개 항목 모두. 실제 프로젝트 노드 765 → 839, 엣지 1205 → 1291, 모호 0 → 2(확정 못 한 virtual 디스패치를 정직하게 남긴 것))
 - [x] [T18. 큰 솔루션 성능(측정 먼저 → 단일 패스 · 병렬화 · 뷰포트 컬링)](#t18) — 완료 2026-09-17 16:09 KST (`analyze --profile` 추가. 시맨틱 모델을 문서마다 한 번만 만들어 수집기가 나눠 쓰게 하니 실제 프로젝트 analyze 9421~10694ms → 6849~7239ms, rules 2195~2370ms → 352~412ms. 결과물은 동일. 클래스 564개에서 `layoutTree` 평균 15.6ms라 배치는 병목이 아니고, 100% 줌 1600x900에서 564개 중 11개만 그린다. 스캐너 `Task.WhenAll` 병렬화는 그 자체로는 측정 가능한 개선이 없어 그대로 적었다)
-- [ ] [T19. 다중 RID 패키지 빌드(win-x64 · linux-x64 · osx-arm64)](#t19)
+- [x] [T19. 다중 RID 패키지 빌드(win-x64 · linux-x64 · osx-arm64)](#t19) — 완료 2026-09-17 16:34 KST (`pack.ps1 -Runtimes`로 RID별 ZIP 3개 + SHA256을 manifest에 남기는 것까지 실제 실행 확인. 빌드만 하고 README 지원 표는 그대로. `-SkipClient`는 index.html 존재 대신 빌드 시각을 클라이언트 소스와 비교하도록 바꿨고 오래된 경우 멈추는 것을 확인했다)
 
 권장 순서: **T5 → T1 → T2 → T3 → T4** (분석 신뢰성, 서로 의존) → **T6 → T7 → T8** (첫 사용) → P1 → P2.
 T1·T2·T3은 같은 실제 프로젝트로 전후 수치를 기록하면서 진행한다(§2의 수치가 기준선이다).
@@ -472,9 +472,10 @@ DataAccessScanner는 이미 람다 안의 SQL·캐시 호출을 부모에 귀속
 
 ```powershell
 dotnet build TraceLens.sln            # 경고 0 유지 (TreatWarningsAsErrors)
-dotnet test  TraceLens.sln            # 현재 84개
-cd client; npm test; npm run build    # 현재 41개
-cd ..; .\pack.ps1                     # 배포물 + manifest
+dotnet test  TraceLens.sln            # 현재 171개 (Analyzer 72 · Server 90 · Mcp 9)
+cd client; npm test; npm run build    # 현재 71개
+cd client; npm run lint               # oxlint
+cd ..; .\pack.ps1                     # 배포물 + manifest (RID별은 -Runtimes)
 
 # 실제 프로젝트 기준선 재측정 (T1~T4 전후 비교용)
 dotnet run --project src/TraceLens.Cli -- analyze C:\WorkingDev\com2us-taskbar-hero\GameServer\GameServer.csproj --json

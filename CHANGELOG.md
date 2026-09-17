@@ -78,11 +78,18 @@
 - 롤링 파일 로그(`%LOCALAPPDATA%\TraceLens\logs`)와 500 응답의 `errorId`.
 - 상태를 바꾸는 `/api/*` 요청의 Origin 검사(`FORBIDDEN_ORIGIN`).
 - 영어 UI 완성과 하드코딩 한국어 회귀 테스트.
+- 테스트: .NET 93 → 171개(Analyzer 72 · Server 90 · Mcp 9), 클라이언트 41 → 71개.
 - **규칙 카탈로그 42개의 영어 문구**(`client/src/i18n/ruleText.ts`, 규칙 ID로 대응).
   분석기가 규칙을 늘리면 `ruleText.test.ts`가 분석기 소스에서 ID를 읽어 대조해 실패한다.
   개별 점검 결과(what·why·fix)는 번역하지 않는다 — 분석할 때 실제 심볼·테이블 이름을 섞어 만드는
   문장이라 미리 번역할 수 없다. 영어 화면에서도 분석기가 만든 그대로 보여 주고 번역한 척하지 않는다.
 - `GET /api/graph` 계열과 `/api/browse`의 실패 응답에도 `code`를 담는다(옛 `error` 필드는 그대로).
+- **`pack.ps1 -Runtimes`** — RID별 portable ZIP을 각각 만들고 SHA256을 manifest에 남긴다
+  (`win-x64`·`win-arm64`·`linux-x64`·`linux-arm64`·`osx-x64`·`osx-arm64`). **빌드만 한다** —
+  ZIP을 만든 것과 그 OS를 지원하는 것은 다르므로 README 지원 표는 그대로 두고,
+  manifest에도 그 문장과 함께 "Windows에서 만든 linux/osx ZIP은 실행 권한이 보존되지 않는다"를 적는다.
+- `pack.ps1 -SkipClient`가 `index.html`의 존재만 보지 않고 **빌드 시각**을 클라이언트 소스와 비교한다.
+  wwwroot가 더 오래됐으면 옛 UI가 배포물에 들어가므로 거기서 멈춘다.
 
 ### 문서
 

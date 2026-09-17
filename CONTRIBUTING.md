@@ -49,6 +49,7 @@ npm run build                         # tsc -b + vite build
 
 cd ..
 .\pack.ps1                            # 배포물을 만들고 체크섬·검증 절차를 남긴다
+.\pack.ps1 -Runtimes @('win-x64','linux-x64','osx-arm64')   # RID별 ZIP (빌드만 한다)
 ```
 
 성능을 손댈 때는 재고 나서 고친다. 재는 명령은 두 개다.

@@ -308,6 +308,9 @@ tracelens demo    [--dir <복사할 위치>]         예제를 복사하고 무�
 
 `.\pack.ps1`은 Windows x64 portable ZIP과 .NET tool 패키지를 `artifacts/`에 만들고, 체크섬·버전·수동
 검증 절차를 `manifest.txt`에 남긴다. 만들기만 하고 게시는 하지 않는다.
+`-Runtimes @('win-x64','linux-x64','osx-arm64')`을 주면 RID별로 ZIP을 각각 만든다 —
+**ZIP을 만든 것과 그 OS를 지원하는 것은 다르다.** 누군가 그 OS에서 doctor·analyze·serve·소스 보기를
+확인하기 전까지 아래 지원 표는 그대로 둔다.
 
 오래 걸리는 분석은 **단계**(load · entrypoints · scan · rules · save)와 실제 처리 건수로 진행 상태를
 보여 준다(근거 없는 진행률 %는 만들지 않는다). **취소**할 수 있고, 취소해도 이전 분석 결과는 그대로
