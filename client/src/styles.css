@@ -617,3 +617,63 @@ table.findings .conf { color: #8a97a9; font-size: 10.5px; white-space: nowrap; }
 .global-error { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .global-error .hint { color: inherit; opacity: .8; }
 .global-error button { margin-left: auto; }
+
+/* T20 — 첫 사용 안내를 workspace 밖(오른쪽 고정 영역)에 둔다. 분석 전에도 보인다. */
+.walkthrough-dock {
+  position: fixed; top: 148px; right: 14px; width: 320px; z-index: 40;
+  max-height: calc(100vh - 168px); overflow: auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+}
+.walkthrough-dock .walkthrough { margin-bottom: 0; }
+.walkthrough-next { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; font-size: 12px; }
+.walkthrough-next ul { margin: 4px 0 0; padding-left: 18px; line-height: 1.9; }
+.welcome-picked {
+  background: #12324a; border: 1px solid #1d5c86; border-radius: 8px;
+  padding: 8px 12px; font-size: 12.5px; margin: 0 0 16px;
+}
+.welcome-sample { margin-bottom: 8px; }
+@keyframes tracelens-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(96, 200, 255, .8); }
+  100% { box-shadow: 0 0 0 12px rgba(96, 200, 255, 0); }
+}
+.tracelens-attention { animation: tracelens-pulse 1.1s ease-out 1; }
+
+/* T21 — 도움말(용어집 · 단축키 · 실무 절차) */
+.help-dialog header a.link-button { margin-left: auto; }
+.help-dialog header button.link-button { margin-left: 8px; }
+.tab-row { display: flex; gap: 6px; margin: 4px 0 10px; }
+.tab-row button {
+  color: var(--dim); background: #0c1320; border: 1px solid var(--border);
+  border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 700;
+}
+.tab-row button.active { color: #a9e7ff; background: #153044; border-color: #3e7695; }
+.glossary { margin: 0; font-size: 12.5px; }
+.glossary > div { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.glossary > div.focused { background: #12243a; border-radius: 8px; }
+.glossary dt { font-weight: 700; margin-bottom: 3px; }
+.glossary dd { margin: 0; color: var(--dim); line-height: 1.7; }
+.glossary kbd {
+  background: #0c1320; border: 1px solid var(--border-2); border-radius: 5px;
+  padding: 1px 6px; font-family: inherit; font-size: 11.5px;
+}
+.help-recipes { margin: 0; padding-left: 18px; font-size: 12.5px; }
+.help-recipes > li { margin-bottom: 12px; }
+.help-recipes ol { margin: 4px 0; padding-left: 18px; color: var(--dim); line-height: 1.7; }
+.help-recipes .row { display: flex; gap: 10px; align-items: center; }
+.help-link {
+  color: var(--dim); background: transparent; border: 1px solid var(--border-2);
+  border-radius: 999px; width: 15px; height: 15px; line-height: 1;
+  font-size: 10px; font-weight: 700; padding: 0; margin-left: 4px; vertical-align: middle;
+}
+.help-link:hover { color: #a9e7ff; border-color: #3e7695; }
+
+/* T21/T22 — 보기 안에 두는 짧은 설명(무엇을 세는지 · 색의 뜻). */
+.view-intro { padding: 8px 12px 4px; }
+.view-intro h3 { margin: 0 0 4px; font-size: 13px; }
+.view-intro ul { margin: 0; padding-left: 18px; color: var(--dim); font-size: 11.5px; line-height: 1.75; }
+.manual-link { display: inline-flex; align-items: center; text-decoration: none; }
+.recipe-banner .row { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+
+/* T22 — 규칙 ID 아래에 이름을 함께 보여 준다. ID만 있으면 오타로 읽힌다. */
+.findings td.rule .rule-name { display: block; color: var(--dim-2); font-size: 10.5px; font-weight: 400; }
+.canvas-notice .link-button { margin-left: 8px; }

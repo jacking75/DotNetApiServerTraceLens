@@ -19,6 +19,8 @@ interface ClassDiagramProps {
   shellRef: RefObject<HTMLDivElement>
   scrollTarget: { x: number; y: number; token: number } | null
   notice: string | null
+  /** 공지 옆에 붙는 한 가지 동작(예: 자동 튜닝 되돌리기). */
+  noticeAction?: { label: string; onClick: () => void } | null
   onSelectClass: (classId: string) => void
   onSelectMember: (graphClass: GraphClass, member: GraphClassMember) => void
   onZoomChange?: (zoom: number) => void
@@ -42,6 +44,7 @@ export function ClassDiagram({
   shellRef,
   scrollTarget,
   notice,
+  noticeAction,
   onSelectClass,
   onSelectMember,
   onZoomChange,
@@ -84,7 +87,14 @@ export function ClassDiagram({
 
   return (
     <>
-      {notice && <div className="canvas-notice">{notice}</div>}
+      {notice && (
+        <div className="canvas-notice">
+          {notice}
+          {noticeAction && (
+            <button type="button" className="link-button" onClick={noticeAction.onClick}>{noticeAction.label}</button>
+          )}
+        </div>
+      )}
       <DiagramCanvas
         shellRef={shellRef}
         width={view.size.width}

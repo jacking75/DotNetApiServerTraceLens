@@ -3,17 +3,19 @@ import { filterFindings } from '../graph/dataView'
 import type { MiddlewareViewState } from '../state/viewState'
 import type { MiddlewarePipelineDocument, MiddlewareStepInfo, Selection } from '../types/graph'
 import { useI18n } from '../i18n/I18nProvider'
-import { FindingTable, SeverityBadge } from './DataAccessView'
+import { FindingTable, ruleName, SeverityBadge } from './DataAccessView'
+import { HelpLink, type GlossaryTerm } from './HelpDialog'
 
 interface MiddlewareViewProps {
   pipeline: MiddlewarePipelineDocument
   view: MiddlewareViewState
   selection: Selection | null
   onSelect: (selection: Selection) => void
+  onExplain: (term: GlossaryTerm) => void
 }
 
-export function MiddlewareView({ pipeline, view, selection, onSelect }: MiddlewareViewProps) {
-  const { t } = useI18n()
+export function MiddlewareView({ pipeline, view, selection, onSelect, onExplain }: MiddlewareViewProps) {
+  const { t, lang } = useI18n()
   const findings = useMemo(
     () => filterFindings(pipeline.findings, { severity: view.severity, onlyCertain: false }),
     [pipeline.findings, view.severity])
@@ -30,11 +32,11 @@ export function MiddlewareView({ pipeline, view, selection, onSelect }: Middlewa
   }, [pipeline.findings])
 
   if (view.sub === 'check') {
-    return <FindingTable findings={findings} selection={selection} onSelect={onSelect} />
+    return <FindingTable findings={findings} rules={pipeline.rules} selection={selection} onSelect={onSelect} />
   }
 
   if (view.sub === 'sc') {
-    return <ShortCircuitView pipeline={pipeline} />
+    return <ShortCircuitView pipeline={pipeline} onExplain={onExplain} />
   }
 
   return (
@@ -69,7 +71,13 @@ export function MiddlewareView({ pipeline, view, selection, onSelect }: Middlewa
                 {step.condition && <span className="tag replica">{t('mw.conditional')}</span>}
                 {step.isDead && <span className="sev warn">{t('mw.dead')}</span>}
                 {findingsByStep.get(step.id)?.map((finding) => (
-                  <span className={`sev ${finding.severity.toLowerCase()}`} key={finding.id}>{finding.ruleId}</span>
+                  <span
+                    className={`sev ${finding.severity.toLowerCase()}`}
+                    key={finding.id}
+                    title={[finding.ruleId, ruleName(finding.ruleId, pipeline.rules, lang)].filter(Boolean).join(' · ')}
+                  >
+                    {finding.ruleId} {ruleName(finding.ruleId, pipeline.rules, lang)}
+                  </span>
                 ))}
                 <span className="mw-reg">{step.registrationFile}:{step.registrationLine}</span>
               </div>
@@ -151,18 +159,31 @@ export function MiddlewareView({ pipeline, view, selection, onSelect }: Middlewa
 }
 
 /** 끊기는 자리마다 "실행되지 않는 것"과 "그래도 실행되는 응답 후처리"를 나란히 보여준다. */
-function ShortCircuitView({ pipeline }: { pipeline: MiddlewarePipelineDocument }) {
+function ShortCircuitView({
+  pipeline,
+  onExplain,
+}: {
+  pipeline: MiddlewarePipelineDocument
+  onExplain: (term: GlossaryTerm) => void
+}) {
   const { t } = useI18n()
   const points = pipeline.steps
     .map((step, index) => ({ step, index }))
     .filter((item) => item.step.shortCircuit !== null && !item.step.isDead)
 
+  const heading = (
+    <div className="view-intro">
+      <h3>{t('sub.sc')}<HelpLink term="shortCircuit" onOpen={onExplain} /></h3>
+    </div>
+  )
+
   if (points.length === 0) {
-    return <div className="panel-message">{t('mw.noShortCircuit')}</div>
+    return <div className="data-view">{heading}<div className="panel-message">{t('mw.noShortCircuit')}</div></div>
   }
 
   return (
     <div className="data-view">
+      {heading}
       {points.map(({ step, index }) => {
         const skipped = pipeline.steps.slice(index + 1).filter((item) => !item.isDead)
         const stillRun = pipeline.steps.slice(0, index).filter((item) => item.post).reverse()

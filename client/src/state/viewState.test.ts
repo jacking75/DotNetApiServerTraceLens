@@ -45,6 +45,22 @@ describe('viewState', () => {
     expect(loadState().focusStack).toEqual([])
   })
 
+  it('첫 방문은 guide.seen이 false다', () => {
+    expect(loadState().guide).toEqual({ seen: false, completed: [] })
+  })
+
+  it('안내 진행을 저장하고 되살린다', () => {
+    saveState({ ...defaultState, guide: { seen: true, completed: ['pick', 'analyze'] } })
+
+    expect(loadState().guide).toEqual({ seen: true, completed: ['pick', 'analyze'] })
+  })
+
+  it('저장값의 알 수 없는 안내 단계는 버린다', () => {
+    installStorage({ 'tracelens.view': JSON.stringify({ guide: { seen: true, completed: ['pick', 'nope'] } }) })
+
+    expect(loadState().guide).toEqual({ seen: true, completed: ['pick'] })
+  })
+
   it('없는 키는 기본값으로 채운다', () => {
     installStorage({ 'tracelens.view': JSON.stringify({ viewMode: 'classmap' }) })
 

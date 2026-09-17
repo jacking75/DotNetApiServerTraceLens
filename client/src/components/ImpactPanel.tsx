@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { getImpact, ApiError } from '../api/client'
 import { translateError, useI18n } from '../i18n/I18nProvider'
+import { confidenceLabel, resolutionLabel } from '../i18n/labels'
 import type { ImpactResult } from '../types/context'
 
 interface ImpactPanelProps {
@@ -39,7 +40,7 @@ export function ImpactPanel({ nodeId, snapshotId, onOpenEntryPoint }: ImpactPane
   if (!nodeId) return null
 
   return (
-    <section className="impact-panel">
+    <section className="impact-panel" id="tracelens-impact-panel">
       <header>
         <span>{t('impact.title')}</span>
         <button type="button" onClick={() => void run()} disabled={busy}>
@@ -68,13 +69,13 @@ export function ImpactPanel({ nodeId, snapshotId, onOpenEntryPoint }: ImpactPane
                   <span className={`http-method ${endpoint.httpMethod.toLowerCase()}`}>{endpoint.httpMethod}</span>
                   <span className="route">{endpoint.route}</span>
                   <span className="chip small">{t('impact.distance', { count: endpoint.distance })}</span>
-                  <span className="chip small">{endpoint.confidence}</span>
+                  <span className="chip small">{confidenceLabel(endpoint.confidence, t)}</span>
                 </button>
                 <ol className="impact-path">
                   {endpoint.path.map((step) => (
                     <li key={step.nodeId}>
                       {step.displayName} <code>{step.file}:{step.startLine}</code>
-                      <span className="chip small">{step.resolution}</span>
+                      <span className="chip small">{resolutionLabel(step.resolution, t)}</span>
                     </li>
                   ))}
                 </ol>

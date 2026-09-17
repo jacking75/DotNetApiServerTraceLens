@@ -13,6 +13,8 @@ interface WelcomePanelProps {
   sampleNotice: string | null
   busy: boolean
   diagnostics: DiagnosticsReport | null
+  /** 대상을 고른 직후인지. 경로만 입력칸에 들어가고 화면이 그대로라 다음 행동을 알려 준다. */
+  targetPicked: boolean
   onAnalyzeSample: (sample: SampleView) => void
   onPickTarget: () => void
   onRunDiagnostics: () => void
@@ -29,6 +31,7 @@ export function WelcomePanel({
   sampleNotice,
   busy,
   diagnostics,
+  targetPicked,
   onAnalyzeSample,
   onPickTarget,
   onRunDiagnostics,
@@ -52,6 +55,10 @@ export function WelcomePanel({
       <h2>{t('welcome.title')}</h2>
       <p className="welcome-lead">{t('welcome.lead')}</p>
 
+      {targetPicked && (
+        <p className="welcome-picked" role="status">{t('welcome.targetPicked')}</p>
+      )}
+
       <div className="welcome-cards">
         <section className="welcome-card">
           <h3>{t('welcome.exampleTitle')}</h3>
@@ -61,24 +68,34 @@ export function WelcomePanel({
           ) : (
             <>
               {available.map((sample, index) => (
-                <button
-                  key={sample.id}
-                  type="button"
-                  className={index === 0 ? 'primary' : 'link-button'}
-                  onClick={() => onAnalyzeSample(sample)}
-                  disabled={busy || preparingSample}
-                >
-                  {index === 0 ? t('welcome.exampleCta') : sample.title}
-                </button>
+                <div key={sample.id} className="welcome-sample">
+                  <button
+                    type="button"
+                    className={index === 0 ? 'primary' : 'link-button'}
+                    onClick={() => onAnalyzeSample(sample)}
+                    disabled={busy || preparingSample}
+                  >
+                    {index === 0 ? t('welcome.exampleCta') : sample.title}
+                  </button>
+                  <details>
+                    <summary>{sample.title} — {t('welcome.sample.expected')}</summary>
+                    <p className="hint">{sample.description}</p>
+                    <ul className="welcome-list">
+                      {sample.expected.map((line) => <li key={line}>{line}</li>)}
+                    </ul>
+                    {sample.learningSteps.length > 0 && (
+                      <>
+                        <b>{t('welcome.sample.learningSteps')}</b>
+                        <ol className="welcome-list">
+                          {sample.learningSteps.map((line) => <li key={line}>{line}</li>)}
+                        </ol>
+                      </>
+                    )}
+                  </details>
+                </div>
               ))}
               {preparingSample && <small aria-live="polite">{t('welcome.sample.preparing')}</small>}
               {sampleNotice && <small aria-live="polite">{sampleNotice}</small>}
-              <details>
-                <summary>{t('welcome.sample.expected')}</summary>
-                <ul className="welcome-list">
-                  {available[0].expected.map((line) => <li key={line}>{line}</li>)}
-                </ul>
-              </details>
             </>
           )}
           <small>{t('welcome.exampleHint')}</small>

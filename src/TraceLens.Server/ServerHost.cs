@@ -81,6 +81,8 @@ public static class ServerHost
         app.UseDefaultFiles();
         app.UseStaticFiles();
 
+        app.MapManualEndpoints();
+
         var api = app.MapGroup("/api");
         api.MapAnalyzeEndpoints();
         api.MapAnalysisJobEndpoints();

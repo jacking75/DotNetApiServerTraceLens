@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
+import { confidenceLabel, freshnessLabel, resolutionLabel, selectionKindLabel } from '../i18n/labels'
 import type { ContextDocument } from '../types/context'
 
 interface ContextPreviewProps {
@@ -28,7 +29,9 @@ export function ContextPreview({ context, excludedFiles = [], onToggleFile }: Co
         <span className="chip" title={t('context.tokensNote')}>
           {t('context.length', { chars: context.characters, tokens: context.estimatedTokens })}
         </span>
-        <span className={`chip freshness-${context.freshness.status}`}>{context.freshness.status}</span>
+        <span className={`chip freshness-${context.freshness.status}`}>
+          {freshnessLabel(context.freshness.status, t)}
+        </span>
       </div>
 
       {context.containsSource && <div className="hint warn">{t('context.sendWarning')}</div>}
@@ -83,7 +86,9 @@ export function ContextPreview({ context, excludedFiles = [], onToggleFile }: Co
                   {path.steps.map((step) => (
                     <li key={step.nodeId}>
                       {step.displayName} <code>{step.file}:{step.startLine}</code>
-                      <span className="chip small">{step.resolution}/{step.confidence}</span>
+                      <span className="chip small">
+                        {resolutionLabel(step.resolution, t)} · {confidenceLabel(step.confidence, t)}
+                      </span>
                     </li>
                   ))}
                 </ol>
@@ -99,8 +104,10 @@ export function ContextPreview({ context, excludedFiles = [], onToggleFile }: Co
           <ul className="context-evidence">
             {context.evidence.map((item) => (
               <li key={item.id}>
-                <code>{item.id}</code> {item.kind} · <code>{item.file}:{item.startLine}</code>
-                <span className="chip small">{item.resolution}/{item.confidence}</span>
+                <code>{item.id}</code> {selectionKindLabel(item.kind, t)} · <code>{item.file}:{item.startLine}</code>
+                <span className="chip small">
+                  {resolutionLabel(item.resolution, t)} · {confidenceLabel(item.confidence, t)}
+                </span>
                 <div className="hint">{item.detail}</div>
               </li>
             ))}

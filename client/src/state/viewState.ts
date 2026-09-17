@@ -1,3 +1,4 @@
+import type { WalkthroughStepId } from '../components/GuidedWalkthrough'
 import type { DiagramLayoutMode } from '../graph/classDiagram'
 import type { RelationType } from '../graph/relations'
 import type { TreeDirection } from '../graph/treeLayout'
@@ -39,6 +40,12 @@ export interface MiddlewareViewState {
   severity: 'all' | FindingSeverity
 }
 
+/** 첫 사용 안내의 진행. `seen`이 false면 첫 방문이라 안내를 자동으로 연다. */
+export interface GuideState {
+  seen: boolean
+  completed: WalkthroughStepId[]
+}
+
 export interface PersistedState {
   viewMode: ViewMode
   classMap: ClassMapState
@@ -55,6 +62,8 @@ export interface PersistedState {
   focusStack: string[]
   /** 전체 흐름도에서 고른 진입점 노드 ID. null이면 전체 지도다. */
   flowEntryId: string | null
+  /** 첫 사용 안내의 진행. */
+  guide: GuideState
 }
 
 export const defaultColumns = { left: 272, right: 392 }
@@ -77,7 +86,9 @@ export const defaultState: PersistedState = {
   columns: { ...defaultColumns },
   solutionPath: '',
   dataView: {
-    sub: 'comp',
+    // 실행 경로가 첫 탭이다. 가장 어려운 "보상 처리"로 시작하면 처음 온 사람이 읽을 수 없다.
+    // 이미 'comp'를 저장해 둔 사용자는 그대로 둔다(마이그레이션하지 않는다).
+    sub: 'route',
     entryNodeId: null,
     pathId: null,
     mapFilter: 'all',
@@ -88,6 +99,18 @@ export const defaultState: PersistedState = {
   callFlowEndpointId: null,
   focusStack: [],
   flowEntryId: null,
+  guide: { seen: false, completed: [] },
+}
+
+/** 저장값에서 읽은 안내 진행. 알 수 없는 단계 ID는 버린다(단계가 바뀌어도 깨지지 않게). */
+const knownGuideSteps: readonly WalkthroughStepId[] = ['pick', 'analyze', 'entry', 'evidence', 'context']
+
+function normalizeGuide(value: Partial<GuideState> | undefined): GuideState {
+  if (!value) return { seen: false, completed: [] }
+  const completed = Array.isArray(value.completed)
+    ? value.completed.filter((step): step is WalkthroughStepId => knownGuideSteps.includes(step as WalkthroughStepId))
+    : []
+  return { seen: value.seen === true, completed }
 }
 
 const storageKey = 'tracelens.view'
@@ -106,6 +129,7 @@ export function loadState(): PersistedState {
       dataView: { ...defaultState.dataView, ...parsed.dataView },
       middlewareView: { ...defaultState.middlewareView, ...parsed.middlewareView },
       focusStack: Array.isArray(parsed.focusStack) ? parsed.focusStack : [],
+      guide: normalizeGuide(parsed.guide),
     }
   } catch {
     return defaultState

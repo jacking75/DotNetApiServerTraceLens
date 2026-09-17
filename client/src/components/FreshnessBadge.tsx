@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react'
 import { getFreshness } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import type { FreshnessResponse } from '../types/graph'
+import { HelpLink, type GlossaryTerm } from './HelpDialog'
 
 interface FreshnessBadgeProps {
   canReanalyze: boolean
   refreshKey: number
   analyzing: boolean
   onReanalyze: () => Promise<void>
+  /** 신선도가 무엇인지 모르는 사람을 위해 용어집으로 보낸다. */
+  onExplain: (term: GlossaryTerm) => void
 }
 
 const pollingIntervalMs = 30_000
@@ -17,7 +20,7 @@ const pollingIntervalMs = 30_000
  * 이 확인은 파일 목록·해시 비교일 뿐이고 재분석을 실행하지 않는다.
  * 신선도 입력이 없는 옛 그래프는 `fresh`로 단정하지 않고 `unknown`으로 둔다.
  */
-export function FreshnessBadge({ canReanalyze, refreshKey, analyzing, onReanalyze }: FreshnessBadgeProps) {
+export function FreshnessBadge({ canReanalyze, refreshKey, analyzing, onReanalyze, onExplain }: FreshnessBadgeProps) {
   const { t, formatDateTime } = useI18n()
   const [freshness, setFreshness] = useState<FreshnessResponse | null>(null)
   const [unavailable, setUnavailable] = useState(false)
@@ -81,6 +84,7 @@ export function FreshnessBadge({ canReanalyze, refreshKey, analyzing, onReanalyz
         <span className="freshness-dot" />
         {label}
       </div>
+      <HelpLink term="freshness" onOpen={onExplain} />
       {canReanalyze && (
         <button type="button" onClick={() => void onReanalyze()} disabled={analyzing}>
           {analyzing ? t('freshness.reanalyzing') : t('freshness.reanalyze')}

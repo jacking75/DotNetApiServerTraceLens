@@ -17,6 +17,8 @@ export interface Recipe {
   titleEn: string
   stepsKo: string[]
   stepsEn: string[]
+  /** 매뉴얼에서 이 절차를 설명하는 앵커. 앱의 "설명서에서 보기"가 이 위치로 연다. */
+  manualAnchor: string
   /** AI에 그대로 붙여 쓸 수 있는 요청 예시. */
   promptKo: string
   promptEn: string
@@ -27,6 +29,7 @@ export interface Recipe {
 export const recipes: readonly Recipe[] = [
   {
     id: 'understand-api',
+    manualAnchor: 'recipe-understand-api',
     view: 'callflow',
     selectionKind: 'Endpoint',
     intent: 'Explain',
@@ -51,6 +54,7 @@ export const recipes: readonly Recipe[] = [
   },
   {
     id: 'plan-change',
+    manualAnchor: 'recipe-plan-change',
     view: 'callflow',
     selectionKind: 'Node',
     intent: 'PlanChange',
@@ -75,6 +79,7 @@ export const recipes: readonly Recipe[] = [
   },
   {
     id: 'investigate-data',
+    manualAnchor: 'recipe-investigate-data',
     view: 'data',
     selectionKind: 'WritePath',
     intent: 'InvestigateData',
@@ -99,6 +104,7 @@ export const recipes: readonly Recipe[] = [
   },
   {
     id: 'review-ai-change',
+    manualAnchor: 'recipe-review-ai-change',
     view: 'callflow',
     selectionKind: 'Node',
     intent: 'ReviewChange',

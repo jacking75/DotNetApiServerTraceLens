@@ -1316,25 +1316,25 @@ npm run dev</code></pre>
       </p>
       <table>
         <tr><th>레시피</th><th>앱에서 하는 행동</th><th>AI에 전달할 요청 예시</th><th>확인할 결과</th></tr>
-        <tr>
+        <tr id="recipe-understand-api">
           <td><b>처음 보는 API를 이해한다</b><br><code>understand-api</code></td>
           <td>호출 흐름에서 진입점을 고르고 대표 경로·소스를 확인한다.</td>
           <td>"이 API의 입력부터 저장까지를 근거 ID와 함께 설명한다. 정적으로 확인할 수 없는 처리도 명시한다."</td>
           <td>설명의 사실 주장이 소스와 대응하는지 확인한다.</td>
         </tr>
-        <tr>
+        <tr id="recipe-plan-change">
           <td><b>기능 추가를 계획한다</b><br><code>plan-change</code></td>
           <td>대상 메서드를 고르고 "변경 영향"에서 영향받는 API를 확인한 뒤 문맥을 만든다.</td>
           <td>"기존 책임 분리를 유지하면서 변경 위치, 영향 API, 필요한 테스트를 제안한다."</td>
           <td>변경 위치와 테스트 후보의 근거를 확인한다.</td>
         </tr>
-        <tr>
+        <tr id="recipe-investigate-data">
           <td><b>DB·캐시 불일치를 조사한다</b><br><code>investigate-data</code></td>
           <td>DB·캐시 보기의 보상 처리에서 쓰기 경로와 점검 근거를 고른다.</td>
           <td>"중간 실패로 남는 갱신을 확인하고, 추정을 구분하여 개선안을 제시한다."</td>
           <td>실제 코드와 실패 경로를 확인한다.</td>
         </tr>
-        <tr>
+        <tr id="recipe-review-ai-change">
           <td><b>AI 수정을 검토한다</b><br><code>review-ai-change</code></td>
           <td>기준 저장 → 외부 AI 수정 → 명시적 재분석 → 비교를 실행한다.</td>
           <td>"이 차이에서 의도하지 않은 경로 변화, 남은 점검, 검증 부족을 확인한다."</td>

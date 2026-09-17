@@ -5,6 +5,7 @@ import type { TranslationKey } from '../i18n/ko'
 import type { ContextBudget, ContextDocument, ContextIntent, McpSetupPreview, SelectionKind } from '../types/context'
 import type { AskMode } from '../types/graph'
 import { ContextPreview } from './ContextPreview'
+import { HelpLink, type GlossaryTerm } from './HelpDialog'
 import { ShareReportDialog } from './ShareReportDialog'
 
 /** 질문 패널이 다루는 선택. 실행 가능한 노드가 없어도 문맥은 만들 수 있다. */
@@ -19,8 +20,12 @@ export interface AskContext {
 interface AskPanelProps {
   context: AskContext | null
   snapshotId: string
+  /** 레시피 배너·프리셋 칩이 밀어 넣는 질문. `token`이 바뀔 때마다 입력칸을 채운다(편집은 그대로 된다). */
+  presetQuestion?: { text: string; token: number } | null
   /** 문맥 복사를 마치면 첫 사용 안내의 마지막 단계가 끝난다. */
   onContextCopied?: () => void
+  /** 용어집으로 보내는 `?` 링크. */
+  onExplain: (term: GlossaryTerm) => void
 }
 
 const modeKeys: Record<AskMode, TranslationKey> = {
@@ -46,7 +51,7 @@ const budgets: ReadonlyArray<{ value: ContextBudget; key: TranslationKey }> = [
  * 선택한 위치를 "작업 문맥"으로 바꿔 AI에 전달한다.
  * 문맥은 서버의 `POST /api/context` 하나에서 나오므로 클립보드·인앱 실행·MCP가 같은 내용을 쓴다.
  */
-export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps) {
+export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied, onExplain }: AskPanelProps) {
   const { t } = useI18n()
   const [mode, setMode] = useState<AskMode>('context')
   const [intent, setIntent] = useState<ContextIntent>('Explain')
@@ -82,6 +87,13 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
   }, [contextKey])
 
   useEffect(() => () => abortController.current?.abort(), [])
+
+  // 밖에서 밀어 넣은 질문을 입력칸에 채운다. 같은 문장을 다시 눌러도 반영되도록 token으로 구분한다.
+  const presetToken = presetQuestion?.token ?? 0
+  const presetText = presetQuestion?.text ?? ''
+  useEffect(() => {
+    if (presetToken > 0) setQuestion(presetText)
+  }, [presetToken]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 선택·목적·예산이 바뀌면 미리보기를 다시 만든다. 이 단계에는 LLM 호출이 없다.
   useEffect(() => {
@@ -325,6 +337,7 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
           <button type="button" className="link-button" onClick={() => void showSetup()}>
             {t('ask.mcpSetup')}
           </button>
+          <HelpLink term="mcp" onOpen={onExplain} />
           <button
             type="button"
             className="link-button"

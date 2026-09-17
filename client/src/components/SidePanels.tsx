@@ -60,9 +60,16 @@ export function EntryPointList({
         >
           <span className={`http ${entryPoint.httpMethod.toLowerCase()}`}>{entryPoint.httpMethod}</span>
           <span className="grow">{entryPoint.route}</span>
-          {entryPoint.source === 'MinimalApi' && <span className="chip small">min</span>}
+          {entryPoint.source === 'MinimalApi' && (
+            <span className="chip small" title={t('chip.minimalApiTitle')}>{t('chip.minimalApi')}</span>
+          )}
           {entryPoint.confidence === 'Estimated' && (
-            <span className="chip small warn" title={entryPoint.notes.join(String.fromCharCode(10))}>~</span>
+            <span
+              className="chip small warn"
+              title={[t('chip.estimatedTitle'), ...entryPoint.notes].join(String.fromCharCode(10))}
+            >
+              {t('chip.estimated')}
+            </span>
           )}
         </button>
       ))}

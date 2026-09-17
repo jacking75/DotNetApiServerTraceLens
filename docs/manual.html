@@ -1371,25 +1371,25 @@ npm run dev</code></pre>
       </p>
       <table>
         <tr><th>Recipe</th><th>What you do in the app</th><th>What to ask the AI</th><th>What to check</th></tr>
-        <tr>
+        <tr id="recipe-understand-api">
           <td><b>Understand an API you have never seen</b><br><code>understand-api</code></td>
           <td>Pick an entry point in the call flow and follow the representative path and source.</td>
           <td>"Explain this API from input to storage, citing the evidence ids. Also state what cannot be confirmed statically."</td>
           <td>Check that each factual claim maps to the source.</td>
         </tr>
-        <tr>
+        <tr id="recipe-plan-change">
           <td><b>Plan a change</b><br><code>plan-change</code></td>
           <td>Select the target method, check the affected APIs under Change impact, then build the context.</td>
           <td>"Propose where to change, which APIs are affected, and which tests are needed, keeping the current separation of concerns."</td>
           <td>Check the evidence behind the suggested locations and test candidates.</td>
         </tr>
-        <tr>
+        <tr id="recipe-investigate-data">
           <td><b>Investigate a data or cache mismatch</b><br><code>investigate-data</code></td>
           <td>Pick a write path and its findings under Data &amp; cache → compensation.</td>
           <td>"Identify updates left behind by a mid-way failure, separate the estimated parts, and propose a fix."</td>
           <td>Check the real code and the failure path.</td>
         </tr>
-        <tr>
+        <tr id="recipe-review-ai-change">
           <td><b>Review a change made by AI</b><br><code>review-ai-change</code></td>
           <td>Save a baseline → let the AI edit → re-analyze explicitly → compare.</td>
           <td>"From this diff, point out unintended path changes, remaining checks, and gaps in verification."</td>

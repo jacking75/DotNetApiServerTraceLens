@@ -4,4 +4,10 @@
     <ProjectReference Include="..\TraceLens.Context\TraceLens.Context.csproj" />
     <ProjectReference Include="..\TraceLens.Mcp\TraceLens.Mcp.csproj" />
   </ItemGroup>
+  <!-- 사용 설명서를 출력에 넣어 /manual/ko·/manual/en이 배포물에서도 열리게 한다. -->
+  <ItemGroup>
+    <None Include="..\..\docs\manual*.html"
+          Link="docs\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

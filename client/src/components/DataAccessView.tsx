@@ -8,8 +8,10 @@ import {
   severityLabelKeys,
 } from '../graph/dataView'
 import { useI18n } from '../i18n/I18nProvider'
+import { ruleText } from '../i18n/ruleText'
 import type { TranslationKey } from '../i18n/ko'
 import type { DataViewState } from '../state/viewState'
+import { HelpLink, type GlossaryTerm } from './HelpDialog'
 import type {
   DataAccess,
   DataAccessDocument,
@@ -17,9 +19,19 @@ import type {
   Finding,
   FindingSeverity,
   GraphDocument,
+  RuleInfo,
   Selection,
   WritePath,
 } from '../types/graph'
+
+/**
+ * 규칙 ID 옆에 항상 이름을 함께 보여 준다. 카탈로그에 없는 ID는 ID만 남긴다.
+ * 신입에게 `COMP-002` 한 줄은 오타나 미완성으로 읽힌다.
+ */
+export function ruleName(ruleId: string, rules: readonly RuleInfo[], lang: 'ko' | 'en'): string | null {
+  const rule = rules.find((item) => item.id === ruleId)
+  return rule ? ruleText(rule, lang).name : null
+}
 
 interface DataAccessViewProps {
   graph: GraphDocument
@@ -29,6 +41,8 @@ interface DataAccessViewProps {
   onChangeView: (patch: Partial<DataViewState>) => void
   selection: Selection | null
   onSelect: (selection: Selection) => void
+  /** 용어집으로 보내는 `?` 링크. 보상 처리처럼 배경지식이 필요한 자리에 붙인다. */
+  onExplain: (term: GlossaryTerm) => void
 }
 
 export function SeverityBadge({ severity, muted }: { severity: FindingSeverity; muted?: boolean }) {
@@ -60,6 +74,7 @@ export function DataAccessView({
   onChangeView,
   selection,
   onSelect,
+  onExplain,
 }: DataAccessViewProps) {
   const findings = useMemo(
     () => filterFindings(data.findings, { severity: view.severity, onlyCertain: view.onlyCertain }),
@@ -85,12 +100,14 @@ export function DataAccessView({
         view={view}
         onChangeView={onChangeView}
         findingById={findingById}
+        rules={data.rules}
         onSelect={onSelect}
+        onExplain={onExplain}
       />
     )
   }
 
-  return <FindingTable findings={findings} selection={selection} onSelect={onSelect} />
+  return <FindingTable findings={findings} rules={data.rules} selection={selection} onSelect={onSelect} />
 }
 
 /* ------------------------------------------------------------------ 실행 경로 */
@@ -395,23 +412,38 @@ function CompensationView({
   view,
   onChangeView,
   findingById,
+  rules,
   onSelect,
+  onExplain,
 }: {
   data: DataAccessDocument
   view: DataViewState
   onChangeView: (patch: Partial<DataViewState>) => void
   findingById: Map<string, Finding>
+  rules: readonly RuleInfo[]
   onSelect: (selection: Selection) => void
+  onExplain: (term: GlossaryTerm) => void
 }) {
   const { t } = useI18n()
+  const heading = (
+    <div className="view-intro">
+      <h3>{t('sub.comp')}<HelpLink term="compensation" onOpen={onExplain} /></h3>
+      <ul>
+        <li>{t('data.compIntro1')}</li>
+        <li>{t('data.compIntro2')}</li>
+        <li>{t('data.compIntro3')}</li>
+      </ul>
+    </div>
+  )
   if (data.writePaths.length === 0) {
-    return <div className="panel-message">{t('data.noWritePaths')}</div>
+    return <div className="data-view">{heading}<div className="panel-message">{t('data.noWritePaths')}</div></div>
   }
 
   const openId = view.pathId ?? data.writePaths.find((path) => !path.inTransaction)?.id ?? data.writePaths[0].id
 
   return (
     <div className="data-view">
+      {heading}
       {data.writePaths.map((path) => {
         const open = path.id === openId
         const worst = worstSeverity(path, findingById)
@@ -437,7 +469,7 @@ function CompensationView({
               </span>
             </button>
             <div className="path-note">{path.note}</div>
-            {open && <PathDetail path={path} findingById={findingById} onSelect={onSelect} />}
+            {open && <PathDetail path={path} findingById={findingById} rules={rules} onSelect={onSelect} />}
           </div>
         )
       })}
@@ -448,13 +480,15 @@ function CompensationView({
 function PathDetail({
   path,
   findingById,
+  rules,
   onSelect,
 }: {
   path: WritePath
   findingById: Map<string, Finding>
+  rules: readonly RuleInfo[]
   onSelect: (selection: Selection) => void
 }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const grid = useMemo(() => buildFailGrid(path), [path])
 
   return (
@@ -521,8 +555,14 @@ function PathDetail({
             const finding = findingById.get(id)
             if (!finding) return null
             return (
-              <button type="button" className="btn sm" key={id} onClick={() => onSelect({ type: 'finding', key: id })}>
-                {t('data.findingDetail', { rule: finding.ruleId })}
+              <button
+                type="button"
+                className="btn sm"
+                key={id}
+                title={[finding.ruleId, ruleName(finding.ruleId, rules, lang)].filter(Boolean).join(' · ')}
+                onClick={() => onSelect({ type: 'finding', key: id })}
+              >
+                {t('data.findingDetail', { rule: `${finding.ruleId} ${ruleName(finding.ruleId, rules, lang) ?? ''}`.trim() })}
               </button>
             )
           })}
@@ -536,14 +576,17 @@ function PathDetail({
 
 export function FindingTable({
   findings,
+  rules,
   selection,
   onSelect,
 }: {
   findings: Finding[]
+  /** 규칙 카탈로그. ID 아래에 이름을 함께 보여 주려면 필요하다. */
+  rules: readonly RuleInfo[]
   selection: Selection | null
   onSelect: (selection: Selection) => void
 }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   if (findings.length === 0) {
     return <div className="panel-message">{t('data.noMatchingFinding')}</div>
   }
@@ -557,7 +600,7 @@ export function FindingTable({
             <th>{t('data.colSeverity')}</th>
             <th>{t('data.colWhat')}</th>
             <th>{t('data.colWhere')}</th>
-            <th>{t('data.colConfidence')}</th>
+            <th title={t('data.confidenceHint')}>{t('data.colConfidence')} <span aria-hidden="true">?</span></th>
           </tr>
         </thead>
         <tbody>
@@ -574,7 +617,10 @@ export function FindingTable({
                 onSelect({ type: 'finding', key: finding.id })
               }}
             >
-              <td className="rule">{finding.ruleId}</td>
+              <td className="rule" title={[finding.ruleId, ruleName(finding.ruleId, rules, lang)].filter(Boolean).join(' · ')}>
+                {finding.ruleId}
+                <span className="rule-name">{ruleName(finding.ruleId, rules, lang)}</span>
+              </td>
               <td><SeverityBadge severity={finding.severity} /></td>
               <td className="what">{finding.what}</td>
               <td className="where">{finding.file}:{finding.line}</td>

@@ -23,6 +23,7 @@ import { DataDetailPanel } from './components/DataDetailPanel'
 import { DataSidePanel, MiddlewareSidePanel } from './components/DataSidePanels'
 import { DetailPanel, type DetailActions } from './components/DetailPanel'
 import { GuidedWalkthrough, type WalkthroughStepId } from './components/GuidedWalkthrough'
+import { HelpDialog, HelpLink, type GlossaryTerm, type HelpTab } from './components/HelpDialog'
 import { ImpactPanel } from './components/ImpactPanel'
 import { MiddlewareView } from './components/MiddlewareView'
 import { FlowDiagram } from './components/FlowDiagram'
@@ -121,8 +122,22 @@ export default function App() {
   const [errorId, setErrorId] = useState<string | null>(null)
   const [freshnessRevision, setFreshnessRevision] = useState(0)
   const [autoTuned, setAutoTuned] = useState(false)
-  const [guideOpen, setGuideOpen] = useState(false)
-  const [walkthroughDone, setWalkthroughDone] = useState<Set<WalkthroughStepId>>(new Set())
+  /** 자동 튜닝 직전의 설정. "되돌리기"를 누르면 이 값으로 돌아간다. */
+  const [tunedBefore, setTunedBefore] = useState<ClassMapState | null>(null)
+  // 첫 방문(저장값에 seen이 없을 때)에는 안내를 열어 둔다.
+  const [guideOpen, setGuideOpen] = useState(!initial.guide.seen)
+  const [walkthroughDone, setWalkthroughDone] = useState<Set<WalkthroughStepId>>(
+    () => new Set(initial.guide.completed))
+  /**
+   * 복원 직후 첫 렌더에서는 완료 처리를 건너뛴다.
+   * localStorage에서 경로·선택이 되살아났다는 이유만으로 "골랐다·확인했다"를 완료로 채우면 진행이 거짓이 된다.
+   */
+  const guideRestoring = useRef(true)
+  /** 대상을 고른 직후. 첫 화면에 다음 행동을 띄우고 분석 버튼을 한 번 강조한다. */
+  const [targetPicked, setTargetPicked] = useState(false)
+  /** 도움말 대화상자. `?` 링크로 열면 그 용어를 강조한 용어집 탭이 열린다. */
+  const [help, setHelp] = useState<{ tab: HelpTab; term: GlossaryTerm | null } | null>(null)
+  const openGlossary = useCallback((term: GlossaryTerm) => setHelp({ tab: 'glossary', term }), [])
   const [diagnostics, setDiagnostics] = useState<DiagnosticsReport | null>(null)
   const [samples, setSamples] = useState<SampleView[]>([])
   const [preparingSample, setPreparingSample] = useState(false)
@@ -138,6 +153,10 @@ export default function App() {
   const [sampleNotice, setSampleNotice] = useState<string | null>(null)
   const [diffOpen, setDiffOpen] = useState(false)
   const [activeRecipe, setActiveRecipe] = useState<Recipe | null>(null)
+  /** 레시피 요청 예시 복사 결과 문구. */
+  const [recipeCopied, setRecipeCopied] = useState<string | null>(null)
+  /** 질문 패널 입력칸에 밀어 넣을 질문. 레시피 배너와 프리셋 칩이 함께 쓴다. */
+  const [presetQuestion, setPresetQuestion] = useState<{ text: string; token: number } | null>(null)
 
   const workspaceRef = useRef<HTMLElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
@@ -272,10 +291,11 @@ export default function App() {
       callFlowEndpointId: callFlowEntry?.endpointId ?? null,
       focusStack,
       flowEntryId,
+      guide: { seen: true, completed: [...walkthroughDone] },
     })
   }, [
     viewMode, classMap, depth, selection, columns, solutionPath, dataView, middlewareView,
-    callFlowEntry, focusStack, flowEntryId,
+    callFlowEntry, focusStack, flowEntryId, walkthroughDone,
   ])
 
   /**
@@ -302,7 +322,15 @@ export default function App() {
   /* ---------------------------------------------------------------- 첫 사용 안내 진행 */
 
   const completeStep = useCallback((step: WalkthroughStepId) => {
+    // 복원 사이클에서는 저장값이 만든 상태를 사용자의 조작으로 오해하지 않는다.
+    if (guideRestoring.current) return
     setWalkthroughDone((current) => (current.has(step) ? current : new Set(current).add(step)))
+  }, [])
+
+  // 첫 렌더에 딸린 effect가 모두 돈 뒤에 복원 플래그를 내린다.
+  useEffect(() => {
+    const timer = window.setTimeout(() => { guideRestoring.current = false }, 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   useEffect(() => { if (solutionPath.trim()) completeStep('pick') }, [solutionPath, completeStep])
@@ -413,12 +441,15 @@ export default function App() {
     if (!graph || autoTuned) return
     setAutoTuned(true)
     if (graph.classes.length <= largeSolutionThreshold) return
-    setClassMap((current) => ({
-      ...current,
-      showFields: false,
-      showMethods: false,
-      relations: { ...current.relations, depend: false },
-    }))
+    setClassMap((current) => {
+      setTunedBefore(current)
+      return {
+        ...current,
+        showFields: false,
+        showMethods: false,
+        relations: { ...current.relations, depend: false },
+      }
+    })
     // README가 약속한 대로 "맞춤 줌"으로 시작한다. 배치가 끝난 뒤에 재야 해서 다음 프레임에 부른다.
     window.setTimeout(() => fitZoom(), 0)
     // fitZoom은 아래에서 선언한다. 이 effect는 렌더 뒤에 돌아서 그때는 이미 초기화돼 있다.
@@ -468,6 +499,7 @@ export default function App() {
     setBusy(true)
     setError(null)
     setProgress(null)
+    setTargetPicked(false)
     try {
       const job = await startAnalysisJob(target)
       setJobId(job.id)
@@ -695,7 +727,8 @@ export default function App() {
       setSelection({ type: 'class', key: classId })
     },
     onGoToNamespace: goToNamespace,
-  }), [openFlow, showInDiagram, goToNamespace])
+    onExplain: openGlossary,
+  }), [openFlow, showInDiagram, goToNamespace, openGlossary])
 
   const selectMember = useCallback((graphClass: GraphClass, member: GraphClassMember) => {
     setSelection({ type: 'method', key: memberKey(graphClass.id, member) })
@@ -735,8 +768,21 @@ export default function App() {
 
   const startRecipe = (recipe: Recipe) => {
     setActiveRecipe(recipe)
+    setRecipeCopied(null)
     changeMode(recipe.view)
     if (recipe.id === 'review-ai-change') setDiffOpen(true)
+  }
+
+  /** 레시피의 요청 예시를 클립보드에 넣고 질문 패널 입력칸도 함께 채운다. */
+  const copyRecipePrompt = async (recipe: Recipe) => {
+    const prompt = lang === 'ko' ? recipe.promptKo : recipe.promptEn
+    setPresetQuestion((current) => ({ text: prompt, token: (current?.token ?? 0) + 1 }))
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setRecipeCopied(t('ask.copied'))
+    } catch {
+      setRecipeCopied(t('ask.copyFailed'))
+    }
   }
 
   const drilldown = useCallback((nodeId: string) => {
@@ -978,6 +1024,10 @@ export default function App() {
   const largeSolutionNotice = graph && graph.classes.length > largeSolutionThreshold
     ? t('hint.manyClasses', { count: graph.classes.length })
     : null
+  /** 자동 튜닝이 일어났다면 무엇을 바꿨는지 알리고 되돌릴 수 있게 한다. */
+  const autoTuneNotice = tunedBefore && graph
+    ? t('hint.autoTuned', { count: graph.classes.length })
+    : null
 
   const graphMeta = viewMode === 'classmap'
     ? classDiagram
@@ -1028,6 +1078,7 @@ export default function App() {
           refreshKey={freshnessRevision}
           analyzing={busy}
           onReanalyze={() => analyze()}
+          onExplain={openGlossary}
         />
         <form onSubmit={(event) => { event.preventDefault(); void analyze() }}>
           <input
@@ -1071,7 +1122,12 @@ export default function App() {
           >
             {t('app.save')}
           </button>
-          <button id="tracelens-analyze-button" type="submit" className="primary" disabled={busy || !solutionPath.trim()}>
+          <button
+            id="tracelens-analyze-button"
+            type="submit"
+            className={targetPicked ? 'primary tracelens-attention' : 'primary'}
+            disabled={busy || !solutionPath.trim()}
+          >
             {busy ? t('app.analyzing') : t('app.analyze')}
           </button>
           {busy && jobId && (
@@ -1089,8 +1145,20 @@ export default function App() {
             </select>
           </label>
           <button type="button" className="browse" onClick={() => setGuideOpen((value) => !value)}>
-            {guideOpen ? t('app.guideClose') : t('app.guide')}
+            {guideOpen ? t('app.guideClose') : walkthroughDone.size > 0 ? t('guide.reopen') : t('app.guide')}
           </button>
+          <button
+            type="button"
+            className="browse"
+            title={t('help.open')}
+            aria-label={t('help.open')}
+            onClick={() => setHelp({ tab: 'glossary', term: null })}
+          >
+            ?
+          </button>
+          <a className="browse manual-link" href={`/manual/${lang}`} target="_blank" rel="noreferrer">
+            {t('help.manual')}
+          </a>
           {graph && (
             <button type="button" className="browse" onClick={() => setDiffOpen((value) => !value)}>
               {t('diff.title')}
@@ -1102,7 +1170,12 @@ export default function App() {
       {pickerOpen && (
         <PathPicker
           initialPath={solutionPath}
-          onSelect={(path) => { setSolutionPath(path); setPickerOpen(false) }}
+          onSelect={(path) => {
+            setSolutionPath(path)
+            setPickerOpen(false)
+            // 자동 분석은 하지 않는다(재분석은 항상 사용자가 실행한다). 대신 다음 행동을 화면에 띄운다.
+            setTargetPicked(true)
+          }}
           onClose={() => setPickerOpen(false)}
         />
       )}
@@ -1180,7 +1253,7 @@ export default function App() {
                 inspected: graph.diagnostics.calls.inspected,
                 rate: formatPercent(graph.diagnostics.calls.resolutionRate),
               })}
-            </span></>
+            </span><HelpLink term="resolutionRate" onOpen={openGlossary} /></>
           )}
           {(summary.unresolvedCallSites ?? 0) > 0 && (
             <> · {t('summary.unresolved', { count: summary.unresolvedCallSites ?? 0 })}</>
@@ -1208,7 +1281,52 @@ export default function App() {
           <div className="hint">
             {t('recipes.verify')}: {lang === 'ko' ? activeRecipe.verifyKo : activeRecipe.verifyEn}
           </div>
-          <button type="button" className="link-button" onClick={() => setActiveRecipe(null)}>{t('ask.close')}</button>
+          <div className="row">
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => void copyRecipePrompt(activeRecipe)}
+            >
+              {t('recipes.copyPrompt')}
+            </button>
+            <a
+              className="link-button"
+              href={`/manual/${lang}#${activeRecipe.manualAnchor}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('help.openInManual')}
+            </a>
+            <button type="button" className="link-button" onClick={() => setActiveRecipe(null)}>{t('ask.close')}</button>
+          </div>
+          {recipeCopied && <div className="hint">{recipeCopied}</div>}
+        </div>
+      )}
+
+      {help && (
+        <HelpDialog
+          initialTab={help.tab}
+          focusTerm={help.term}
+          analyzed={graph !== null}
+          onStartRecipe={startRecipe}
+          onClose={() => setHelp(null)}
+        />
+      )}
+
+      {/* 안내는 workspace 밖에 둔다. 가장 안내가 필요한 순간(분석 전)에도 보여야 한다. */}
+      {guideOpen && (
+        <div className="walkthrough-dock">
+          <GuidedWalkthrough
+            completed={walkthroughDone}
+            expected={activeSample?.expected}
+            onStartRecipe={startRecipe}
+            onOpenImpact={() => {
+              changeMode('callflow')
+              document.getElementById('tracelens-impact-panel')?.scrollIntoView({ block: 'nearest' })
+            }}
+            onOpenDiff={() => setDiffOpen(true)}
+            onClose={() => setGuideOpen(false)}
+          />
         </div>
       )}
 
@@ -1219,6 +1337,7 @@ export default function App() {
           sampleNotice={sampleNotice}
           busy={busy}
           diagnostics={diagnostics}
+          targetPicked={targetPicked}
           onAnalyzeSample={(sample) => void analyzeSample(sample)}
           onPickTarget={() => setPickerOpen(true)}
           onRunDiagnostics={() => void runDiagnostics()}
@@ -1365,7 +1484,10 @@ export default function App() {
               zoom={classMap.zoom}
               shellRef={shellRef}
               scrollTarget={scrollTarget}
-              notice={staleSchemaNotice ?? largeSolutionNotice}
+              notice={staleSchemaNotice ?? autoTuneNotice ?? largeSolutionNotice}
+              noticeAction={tunedBefore
+                ? { label: t('hint.autoTunedUndo'), onClick: () => { setClassMap(tunedBefore); setTunedBefore(null) } }
+                : null}
               onSelectClass={(classId) => setSelection({ type: 'class', key: classId })}
               onSelectMember={selectMember}
               onZoomChange={handleZoomChange}
@@ -1414,6 +1536,7 @@ export default function App() {
                 onChangeView={(patch) => setDataView((current) => ({ ...current, ...patch }))}
                 selection={selection}
                 onSelect={setSelection}
+                onExplain={openGlossary}
               />
             </div>
           )}
@@ -1424,6 +1547,7 @@ export default function App() {
                 view={middlewareView}
                 selection={selection}
                 onSelect={setSelection}
+                onExplain={openGlossary}
               />
             </div>
           )}
@@ -1444,13 +1568,6 @@ export default function App() {
         />
 
         <div className="right-column">
-          {guideOpen && (
-            <GuidedWalkthrough
-              completed={walkthroughDone}
-              expected={activeSample?.expected}
-              onClose={() => setGuideOpen(false)}
-            />
-          )}
           {diffOpen && (
             <SnapshotDiffPanel
               snapshotId={graph?.snapshotId ?? ''}
@@ -1513,7 +1630,9 @@ export default function App() {
           <AskPanel
             context={askContext}
             snapshotId={graph?.snapshotId ?? ''}
+            presetQuestion={presetQuestion}
             onContextCopied={() => completeStep('context')}
+            onExplain={openGlossary}
           />
         </div>
       </section>

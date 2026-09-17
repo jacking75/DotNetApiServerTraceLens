@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { glossaryTerms } from '../components/HelpDialog'
 import { en } from './en'
 import { ko } from './ko'
 
@@ -27,6 +28,14 @@ describe('i18n 사전', () => {
       return left.join(',') !== right.join(',')
     })
     expect(mismatched).toEqual([])
+  })
+
+  /** 용어집 항목은 두 언어 모두에 제목·본문이 있어야 `?` 링크가 빈 칸을 열지 않는다. */
+  it('용어집 12항목의 한·영 제목·본문이 모두 있다', () => {
+    const missing = glossaryTerms.flatMap((term) => [`glossary.${term}.title`, `glossary.${term}.body`])
+      .filter((key) => !(key in ko) || !(key in en))
+    expect(glossaryTerms.length).toBe(12)
+    expect(missing).toEqual([])
   })
 
   /**

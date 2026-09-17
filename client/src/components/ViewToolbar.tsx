@@ -150,14 +150,27 @@ function ClassMapControls({ classMap, onChange, onFitZoom }: ClassMapControlsPro
       )}
       <span className="sepline" />
       <span>{t('toolbar.members')}</span>
-      <Chip label={t('toolbar.fields')} active={classMap.showFields} onClick={() => onChange({ showFields: !classMap.showFields })} />
-      <Chip label={t('toolbar.methods')} active={classMap.showMethods} onClick={() => onChange({ showMethods: !classMap.showMethods })} />
+      <Chip
+        label={t('toolbar.fields')}
+        title={t('toolbar.fieldsTitle')}
+        active={classMap.showFields}
+        onClick={() => onChange({ showFields: !classMap.showFields })}
+      />
+      <Chip
+        label={t('toolbar.methods')}
+        title={t('toolbar.methodsTitle')}
+        active={classMap.showMethods}
+        onClick={() => onChange({ showMethods: !classMap.showMethods })}
+      />
       <span className="sepline" />
       <span>{t('toolbar.relations')}</span>
       {relationTypes.map((type) => (
         <Chip
           key={type}
           label={t(`relation.${type}` as const)}
+          title={type === 'depend'
+            ? t('toolbar.dependTitle')
+            : t('toolbar.relationTitle', { name: t(`relation.${type}` as const) })}
           active={classMap.relations[type]}
           onClick={() => onChange({ relations: { ...classMap.relations, [type]: !classMap.relations[type] } })}
         />
@@ -165,6 +178,7 @@ function ClassMapControls({ classMap, onChange, onFitZoom }: ClassMapControlsPro
       <span className="sepline" />
       <Chip
         label={t('toolbar.focusOnly')}
+        title={t('toolbar.focusOnlyTitle')}
         active={classMap.focusOnly}
         onClick={() => onChange({ focusOnly: !classMap.focusOnly })}
       />

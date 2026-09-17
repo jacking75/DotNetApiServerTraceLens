@@ -15,6 +15,8 @@ import type {
   Selection,
 } from '../types/graph'
 import type { SourceTarget } from './CodePanel'
+import { confidenceLabel } from '../i18n/labels'
+import { HelpLink, type GlossaryTerm } from './HelpDialog'
 import { kindColors } from './kindColors'
 
 const SourceView = lazy(() => import('./CodePanel').then((module) => ({ default: module.SourceView })))
@@ -26,6 +28,8 @@ export interface DetailActions {
   onShowInDiagram: (classId: string) => void
   onFocusOnly: (classId: string) => void
   onGoToNamespace: (namespace: string) => void
+  /** 용어집으로 보내는 `?` 링크. */
+  onExplain: (term: GlossaryTerm) => void
 }
 
 interface DetailPanelProps {
@@ -301,15 +305,20 @@ function MethodDetail({
         {entry && (
           <>
             <dt>{t('detail.routes')}</dt>
+            <dd>{entry.httpMethod} {entry.route}</dd>
+            <dt>{t('detail.handler')}</dt>
+            <dd>{entry.handlerDisplayName}</dd>
+            <dt>{t('detail.confidence')}<HelpLink term="confidence" onOpen={actions.onExplain} /></dt>
             <dd>
-              {entry.httpMethod} {entry.route}
-              {entry.confidence === 'Estimated' && <span className="chip small warn">~</span>}
+              <span className={`chip small${entry.confidence === 'Estimated' ? ' warn' : ''}`}>
+                {confidenceLabel(entry.confidence, t)}
+              </span>
             </dd>
           </>
         )}
       </dl>
       {entry && entry.notes.length > 0 && (
-        <div className="detail-hint">{entry.notes.join(' ')}</div>
+        <div className="detail-hint"><b>{t('detail.entryPointNotes')}:</b> {entry.notes.join(' ')}</div>
       )}
 
       <PillSection
@@ -327,6 +336,7 @@ function MethodDetail({
         hasCallSites={graph.callSites.length > 0}
         nodeId={nodeId}
         nodeNameById={nodeNameById}
+        onExplain={actions.onExplain}
       />
 
       <div className="detail-section">
@@ -358,12 +368,14 @@ function CallEvidenceSection({
   hasCallSites,
   nodeId,
   nodeNameById,
+  onExplain,
 }: {
   evidence: CallSite[]
   boundaries: CallSite[]
   hasCallSites: boolean
   nodeId: string
   nodeNameById: Map<string, string>
+  onExplain: (term: GlossaryTerm) => void
 }) {
   const { t } = useI18n()
   const resolutionKeys: Record<CallResolution, TranslationKey> = {
@@ -386,7 +398,7 @@ function CallEvidenceSection({
 
   return (
     <div className="detail-section">
-      <h4>{t('detail.callEvidence', { count: evidence.length })}</h4>
+      <h4>{t('detail.callEvidence', { count: evidence.length })}<HelpLink term="callSite" onOpen={onExplain} /></h4>
       <div className="detail-hint">{t('detail.callEvidenceHint')}</div>
       <ul className="evidence-list">
         {evidence.map((site, index) => (
@@ -403,7 +415,7 @@ function CallEvidenceSection({
         ))}
       </ul>
 
-      <h4>{t('detail.boundaryCalls', { count: boundaries.length })}</h4>
+      <h4>{t('detail.boundaryCalls', { count: boundaries.length })}<HelpLink term="boundary" onOpen={onExplain} /></h4>
       <div className="detail-hint">{t('detail.boundaryHintFull')}</div>
       <ul className="evidence-list">
         {boundaries.map((site, index) => (
