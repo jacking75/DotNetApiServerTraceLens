@@ -76,4 +76,8 @@ public sealed record MiddlewarePipelineDocument(
     string ProgramFile,
     IReadOnlyList<MiddlewareStepInfo> Steps,
     IReadOnlyList<Finding> Findings,
-    IReadOnlyList<RuleInfo> Rules);
+    IReadOnlyList<RuleInfo> Rules)
+{
+    /// <summary>이 파이프라인이 속한 프로젝트(어셈블리 이름). 실행 가능한 프로젝트가 여럿일 때 구분한다.</summary>
+    public string ProjectKey { get; init; } = string.Empty;
+}

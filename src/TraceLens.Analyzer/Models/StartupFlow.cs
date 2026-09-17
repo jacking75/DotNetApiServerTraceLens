@@ -58,4 +58,8 @@ public sealed record StartupStep(
 public sealed record StartupFlowDocument(
     string ProgramFile,
     IReadOnlyList<StartupStep> ServiceSteps,
-    IReadOnlyList<StartupStep> MiddlewareSteps);
+    IReadOnlyList<StartupStep> MiddlewareSteps)
+{
+    /// <summary>이 시작 흐름이 속한 프로젝트(어셈블리 이름). 실행 가능한 프로젝트가 여럿일 때 구분한다.</summary>
+    public string ProjectKey { get; init; } = string.Empty;
+}

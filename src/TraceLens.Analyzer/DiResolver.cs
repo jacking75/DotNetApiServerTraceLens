@@ -40,6 +40,9 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
     /// <summary>인터페이스 키 → 솔루션 안에서 그 인터페이스를 구현한 클래스들.</summary>
     private readonly Dictionary<string, List<INamedTypeSymbol>> implementations = new(StringComparer.Ordinal);
 
+    /// <summary>기반 클래스 키 → 솔루션 안에서 그 클래스를 상속한 클래스들. virtual/abstract 디스패치에 쓴다.</summary>
+    private readonly Dictionary<string, List<INamedTypeSymbol>> derivedTypes = new(StringComparer.Ordinal);
+
     /// <param name="Conditional">if/switch/삼항 안에서 등록됐다. 실행 시 어느 쪽이 쓰일지 정적으로 확정할 수 없다.</param>
     private sealed record Registration(INamedTypeSymbol Implementation, bool Keyed, bool Conditional)
     {
@@ -53,6 +56,7 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
     {
         registrations.Clear();
         implementations.Clear();
+        derivedTypes.Clear();
 
         foreach (var project in loaded.Solution.Projects.Where(project => loaded.AnalyzableProjectIds.Contains(project.Id)))
         {
@@ -78,6 +82,55 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
             RegistrationCount,
             implementations.Count);
     }
+
+    /// <summary>
+    /// virtual·abstract 메서드 호출을 솔루션 안 재정의로 잇는다.
+    /// 재정의가 하나뿐이면 추정으로 잇고, 여럿이면 확정하지 않는다.
+    /// 기반 선언으로 가는 직접 엣지는 호출자가 그대로 유지한다(이 결과는 "추가" 엣지다).
+    /// </summary>
+    public DiResolution ResolveOverride(IMethodSymbol method)
+    {
+        if (!method.IsVirtual && !method.IsAbstract)
+        {
+            return DiResolution.Failed("virtual·abstract 메서드가 아니다.");
+        }
+
+        var key = GetTypeKey(method.ContainingType);
+        if (!derivedTypes.TryGetValue(key, out var derived) || derived.Count == 0)
+        {
+            return DiResolution.Failed("솔루션 안에서 재정의를 찾지 못했다.");
+        }
+
+        var overrides = derived
+            .Select(type => FindOverride(type, method))
+            .Where(item => item is not null)
+            .Select(item => item!)
+            .DistinctBy(SymbolNames.GetNodeId, StringComparer.Ordinal)
+            .ToArray();
+        if (overrides.Length == 0)
+        {
+            return DiResolution.Failed("상속한 클래스는 있지만 이 메서드를 재정의한 곳이 없다.");
+        }
+
+        if (overrides.Length > 1)
+        {
+            return DiResolution.Failed(
+                $"재정의가 {overrides.Length}곳이라 어느 쪽이 실행될지 확정할 수 없다: " +
+                string.Join(", ", overrides.Take(3).Select(item => item.ContainingType.Name)));
+        }
+
+        return new DiResolution(
+            overrides[0],
+            CallResolution.SingleImplementation,
+            CallConfidence.Estimated,
+            $"솔루션 안 재정의가 {overrides[0].ContainingType.Name} 하나뿐이라 연결했다. 기반 선언으로 가는 호출도 그대로 남는다.");
+    }
+
+    private static IMethodSymbol? FindOverride(INamedTypeSymbol type, IMethodSymbol baseMethod) => type
+        .GetMembers(baseMethod.Name)
+        .OfType<IMethodSymbol>()
+        .FirstOrDefault(candidate =>
+            candidate.IsOverride && HasMatchingSignature(baseMethod, candidate));
 
     public DiResolution Resolve(IMethodSymbol interfaceMethod)
     {
@@ -414,6 +467,27 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
                 if (!candidates.Any(candidate => GetTypeKey(candidate) == typeKey))
                 {
                     candidates.Add(type);
+                }
+            }
+
+            // virtual·abstract 디스패치를 위해 상속 관계도 모은다(솔루션 안 기반 클래스만).
+            for (var baseType = type.BaseType; baseType is not null; baseType = baseType.BaseType)
+            {
+                if (baseType.DeclaringSyntaxReferences.Length == 0)
+                {
+                    continue;
+                }
+
+                var baseKey = GetTypeKey(baseType.OriginalDefinition);
+                if (!derivedTypes.TryGetValue(baseKey, out var derived))
+                {
+                    derived = [];
+                    derivedTypes[baseKey] = derived;
+                }
+
+                if (!derived.Any(candidate => GetTypeKey(candidate) == typeKey))
+                {
+                    derived.Add(type);
                 }
             }
         }

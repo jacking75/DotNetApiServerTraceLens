@@ -20,7 +20,8 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
 
     private enum Phase { Service, Middleware }
 
-    public async Task<StartupFlowDocument?> ScanAsync(
+    /// <summary>실행 가능한 프로젝트마다 하나씩 시작 흐름을 만든다. 하나도 못 찾으면 빈 목록이다.</summary>
+    public async Task<IReadOnlyList<StartupFlowDocument>> ScanAllAsync(
         LoadedSolution loaded,
         TraceLensConfig config,
         string solutionDirectory,
@@ -28,16 +29,36 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
     {
         if (!config.IncludeStartupFlow)
         {
-            return null;
+            return [];
         }
 
-        var programDocument = await FindProgramDocumentAsync(loaded, cancellationToken);
-        if (programDocument is null)
+        var hosts = await HostDocuments.FindAsync(loaded, cancellationToken);
+        if (hosts.Count == 0)
         {
-            logger.LogInformation("Program.cs를 찾지 못해 시작 흐름을 건너뛴다.");
-            return null;
+            logger.LogInformation("Program.cs·Startup을 찾지 못해 시작 흐름을 건너뛴다.");
+            return [];
         }
 
+        var result = new List<StartupFlowDocument>();
+        foreach (var host in hosts)
+        {
+            var flow = await ScanHostAsync(host, loaded, solutionDirectory, cancellationToken);
+            if (flow is not null)
+            {
+                result.Add(flow);
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<StartupFlowDocument?> ScanHostAsync(
+        HostDocument host,
+        LoadedSolution loaded,
+        string solutionDirectory,
+        CancellationToken cancellationToken)
+    {
+        var programDocument = host.Document;
         var root = await programDocument.GetSyntaxRootAsync(cancellationToken);
         var model = await programDocument.GetSemanticModelAsync(cancellationToken);
         if (root is null || model is null)
@@ -81,7 +102,10 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
         return new StartupFlowDocument(
             SourcePaths.ToSolutionRelative(solutionDirectory, programDocument.FilePath) ?? programDocument.FilePath ?? "Program.cs",
             serviceSteps,
-            middlewareSteps);
+            middlewareSteps)
+        {
+            ProjectKey = host.ProjectKey
+        };
     }
 
     private async Task<StartupStep?> BuildStepAsync(

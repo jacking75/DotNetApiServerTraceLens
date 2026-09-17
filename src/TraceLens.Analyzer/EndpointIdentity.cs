@@ -40,16 +40,24 @@ internal static class EndpointIdentity
     /// 컨트롤러의 클래스 라우트와 메서드 라우트를 잇는다.
     /// MVC 규칙대로 메서드 라우트가 <c>/</c>로 시작하면 절대 경로로 본다.
     /// </summary>
-    public static string Combine(string? prefix, string? route)
+    public static string Combine(string? prefix, string? route) => NormalizeRoute(Join(prefix, route));
+
+    /// <summary>
+    /// 잇기만 하고 정규화하지 않는다. 화면에 보여 줄 원문 라우트는 쓴 그대로여야 한다
+    /// (<c>v{version:apiVersion}</c>의 제약을 지우면 안 된다).
+    /// 메서드 라우트가 <c>/</c>로 시작하면 절대 경로라 접두사를 붙이지 않는다.
+    /// </summary>
+    public static string Join(string? prefix, string? route)
     {
         var right = (route ?? string.Empty).Trim();
         if (right.StartsWith('/'))
         {
-            return NormalizeRoute(right);
+            return right;
         }
 
-        var left = (prefix ?? string.Empty).Trim();
-        return NormalizeRoute($"{left}/{right}");
+        var left = (prefix ?? string.Empty).Trim().Trim('/');
+        var parts = new[] { left, right.Trim('/') }.Where(part => part.Length > 0);
+        return "/" + string.Join('/', parts);
     }
 
     /// <summary>
@@ -83,15 +91,42 @@ internal static class EndpointIdentity
         }
     }
 
-    /// <summary><c>{id:int}</c> → <c>{id}</c>, <c>{id?}</c> → <c>{id}</c>. 캐치올(<c>{*rest}</c>)은 별표를 유지한다.</summary>
+    /// <summary>
+    /// <c>{id:int}</c> → <c>{id}</c>, <c>{id?}</c> → <c>{id}</c>. 캐치올(<c>{*rest}</c>)은 별표를 유지한다.
+    /// 세그먼트에 리터럴이 섞여 있어도(<c>v{version:apiVersion}</c> → <c>v{version}</c>) 제약만 지운다.
+    /// 원문 라우트(<c>entryPoint.route</c>)는 그대로 두므로 화면에는 쓴 대로 보인다.
+    /// </summary>
     private static string NormalizeSegment(string segment)
     {
-        if (!segment.StartsWith('{') || !segment.EndsWith('}'))
+        var builder = new StringBuilder();
+        var index = 0;
+        while (index < segment.Length)
         {
-            return segment.ToLowerInvariant();
+            var open = segment.IndexOf('{', index);
+            if (open < 0)
+            {
+                builder.Append(segment[index..].ToLowerInvariant());
+                break;
+            }
+
+            var close = segment.IndexOf('}', open);
+            if (close < 0)
+            {
+                builder.Append(segment[index..].ToLowerInvariant());
+                break;
+            }
+
+            builder.Append(segment[index..open].ToLowerInvariant());
+            builder.Append('{').Append(NormalizeParameter(segment[(open + 1)..close])).Append('}');
+            index = close + 1;
         }
 
-        var inner = segment[1..^1];
+        return builder.ToString();
+    }
+
+    /// <summary>중괄호 안의 이름만 남긴다. 제약(<c>:int</c>)·기본값(<c>=1</c>)·선택 표시(<c>?</c>)는 뗀다.</summary>
+    private static string NormalizeParameter(string inner)
+    {
         var colon = inner.IndexOf(':');
         if (colon >= 0)
         {
@@ -104,7 +139,6 @@ internal static class EndpointIdentity
             inner = inner[..equals];
         }
 
-        inner = inner.TrimEnd('?');
-        return "{" + inner.ToLowerInvariant() + "}";
+        return inner.TrimEnd('?').ToLowerInvariant();
     }
 }

@@ -31,7 +31,15 @@ export function entryPoint(nodeId: string, httpMethod: string, route: string): E
 
 export const graphDefaults: Pick<
   GraphDocument,
-  'snapshotId' | 'inputFingerprint' | 'manifest' | 'diagnostics' | 'callSites' | 'analyzerVersion' | 'rulesVersion'
+  | 'snapshotId'
+  | 'inputFingerprint'
+  | 'manifest'
+  | 'diagnostics'
+  | 'callSites'
+  | 'analyzerVersion'
+  | 'rulesVersion'
+  | 'startupFlows'
+  | 'middlewarePipelines'
 > = {
   snapshotId: 'test-snapshot',
   inputFingerprint: '',
@@ -40,4 +48,6 @@ export const graphDefaults: Pick<
   callSites: [],
   analyzerVersion: '',
   rulesVersion: '',
+  startupFlows: [],
+  middlewarePipelines: [],
 }

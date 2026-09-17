@@ -51,6 +51,8 @@ describe('normalizeGraph', () => {
     startupFlow: null,
     dataAccess: null,
     middleware: null,
+    startupFlows: [],
+    middlewarePipelines: [],
     ...over,
   } as GraphDocument)
 
@@ -68,6 +70,7 @@ describe('normalizeGraph', () => {
   it('미들웨어 단계의 kind가 없으면 Middleware로 채운다', () => {
     const graph = normalizeGraph(base({
       middleware: {
+        projectKey: 'Fixture',
         programFile: 'Program.cs',
         steps: [{ id: 'mw1', order: 1, name: 'UseRouting' } as never],
         findings: [],

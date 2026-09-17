@@ -157,7 +157,8 @@ public sealed class TraceLensAnalyzer(
                 .Concat(scan.Classes.Select(item => item.File)),
             cancellationToken);
         progress?.Report(new AnalysisProgress("scan", "메서드 노드를 모았다.", nodes.Count));
-        var startupFlow = await startupFlowScanner.ScanAsync(loaded, config, solutionDirectory, cancellationToken);
+        var startupFlows = await startupFlowScanner.ScanAllAsync(loaded, config, solutionDirectory, cancellationToken);
+        var startupFlow = startupFlows.Count > 0 ? startupFlows[0] : null;
 
         progress?.Report(new AnalysisProgress("rules", "DB·캐시와 미들웨어 규칙을 확인하는 중이다."));
         DataAccessScanResult? dataScan = null;
@@ -173,12 +174,13 @@ public sealed class TraceLensAnalyzer(
                 dataScan, writePaths, effects, startupFlow, config, cancellationToken);
         }
 
-        var middleware = await middlewareScanner.ScanAsync(
+        var middlewarePipelines = await middlewareScanner.ScanAllAsync(
             loaded, config, solutionDirectory, startupFlow, dataScan, cancellationToken);
+        var middleware = middlewarePipelines.Count > 0 ? middlewarePipelines[0] : null;
         progress?.Report(new AnalysisProgress(
             "rules",
             "점검을 마쳤다.",
-            (dataAccess?.Findings.Count ?? 0) + (middleware?.Findings.Count ?? 0)));
+            (dataAccess?.Findings.Count ?? 0) + middlewarePipelines.Sum(item => item.Findings.Count)));
 
         var changedDuringAnalysis = FindChangedInputs(
             solutionDirectory, manifestResult, fileHashes.Keys, startedAtUtc);
@@ -214,8 +216,10 @@ public sealed class TraceLensAnalyzer(
         {
             RootDirectory = solutionDirectory,
             StartupFlow = startupFlow,
+            StartupFlows = startupFlows,
             DataAccess = dataAccess,
             Middleware = middleware,
+            MiddlewarePipelines = middlewarePipelines,
             SnapshotId = snapshotId,
             InputFingerprint = inputFingerprint,
             Manifest = manifestResult.Manifest,

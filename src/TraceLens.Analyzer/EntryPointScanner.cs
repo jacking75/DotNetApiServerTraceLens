@@ -50,18 +50,29 @@ public sealed class EntryPointScanner(
 
                     var callable = AnalysisCallable.ForMethod(method, methodSyntax, projectKey);
                     var line = methodSyntax.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+
+                    // [NonAction]이 붙은 메서드는 라우팅 대상이 아니다.
+                    if (method.GetAttributes().Any(item => TrimAttributeSuffix(item.AttributeClass?.Name) == "NonAction"))
+                    {
+                        continue;
+                    }
+
                     foreach (var attribute in method.GetAttributes())
                     {
                         var attributeName = TrimAttributeSuffix(attribute.AttributeClass?.Name);
-                        if (!config.EntryPointAttributes.Contains(attributeName, StringComparer.OrdinalIgnoreCase))
+                        var acceptVerbs = attributeName == "AcceptVerbs";
+                        if (!acceptVerbs &&
+                            !config.EntryPointAttributes.Contains(attributeName, StringComparer.OrdinalIgnoreCase))
                         {
                             continue;
                         }
 
                         // 같은 메서드에 [HttpGet("a")] [HttpGet("b")]가 붙으면 라우트마다 엔드포인트가 하나씩 나온다.
                         // 클래스 [Route]도 여러 개일 수 있고 기반 클래스에 있을 수도 있다. 그 곱만큼 라우트가 나온다.
-                        var methodRoute = ReadRoute(attribute);
-                        var httpMethod = ToHttpMethod(attributeName);
+                        // [AcceptVerbs("GET", "POST")]는 동사가 여러 개고 라우트는 명명 인자(Route)로 온다.
+                        var methodRoute = acceptVerbs ? ReadNamedRoute(attribute) : ReadRoute(attribute);
+                        var httpMethods = acceptVerbs ? ReadVerbs(attribute) : [ToHttpMethod(attributeName)];
+                        foreach (var httpMethod in httpMethods)
                         foreach (var classRoute in GetClassRoutes(method.ContainingType))
                         {
                             var route = CombineRoute(classRoute, methodRoute, method);
@@ -118,6 +129,26 @@ public sealed class EntryPointScanner(
     private static string? ReadRoute(AttributeData attribute) =>
         attribute.ConstructorArguments.FirstOrDefault().Value as string;
 
+    /// <summary><c>[AcceptVerbs("GET", "POST", Route = "x")]</c>의 Route 명명 인자.</summary>
+    private static string? ReadNamedRoute(AttributeData attribute) => attribute.NamedArguments
+        .Where(item => string.Equals(item.Key, "Route", StringComparison.Ordinal))
+        .Select(item => item.Value.Value as string)
+        .FirstOrDefault();
+
+    /// <summary><c>[AcceptVerbs("GET", "POST")]</c>의 동사들. 하나도 못 읽으면 GET으로 본다.</summary>
+    private static IReadOnlyList<string> ReadVerbs(AttributeData attribute)
+    {
+        var verbs = attribute.ConstructorArguments
+            .SelectMany(argument => argument.Kind == TypedConstantKind.Array
+                ? argument.Values.Select(item => item.Value as string)
+                : [argument.Value as string])
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.ToUpperInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return verbs.Length > 0 ? verbs : ["GET"];
+    }
+
     /// <summary>
     /// 클래스 라우트 목록. 기반 클래스까지 올라가며 찾고, <c>[Route]</c>가 여러 개면 모두 돌려준다.
     /// 하나도 없으면 null 하나(= 접두사 없음)를 돌려준다.
@@ -147,7 +178,7 @@ public sealed class EntryPointScanner(
     /// </summary>
     private static string CombineRoute(string? classRoute, string? methodRoute, IMethodSymbol method)
     {
-        var combined = EndpointIdentity.Combine(classRoute, methodRoute).TrimStart('/');
+        var combined = EndpointIdentity.Join(classRoute, methodRoute).TrimStart('/');
         combined = combined
             .Replace("[controller]", RemoveControllerSuffix(method.ContainingType.Name), StringComparison.OrdinalIgnoreCase)
             .Replace("[action]", method.Name, StringComparison.OrdinalIgnoreCase)

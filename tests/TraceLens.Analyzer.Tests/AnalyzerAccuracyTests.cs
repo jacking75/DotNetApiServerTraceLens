@@ -46,7 +46,7 @@ public sealed class AnalyzerAccuracyTests
         Assert.Equal("GET", health.HttpMethod);
 
         // 상대 경로는 기반 클래스의 접두사를 이어받는다.
-        Assert.Contains(result.Graph.EntryPoints, item => item.Route == "/api/v1/Health/orders/{id}");
+        Assert.Contains(result.Graph.EntryPoints, item => item.Route == "/api/v1/Health/orders/{id:int}");
     }
 
     [Theory]

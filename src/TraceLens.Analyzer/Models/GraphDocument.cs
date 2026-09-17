@@ -49,14 +49,31 @@ public sealed record GraphDocument(
         init => rootDirectory = value;
     }
 
-    /// <summary>Program.cs를 분석한 시작 흐름(DI 등록·미들웨어 파이프라인). 찾지 못했거나 v4 이하 문서면 null이다.</summary>
+    /// <summary>
+    /// Program.cs를 분석한 시작 흐름(DI 등록·미들웨어 파이프라인). 찾지 못했거나 v4 이하 문서면 null이다.
+    /// 실행 가능한 프로젝트가 여럿이면 <see cref="StartupFlows"/>의 첫 항목과 같다(호환용).
+    /// </summary>
     public StartupFlowDocument? StartupFlow { get; init; }
+
+    /// <summary>
+    /// 프로젝트별 시작 흐름. 실행 가능한 프로젝트가 여럿인 솔루션에서 두 번째 서비스의 등록이 빠지지 않게 한다.
+    /// v7 이전 문서에는 없고, 없으면 <see cref="StartupFlow"/> 하나만 있는 것으로 읽는다.
+    /// </summary>
+    public IReadOnlyList<StartupFlowDocument> StartupFlows { get; init; } = [];
 
     /// <summary>DB·캐시 접근과 보상 처리 점검. 설정에서 껐거나 v5 이하 문서면 null이다.</summary>
     public DataAccessDocument? DataAccess { get; init; }
 
-    /// <summary>미들웨어 파이프라인. Program.cs를 찾지 못했거나 v5 이하 문서면 null이다.</summary>
+    /// <summary>
+    /// 미들웨어 파이프라인. Program.cs를 찾지 못했거나 v5 이하 문서면 null이다.
+    /// 실행 가능한 프로젝트가 여럿이면 <see cref="MiddlewarePipelines"/>의 첫 항목과 같다(호환용).
+    /// </summary>
     public MiddlewarePipelineDocument? Middleware { get; init; }
+
+    /// <summary>
+    /// 프로젝트별 미들웨어 파이프라인. v7 이전 문서에는 없고, 없으면 <see cref="Middleware"/> 하나만 있는 것으로 읽는다.
+    /// </summary>
+    public IReadOnlyList<MiddlewarePipelineDocument> MiddlewarePipelines { get; init; } = [];
 
     /// <summary>
     /// 이 분석 실행 하나를 가리키는 ID다. 같은 코드를 다시 분석하면 새 값이 나온다.

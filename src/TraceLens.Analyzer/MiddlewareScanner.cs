@@ -38,7 +38,8 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
         ["UseHttpLogging"] = ("요청을 로그로 남긴다", "응답을 로그로 남긴다", null, null)
     };
 
-    public async Task<MiddlewarePipelineDocument?> ScanAsync(
+    /// <summary>실행 가능한 프로젝트마다 하나씩 파이프라인을 만든다. 하나도 못 찾으면 빈 목록이다.</summary>
+    public async Task<IReadOnlyList<MiddlewarePipelineDocument>> ScanAllAsync(
         LoadedSolution loaded,
         TraceLensConfig config,
         string solutionDirectory,
@@ -48,16 +49,39 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
     {
         if (!config.IncludeMiddleware)
         {
-            return null;
+            return [];
         }
 
-        var program = await FindProgramDocumentAsync(loaded, cancellationToken);
-        if (program is null)
+        var hosts = await HostDocuments.FindAsync(loaded, cancellationToken);
+        if (hosts.Count == 0)
         {
-            logger.LogInformation("Program.cs를 찾지 못해 미들웨어 보기를 건너뛴다.");
-            return null;
+            logger.LogInformation("Program.cs·Startup을 찾지 못해 미들웨어 보기를 건너뛴다.");
+            return [];
         }
 
+        var pipelines = new List<MiddlewarePipelineDocument>();
+        foreach (var host in hosts)
+        {
+            var pipeline = await ScanHostAsync(host, loaded, config, solutionDirectory, startupFlow, dataAccess, cancellationToken);
+            if (pipeline is not null)
+            {
+                pipelines.Add(pipeline);
+            }
+        }
+
+        return pipelines;
+    }
+
+    private async Task<MiddlewarePipelineDocument?> ScanHostAsync(
+        HostDocument host,
+        LoadedSolution loaded,
+        TraceLensConfig config,
+        string solutionDirectory,
+        StartupFlowDocument? startupFlow,
+        DataAccessScanResult? dataAccess,
+        CancellationToken cancellationToken)
+    {
+        var program = host.Document;
         var root = await program.GetSyntaxRootAsync(cancellationToken);
         var model = await program.GetSemanticModelAsync(cancellationToken);
         if (root is null || model is null)
@@ -87,7 +111,10 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
             steps.Count,
             findings.Count,
             relativeProgram);
-        return new MiddlewarePipelineDocument(relativeProgram, steps, findings, Catalog);
+        return new MiddlewarePipelineDocument(relativeProgram, steps, findings, Catalog)
+        {
+            ProjectKey = host.ProjectKey
+        };
     }
 
     private async Task AppendStepAsync(

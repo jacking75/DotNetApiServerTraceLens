@@ -58,9 +58,15 @@ public sealed class InvocationResolver(DiResolver diResolver, ILogger<Invocation
             }
 
             var call = Resolve(model, syntax, solutionDirectory, config, cancellationToken);
+            var extra = ResolveOverrideCall(call, solutionDirectory, config);
             if (lambda is null)
             {
                 result.Add(call);
+                if (extra is not null)
+                {
+                    result.Add(extra);
+                }
+
                 continue;
             }
 
@@ -76,9 +82,57 @@ public sealed class InvocationResolver(DiResolver diResolver, ILogger<Invocation
                 Note = call.Note.Length == 0 ? note : note + " " + call.Note,
                 ViaLambda = true
             });
+            if (extra is not null)
+            {
+                result.Add(extra with
+                {
+                    Note = note + " " + extra.Note,
+                    ViaLambda = true
+                });
+            }
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// virtual·abstract 대상 호출이면 솔루션 안 재정의로 가는 <b>추가</b> 엣지를 만든다.
+    /// 기반 선언으로 가는 직접 엣지는 그대로 둔다 — 실제로 어느 쪽이 실행될지는 런타임 타입이 정한다.
+    /// 재정의가 여럿이면 확정하지 않고 경계로만 남긴다.
+    /// </summary>
+    private ResolvedCall? ResolveOverrideCall(ResolvedCall call, string solutionDirectory, TraceLensConfig config)
+    {
+        if (call.Target is not { } target || call.Resolution != CallResolution.Direct)
+        {
+            return null;
+        }
+
+        if (!target.IsVirtual && !target.IsAbstract)
+        {
+            return null;
+        }
+
+        var resolved = diResolver.ResolveOverride(target);
+        if (resolved.Method is null)
+        {
+            // 재정의를 확정하지 못했다는 사실 자체를 경계 목록에 남긴다.
+            return resolved.Note.Contains("재정의가", StringComparison.Ordinal)
+                ? new ResolvedCall(
+                    null, call.DeclaredTarget, CallResolution.Ambiguous, CallConfidence.Estimated,
+                    call.File, call.Line, resolved.Note)
+                : null;
+        }
+
+        return IsSolutionMethod(resolved.Method, solutionDirectory, config)
+            ? new ResolvedCall(
+                resolved.Method,
+                call.DeclaredTarget,
+                CallResolution.SingleImplementation,
+                CallConfidence.Estimated,
+                call.File,
+                call.Line,
+                resolved.Note)
+            : null;
     }
 
     /// <summary>람다를 받는 쪽을 사람이 읽을 한 줄로 적는다. 호출 인자로 넘어간 람다면 그 메서드, 변수에 담은 람다면 변수 이름이다.</summary>

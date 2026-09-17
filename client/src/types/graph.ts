@@ -229,6 +229,8 @@ export interface StartupStep {
 
 /** Program.cs를 분석한 시작 흐름. Program.cs를 찾지 못했으면(구식 Startup.cs 등) null이다. */
 export interface StartupFlowDocument {
+  /** 이 시작 흐름이 속한 프로젝트(어셈블리 이름). v7부터 있다. */
+  projectKey: string
   programFile: string
   serviceSteps: StartupStep[]
   middlewareSteps: StartupStep[]
@@ -264,6 +266,10 @@ export interface GraphDocument {
   dataAccess: DataAccessDocument | null
   /** v6부터 있다. Program.cs를 찾지 못했거나 v5 이하 문서를 읽으면 null이다. */
   middleware: MiddlewarePipelineDocument | null
+  /** 프로젝트별 시작 흐름. 실행 가능한 프로젝트가 여럿인 솔루션에서 쓴다. 없으면 startupFlow 하나로 채운다. */
+  startupFlows: StartupFlowDocument[]
+  /** 프로젝트별 미들웨어 파이프라인. 없으면 middleware 하나로 채운다. */
+  middlewarePipelines: MiddlewarePipelineDocument[]
 }
 
 /** 그래프 창의 종류. 지금은 호출 흐름 보기만 이 창을 쓴다. */
@@ -593,6 +599,8 @@ export interface MiddlewareStepInfo {
 }
 
 export interface MiddlewarePipelineDocument {
+  /** 이 파이프라인이 속한 프로젝트(어셈블리 이름). v7부터 있다. */
+  projectKey: string
   programFile: string
   steps: MiddlewareStepInfo[]
   findings: Finding[]

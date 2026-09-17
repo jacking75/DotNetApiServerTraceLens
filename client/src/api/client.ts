@@ -126,6 +126,13 @@ export function normalizeGraph(graph: GraphDocument): GraphDocument {
   const base: GraphDocument = {
     ...graph,
     startupFlow: graph.startupFlow ?? null,
+    // 옛 문서에는 복수 필드가 없다. 단수 필드 하나만 있는 것으로 읽는다.
+    startupFlows: graph.startupFlows?.length ? graph.startupFlows : graph.startupFlow ? [graph.startupFlow] : [],
+    middlewarePipelines: graph.middlewarePipelines?.length
+      ? graph.middlewarePipelines
+      : graph.middleware
+        ? [graph.middleware]
+        : [],
     middleware: graph.middleware
       ? {
           ...graph.middleware,

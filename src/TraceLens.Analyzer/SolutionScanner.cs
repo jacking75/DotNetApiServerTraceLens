@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
 using TraceLens.Analyzer.Models;
@@ -243,8 +244,9 @@ public sealed class SolutionScanner(
     }
 
     /// <summary>
-    /// 노드로 만들 callable을 돌려준다. 메서드와 명시적 생성자, 본문이 있는 프로퍼티,
-    /// 그리고 그 안에 선언된 로컬 함수를 대상으로 한다(로컬 함수는 별도 호출 대상이 될 수 있다).
+    /// 노드로 만들 callable을 돌려준다. 메서드·명시적 생성자·본문이 있는 프로퍼티에 더해
+    /// 인덱서·연산자·이벤트 접근자·필드와 프로퍼티 초기화식도 대상이다.
+    /// 그 안에 선언된 로컬 함수도 따로 낸다(로컬 함수는 별도 호출 대상이 될 수 있다).
     /// </summary>
     private static IEnumerable<AnalysisCallable> EnumerateCallables(
         TypeDeclarationSyntax typeSyntax,
@@ -268,11 +270,43 @@ public sealed class SolutionScanner(
                     syntax = constructorSyntax;
                     break;
 
-                // 자동 프로퍼티는 실행할 코드가 없으므로 본문이 있는 프로퍼티만 노드로 만든다.
-                case PropertyDeclarationSyntax propertySyntax when HasBody(propertySyntax):
+                // 자동 프로퍼티는 실행할 코드가 없으므로 본문이나 초기화식이 있는 프로퍼티만 노드로 만든다.
+                case PropertyDeclarationSyntax propertySyntax
+                    when HasBody(propertySyntax) || propertySyntax.Initializer is not null:
                     var property = model.GetDeclaredSymbol(propertySyntax, cancellationToken) as IPropertySymbol;
                     symbol = property?.GetMethod ?? property?.SetMethod;
                     syntax = propertySyntax;
+                    break;
+
+                // 인덱서도 본문이 있는 프로퍼티와 같다.
+                case IndexerDeclarationSyntax indexerSyntax:
+                    var indexer = model.GetDeclaredSymbol(indexerSyntax, cancellationToken) as IPropertySymbol;
+                    symbol = indexer?.GetMethod ?? indexer?.SetMethod;
+                    syntax = indexerSyntax;
+                    break;
+
+                case OperatorDeclarationSyntax operatorSyntax:
+                    symbol = model.GetDeclaredSymbol(operatorSyntax, cancellationToken) as IMethodSymbol;
+                    syntax = operatorSyntax;
+                    break;
+
+                case ConversionOperatorDeclarationSyntax conversionSyntax:
+                    symbol = model.GetDeclaredSymbol(conversionSyntax, cancellationToken) as IMethodSymbol;
+                    syntax = conversionSyntax;
+                    break;
+
+                // 본문이 있는 이벤트 접근자(add/remove). 필드형 이벤트는 실행할 코드가 없다.
+                case EventDeclarationSyntax eventSyntax:
+                    var eventSymbol = model.GetDeclaredSymbol(eventSyntax, cancellationToken) as IEventSymbol;
+                    symbol = eventSymbol?.AddMethod ?? eventSymbol?.RemoveMethod;
+                    syntax = eventSyntax;
+                    break;
+
+                // 필드 초기화식은 생성자에서 실행된다. 여기서 부르는 것을 잃지 않도록 생성자 노드에 귀속한다.
+                case FieldDeclarationSyntax fieldSyntax
+                    when fieldSyntax.Declaration.Variables.Any(item => item.Initializer is not null):
+                    symbol = FindInitializerOwner(model, typeSyntax, fieldSyntax, cancellationToken);
+                    syntax = fieldSyntax;
                     break;
             }
 
@@ -292,6 +326,28 @@ public sealed class SolutionScanner(
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// 필드·프로퍼티 초기화식이 실제로 실행되는 자리는 생성자다.
+    /// 명시적 생성자가 있으면 그 심볼을, 없으면 컴파일러가 만든 기본 생성자를 쓴다.
+    /// </summary>
+    private static IMethodSymbol? FindInitializerOwner(
+        SemanticModel model,
+        TypeDeclarationSyntax typeSyntax,
+        SyntaxNode member,
+        CancellationToken cancellationToken)
+    {
+        if (model.GetDeclaredSymbol(typeSyntax, cancellationToken) is not INamedTypeSymbol type)
+        {
+            return null;
+        }
+
+        var isStatic = member is FieldDeclarationSyntax { Modifiers: var modifiers } &&
+                       modifiers.Any(item => item.IsKind(SyntaxKind.StaticKeyword));
+        return isStatic
+            ? type.StaticConstructors.FirstOrDefault()
+            : type.InstanceConstructors.FirstOrDefault(item => !item.IsStatic);
     }
 
     private static bool HasBody(PropertyDeclarationSyntax property) =>
