@@ -18,9 +18,9 @@ public sealed class AnalyzerIntegrationTests
 
         Assert.Equal(5, result.Graph.EntryPoints.Count);
         Assert.True(
-            result.Graph.Nodes.Count == 22,
-            $"예상 노드 수는 22개지만 {result.Graph.Nodes.Count}개다.{Environment.NewLine}{string.Join(Environment.NewLine, logs)}");
-        Assert.Equal(14, result.Graph.Edges.Count);
+            result.Graph.Nodes.Count == 37,
+            $"예상 노드 수는 37개지만 {result.Graph.Nodes.Count}개다.{Environment.NewLine}{string.Join(Environment.NewLine, logs)}");
+        Assert.Equal(21, result.Graph.Edges.Count);
         Assert.Equal(5, result.Graph.Nodes.Count(node => node.Kind == NodeKind.Controller));
         Assert.Contains(result.Graph.Nodes, node => node.Kind == NodeKind.Service);
         Assert.Contains(result.Graph.Nodes, node => node.Kind == NodeKind.Repository);
@@ -119,14 +119,14 @@ public sealed class AnalyzerIntegrationTests
 
         var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
 
-        // 컨트롤러 4(기반 클래스 포함 5) + 서비스 5 + 리포지터리 3 + 잡 + DI 등록 확장 클래스 + DTO + 도메인 3 + 계약 record + 인터페이스 4다.
-        Assert.Equal(25, result.Graph.Classes.Count);
+        // 컨트롤러·서비스·리포지터리·DI 등록 모양 픽스처(RegistrationShapes)까지 포함한 수다.
+        Assert.Equal(43, result.Graph.Classes.Count);
         var job = Assert.Single(result.Graph.Classes, item => item.Name == "CleanupJob");
         Assert.Equal("FixtureApp.Jobs", job.Namespace);
         Assert.Equal("FixtureApp/Jobs/CleanupJob.cs", job.File);
         Assert.Equal(["FixtureApp.Jobs.CleanupJob.RunAsync(int)"], job.MethodIds);
         // 스키마 v4부터 인터페이스도 목록에 들어간다(노드는 여전히 본문이 있는 멤버만이다).
-        Assert.Equal(4, result.Graph.Classes.Count(item => item.TypeKind == ClassTypeKind.Interface));
+        Assert.Equal(10, result.Graph.Classes.Count(item => item.TypeKind == ClassTypeKind.Interface));
         Assert.DoesNotContain(result.Graph.Nodes, node => node.ClassId == "FixtureApp.Services.IOrderService");
 
         // 진입점에서 도달하지 못하는 클래스도 호출 엣지를 가진다.
@@ -154,7 +154,7 @@ public sealed class AnalyzerIntegrationTests
 
             Assert.DoesNotContain(result.Graph.Nodes, node => node.DisplayName == "CleanupJob.RunAsync");
             Assert.Equal(12, result.Graph.Nodes.Count);
-            Assert.Equal(25, result.Graph.Classes.Count);
+            Assert.Equal(43, result.Graph.Classes.Count);
         }
         finally
         {
@@ -250,7 +250,7 @@ public sealed class AnalyzerIntegrationTests
         {
             var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
 
-            Assert.Equal(25, result.Graph.Classes.Count);
+            Assert.Equal(43, result.Graph.Classes.Count);
             Assert.All(result.Graph.Classes, item => Assert.Empty(item.Members));
             Assert.Equal(0, result.MemberCount);
             // 멤버를 꺼도 상속·구현 정보는 남아 관계도는 그릴 수 있다.
@@ -276,7 +276,7 @@ public sealed class AnalyzerIntegrationTests
         {
             var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
 
-            Assert.Equal(21, result.Graph.Classes.Count);
+            Assert.Equal(33, result.Graph.Classes.Count);
             Assert.DoesNotContain(result.Graph.Classes, item => item.TypeKind == ClassTypeKind.Interface);
             // 목록에서 빠진 인터페이스는 그릴 대상이 없으므로 구현 관계에서도 빠진다.
             Assert.Empty(Assert.Single(

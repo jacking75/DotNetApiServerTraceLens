@@ -26,7 +26,11 @@ public sealed record DiResolution(
 public sealed class DiResolver(ILogger<DiResolver> logger)
 {
     /// <summary>DI 등록 호출이 들어 있을 수 있는 파일만 고르기 위한 텍스트 힌트.</summary>
-    private static readonly string[] RegistrationHints = ["AddScoped", "AddSingleton", "AddTransient", "TryAdd", "AddKeyed"];
+    private static readonly string[] RegistrationHints =
+    [
+        "AddScoped", "AddSingleton", "AddTransient", "TryAdd", "AddKeyed",
+        "AddHttpClient", "AddHostedService", "typeof("
+    ];
 
     private const string DiNamespace = "Microsoft.Extensions.DependencyInjection";
 
@@ -37,7 +41,11 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
     private readonly Dictionary<string, List<INamedTypeSymbol>> implementations = new(StringComparer.Ordinal);
 
     /// <param name="Conditional">if/switch/삼항 안에서 등록됐다. 실행 시 어느 쪽이 쓰일지 정적으로 확정할 수 없다.</param>
-    private sealed record Registration(INamedTypeSymbol Implementation, bool Keyed, bool Conditional);
+    private sealed record Registration(INamedTypeSymbol Implementation, bool Keyed, bool Conditional)
+    {
+        /// <summary>어떤 모양의 등록이었는지(자기 등록·팩토리·open generic). 근거 문구에 붙인다.</summary>
+        public string Note { get; init; } = string.Empty;
+    }
 
     public int RegistrationCount => registrations.Sum(entry => entry.Value.Count);
 
@@ -163,22 +171,21 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
         foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var genericName = invocation.Expression.DescendantNodesAndSelf()
-                .OfType<GenericNameSyntax>()
-                .FirstOrDefault(name =>
-                    IsRegistrationName(name.Identifier.ValueText) && name.TypeArgumentList.Arguments.Count == 2);
-            if (genericName is null || !IsServiceCollectionExtension(model, invocation, cancellationToken))
+            var name = invocation.Expression.DescendantNodesAndSelf()
+                .OfType<SimpleNameSyntax>()
+                .FirstOrDefault(item => IsRegistrationName(item.Identifier.ValueText));
+            if (name is null || !IsServiceCollectionExtension(model, invocation, cancellationToken))
             {
                 continue;
             }
 
-            var abstraction = model.GetTypeInfo(genericName.TypeArgumentList.Arguments[0], cancellationToken).Type as INamedTypeSymbol;
-            var implementation = model.GetTypeInfo(genericName.TypeArgumentList.Arguments[1], cancellationToken).Type as INamedTypeSymbol;
-            if (abstraction is null || implementation is null || !IsRegistrationPair(abstraction, implementation))
+            var pair = ReadRegistrationPair(name, invocation, model, cancellationToken);
+            if (pair is null)
             {
                 continue;
             }
 
+            var (abstraction, implementation, note) = pair.Value;
             var key = GetTypeKey(abstraction);
             if (!registrations.TryGetValue(key, out var list))
             {
@@ -188,11 +195,115 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
 
             list.Add(new Registration(
                 implementation,
-                genericName.Identifier.ValueText.Contains("Keyed", StringComparison.Ordinal),
-                IsConditional(invocation)));
+                name.Identifier.ValueText.Contains("Keyed", StringComparison.Ordinal),
+                IsConditional(invocation))
+            {
+                Note = note
+            });
             logger.LogDebug("DI 등록을 찾았다: {Abstraction} -> {Implementation}", abstraction, implementation);
         }
     }
+
+    /// <summary>
+    /// 등록 한 줄에서 (추상, 구현) 짝을 읽는다. 지원하는 모양:
+    /// <list type="bullet">
+    ///   <item><c>AddScoped&lt;I, Impl&gt;()</c> — 제네릭 인자 두 개.</item>
+    ///   <item><c>AddScoped&lt;Impl&gt;()</c> — 자기 등록(추상 = 구현).</item>
+    ///   <item><c>AddScoped&lt;I&gt;(sp =&gt; new Impl(...))</c>·<c>sp.GetRequiredService&lt;Impl&gt;()</c> — 본문이 단일 생성/조회일 때만.</item>
+    ///   <item><c>AddSingleton&lt;I&gt;(instance)</c> — 변수의 선언 타입으로 확정.</item>
+    ///   <item><c>AddScoped(typeof(IRepo&lt;&gt;), typeof(Repo&lt;&gt;))</c> — open generic.</item>
+    /// </list>
+    /// 해석하지 못하는 팩토리 본문은 등록으로 잡지 않는다(추정으로 잇지 않는다).
+    /// </summary>
+    private static (INamedTypeSymbol Abstraction, INamedTypeSymbol Implementation, string Note)? ReadRegistrationPair(
+        SimpleNameSyntax name,
+        InvocationExpressionSyntax invocation,
+        SemanticModel model,
+        CancellationToken cancellationToken)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        if (name is GenericNameSyntax generic)
+        {
+            var typeArguments = generic.TypeArgumentList.Arguments;
+            if (typeArguments.Count == 2)
+            {
+                var abstraction = model.GetTypeInfo(typeArguments[0], cancellationToken).Type as INamedTypeSymbol;
+                var implementation = model.GetTypeInfo(typeArguments[1], cancellationToken).Type as INamedTypeSymbol;
+                return abstraction is not null && implementation is not null && IsRegistrationPair(abstraction, implementation)
+                    ? (abstraction, implementation, string.Empty)
+                    : null;
+            }
+
+            if (typeArguments.Count != 1)
+            {
+                return null;
+            }
+
+            if (model.GetTypeInfo(typeArguments[0], cancellationToken).Type is not INamedTypeSymbol declared)
+            {
+                return null;
+            }
+
+            // AddScoped<Impl>() — 자기 등록. 인터페이스라면 구현을 알 수 없으므로 팩토리·인스턴스를 본다.
+            if (arguments.Count == 0)
+            {
+                return declared.TypeKind == TypeKind.Interface ? null : (declared, declared, "자기 등록");
+            }
+
+            var fromArgument = ReadImplementationFromArgument(arguments[^1].Expression, model, cancellationToken);
+            return fromArgument is not null && IsRegistrationPair(declared, fromArgument)
+                ? (declared, fromArgument, "팩토리·인스턴스 등록")
+                : null;
+        }
+
+        // AddScoped(typeof(IRepo<>), typeof(Repo<>)) — open generic은 선언 심볼로 잇는다.
+        if (arguments.Count == 2 &&
+            ReadTypeOf(arguments[0].Expression, model, cancellationToken) is { } openAbstraction &&
+            ReadTypeOf(arguments[1].Expression, model, cancellationToken) is { } openImplementation &&
+            IsRegistrationPair(openAbstraction, openImplementation))
+        {
+            return (openAbstraction, openImplementation, "open generic 등록");
+        }
+
+        return null;
+    }
+
+    /// <summary>팩토리 람다나 인스턴스 인자에서 구현 타입을 읽는다. 단일 <c>new</c>/<c>GetRequiredService</c>일 때만 확정한다.</summary>
+    private static INamedTypeSymbol? ReadImplementationFromArgument(
+        ExpressionSyntax expression, SemanticModel model, CancellationToken cancellationToken)
+    {
+        if (expression is AnonymousFunctionExpressionSyntax lambda)
+        {
+            var body = lambda.Body;
+            // 블록 본문은 여러 갈래가 있을 수 있어 확정하지 않는다.
+            return body is ExpressionSyntax inner
+                ? ReadImplementationFromArgument(inner, model, cancellationToken)
+                : null;
+        }
+
+        if (expression is ObjectCreationExpressionSyntax creation)
+        {
+            return model.GetTypeInfo(creation, cancellationToken).Type as INamedTypeSymbol;
+        }
+
+        if (expression is InvocationExpressionSyntax call &&
+            call.Expression is MemberAccessExpressionSyntax { Name: GenericNameSyntax resolveName } &&
+            resolveName.Identifier.ValueText is "GetRequiredService" or "GetService" &&
+            resolveName.TypeArgumentList.Arguments.Count == 1)
+        {
+            return model.GetTypeInfo(resolveName.TypeArgumentList.Arguments[0], cancellationToken).Type as INamedTypeSymbol;
+        }
+
+        // 변수로 넘긴 인스턴스는 선언 타입으로 본다.
+        var type = model.GetTypeInfo(expression, cancellationToken).Type as INamedTypeSymbol;
+        return type is { TypeKind: not TypeKind.Interface } ? type : null;
+    }
+
+    private static INamedTypeSymbol? ReadTypeOf(
+        ExpressionSyntax expression, SemanticModel model, CancellationToken cancellationToken) =>
+        expression is TypeOfExpressionSyntax typeOf
+            ? model.GetTypeInfo(typeOf.Type, cancellationToken).Type?.OriginalDefinition as INamedTypeSymbol
+            : null;
 
     /// <summary>
     /// 이름이 <c>Add*</c>라고 다 DI 등록은 아니다. 실제 심볼이

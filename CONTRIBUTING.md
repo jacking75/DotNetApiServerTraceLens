@@ -43,12 +43,19 @@ dotnet build TraceLens.sln            # 경고 0개를 유지한다
 dotnet test  TraceLens.sln            # Analyzer · Server · Mcp 테스트
 
 cd client
-npm test                              # 배치·i18n·다이어그램 렌더 테스트
+npm run lint                          # 훅 규칙·correctness (oxlint)
+npm test                              # 배치·i18n·다이어그램 렌더·상태 저장 테스트
 npm run build                         # tsc -b + vite build
 
 cd ..
 .\pack.ps1                            # 배포물을 만들고 체크섬·검증 절차를 남긴다
 ```
+
+> **타입 검사는 `npm run build`(= `tsc -b`)가 한다.** `tsc --noEmit`은 이 저장소의 tsconfig가
+> 프로젝트 참조만 담고 있어서 아무것도 검사하지 않는다. 고친 뒤에는 `npm run build`로 확인한다.
+>
+> 린터는 ESLint가 아니라 **oxlint**다. typescript-eslint가 이 저장소의 TypeScript 버전을 아직 지원하지 않는다.
+> 검사하는 것은 `react-hooks` 규칙과 correctness뿐이고, 서식 규칙은 넣지 않았다(설정은 `client/.oxlintrc.json`).
 
 > **클라이언트를 고친 뒤 `tracelens serve`로 확인할 때는 순서에 주의한다.**
 > CLI는 자기 출력 폴더에 복사된 `wwwroot`를 서빙하므로, `npm run build` 다음에 `dotnet build`를 한 번 더
@@ -63,6 +70,18 @@ cd ..
 | `tests/TraceLens.Analyzer.Tests/FixturesData` | DB·캐시 접근과 보상 처리, 미들웨어 |
 | `tests/TraceLens.Analyzer.Tests/FixturesMinimalApi` | Minimal API 등록, 그룹 접두사, 람다·로컬 함수 핸들러 |
 | `samples/OrderApi` | 배포물의 예제이자 사람이 보는 회귀 대상 |
+
+서버·Context를 고쳤다면 아래 테스트 클래스를 함께 본다.
+
+| 테스트 | 무엇을 확인하나 |
+|---|---|
+| `AnalysisJobServiceTests` | 작업 시작·중복 거절·목록 상한 |
+| `SnapshotEndpointsTests` | 기준 저장·목록·비교·삭제, 가져온 결과 거절 |
+| `SourceAccessPolicyTests` | `..`·절대 경로·UNC·대소문자·심볼릭 링크 탈출, 오프라인 스냅샷 거부 |
+| `ContextLibraryTests` | 신선도 5경로, 환경 점검, 공유 보고서, 기준 보관 |
+| `RequestGuardsTests` | Origin 검사와 500 응답의 errorId |
+| `DiResolverTests` | 자기 등록·팩토리·open generic·조건부·분기 등록 |
+| `AnalyzerAccuracyTests` | 제네릭·확장 메서드 노드 ID, 절대 라우트, 설정 파일 검증 |
 
 ## 코딩 규칙
 
