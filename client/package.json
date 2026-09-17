@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test": "vitest run",
-    "lint": "oxlint src"
+    "lint": "oxlint src",
+    "measure:layout": "vitest bench --run"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",

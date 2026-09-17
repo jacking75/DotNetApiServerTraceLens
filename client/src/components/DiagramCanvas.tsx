@@ -28,6 +28,8 @@ interface DiagramCanvasProps {
   /** 이 좌표가 바뀔 때마다 그 위치로 스크롤한다(네임스페이스 이름 클릭). */
   scrollTarget?: { x: number; y: number; token: number } | null
   ariaLabel: string
+  /** 스크롤·크기가 바뀔 때 보이는 영역(문서 좌표)을 알려준다. 뷰포트 컬링에 쓴다. */
+  onViewportChange?: (viewport: { left: number; top: number; width: number; height: number }) => void
   /** 주어지면 드래그 스크롤·Ctrl+휠·단축키(Ctrl +/-)로 줌을 바꿀 수 있다. */
   onZoomChange?: (zoom: number) => void
   /** 내부 "맞춤" 버튼과 Ctrl+0 단축키에 연결한다. */
@@ -53,6 +55,7 @@ export function DiagramCanvas({
   ariaLabel,
   onZoomChange,
   onFitZoom,
+  onViewportChange,
 }: DiagramCanvasProps) {
   const token = scrollTarget?.token
   useEffect(() => {
@@ -61,6 +64,31 @@ export function DiagramCanvas({
     shellRef.current.scrollTop = Math.max(0, scrollTarget.y * zoom - 24)
     // token이 바뀔 때만 스크롤한다. 좌표는 같아도 다시 눌렀으면 이동해야 한다.
   }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 스크롤·크기가 바뀌면 보이는 영역을 알린다. 부모가 그 밖의 박스를 그리지 않게 한다.
+  useEffect(() => {
+    const shell = shellRef.current
+    if (!shell || !onViewportChange) return
+    let frame = 0
+    const report = () => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => onViewportChange({
+        left: shell.scrollLeft / zoom,
+        top: shell.scrollTop / zoom,
+        width: shell.clientWidth / zoom,
+        height: shell.clientHeight / zoom,
+      }))
+    }
+
+    report()
+    shell.addEventListener('scroll', report, { passive: true })
+    window.addEventListener('resize', report)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      shell.removeEventListener('scroll', report)
+      window.removeEventListener('resize', report)
+    }
+  }, [shellRef, zoom, width, height, onViewportChange])
 
   const hoveringRef = useRef(false)
   const dragRef = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number; moved: boolean } | null>(null)

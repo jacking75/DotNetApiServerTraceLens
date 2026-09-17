@@ -196,7 +196,9 @@ public sealed record TraceLensConfig(
         "entryPointAttributes", "kindRules", "maxCallDepth", "excludeNamespacePrefixes", "analysisScope",
         "includeObjectCreation", "includeMembers", "includeInterfaces", "includeStartupFlow",
         "includeDataAccess", "includeMiddleware", "includeCallSites",
-        "maxCallSitesPerEdge", "maxBoundaryCallSites", "db"
+        "maxCallSitesPerEdge", "maxBoundaryCallSites", "db",
+        // JSON에는 주석이 없어서 관용적으로 쓰는 키다. 경고하지 않는다.
+        "_comment", "$schema"
     };
 
     private static AnalysisScope? ReadAnalysisScope(JsonElement root) =>

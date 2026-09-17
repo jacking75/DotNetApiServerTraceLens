@@ -82,12 +82,13 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
         CancellationToken cancellationToken)
     {
         var program = host.Document;
-        var root = await program.GetSyntaxRootAsync(cancellationToken);
-        var model = await program.GetSemanticModelAsync(cancellationToken);
-        if (root is null || model is null)
+        var semantics = await loaded.GetSemanticsAsync(program, cancellationToken);
+        if (semantics is null)
         {
             return null;
         }
+
+        var (root, model) = (semantics.Root, semantics.Model);
 
         var relativeProgram = SourcePaths.ToSolutionRelative(solutionDirectory, program.FilePath)
             ?? program.FilePath ?? "Program.cs";
@@ -239,7 +240,7 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
         var reference = type.DeclaringSyntaxReferences.FirstOrDefault();
         var declaration = reference is null ? null : await reference.GetSyntaxAsync(cancellationToken);
         var document = reference is null ? null : loaded.Solution.GetDocument(reference.SyntaxTree);
-        var model = document is null ? null : await document.GetSemanticModelAsync(cancellationToken);
+        var model = document is null ? null : (await loaded.GetSemanticsAsync(document, cancellationToken))?.Model;
         var file = SourcePaths.ToSolutionRelative(solutionDirectory, reference?.SyntaxTree.FilePath);
 
         var invoke = declaration?.DescendantNodes().OfType<MethodDeclarationSyntax>()

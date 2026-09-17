@@ -431,3 +431,33 @@ export function layoutTree<T extends ClassRelation>(
     },
   }
 }
+
+/** 화면에 보이는 영역(문서 좌표). 스크롤·줌으로 바뀐다. */
+export interface Viewport {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+/**
+ * 뷰포트 밖 박스를 걸러낸다. 클래스가 수백 개인 솔루션에서 DOM 노드 수를 줄이는 유일한 손잡이다.
+ * 여백(margin)을 둬서 스크롤 직후에도 빈자리가 보이지 않게 한다.
+ */
+export function cullToViewport<T extends { id: string }>(
+  items: readonly T[],
+  boxes: ReadonlyMap<string, { x: number; y: number; w: number; h: number }>,
+  viewport: Viewport | null,
+  margin = 600,
+): readonly T[] {
+  if (!viewport || viewport.width <= 0 || viewport.height <= 0) return items
+  const left = viewport.left - margin
+  const top = viewport.top - margin
+  const right = viewport.left + viewport.width + margin
+  const bottom = viewport.top + viewport.height + margin
+  return items.filter((item) => {
+    const box = boxes.get(item.id)
+    if (!box) return false
+    return box.x < right && box.x + box.w > left && box.y < bottom && box.y + box.h > top
+  })
+}

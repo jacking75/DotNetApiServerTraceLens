@@ -1,5 +1,6 @@
-import { useCallback, useMemo, type RefObject } from 'react'
+import { useCallback, useMemo, useState, type RefObject } from 'react'
 import { layoutFlow, type FlowView } from '../graph/flowMap'
+import { cullToViewport, type Viewport } from '../graph/treeLayout'
 import type { Selection } from '../types/graph'
 import { clampZoom, DiagramCanvas, type CanvasPath } from './DiagramCanvas'
 import { kindColors } from './kindColors'
@@ -20,6 +21,16 @@ export function FlowDiagram({ view, selection, zoom, shellRef, onSelectClass, on
   const { t } = useI18n()
   const layout = useMemo(() => layoutFlow(view), [view])
   const selectedKey = selection?.key ?? null
+  // 박스가 수백 개면 보이는 것만 DOM으로 그린다(여백 600px). 스크롤 80px 이내 변화는 다시 그리지 않는다.
+  const [viewport, setViewport] = useState<Viewport | null>(null)
+  const onViewportChange = useCallback((next: Viewport) => setViewport((current) =>
+    current && Math.abs(current.left - next.left) < 80 && Math.abs(current.top - next.top) < 80 &&
+    current.width === next.width && current.height === next.height
+      ? current
+      : next), [])
+  const visibleBoxes = useMemo(
+    () => cullToViewport(view.boxes, layout.boxes, viewport),
+    [view.boxes, layout.boxes, viewport])
 
   const fitZoom = useCallback(() => {
     const shell = shellRef.current
@@ -53,8 +64,9 @@ export function FlowDiagram({ view, selection, zoom, shellRef, onSelectClass, on
       ariaLabel={t('flow.aria')}
       onZoomChange={onZoomChange}
       onFitZoom={onZoomChange ? fitZoom : undefined}
+      onViewportChange={onViewportChange}
     >
-      {view.boxes.map((box) => {
+      {visibleBoxes.map((box) => {
         const placed = layout.boxes.get(box.id)
         if (!placed) return null
         return (

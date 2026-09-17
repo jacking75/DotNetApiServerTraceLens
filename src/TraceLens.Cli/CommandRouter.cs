@@ -42,9 +42,10 @@ public static class CommandRouter
             사용법:
               tracelens serve [--target <경로>] [--port <번호>] [--no-browser]
                   UI 서버를 띄운다(기본 http://127.0.0.1:{ServerHost.DefaultPort}, 루프백 전용).
-              tracelens analyze <solution-or-project-path> [--json]
+              tracelens analyze <solution-or-project-path> [--json] [--profile]
                   한 번 분석하고 결과 요약을 출력한다.
                   결과는 대상과 참조 프로젝트의 공통 상위 폴더의 .tracelens/graph.json에 저장된다(출력 위치는 analyze 결과의 outputPath).
+                  --profile을 주면 단계별 시간과 최대 메모리를 함께 출력한다.
               tracelens mcp --graph <graph-path>
                   로컬 stdio MCP 서버를 띄운다. AI 에이전트가 이 분석 결과를 읽는다.
               tracelens doctor [--target <경로>] [--json]
@@ -157,13 +158,19 @@ public static class CommandRouter
                         findings = result.FindingCount,
                         elapsedMs = result.ElapsedMs,
                         resolutionRate = result.Graph.Diagnostics?.Calls.ResolutionRate ?? 0,
-                        notes = result.Graph.Diagnostics?.EntryPointNotes ?? []
+                        notes = result.Graph.Diagnostics?.EntryPointNotes ?? [],
+                        profile = HasFlag(args, "--profile") ? result.Profile : null
                     },
                     new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
                 return 0;
             }
 
             PrintAnalyzeSummary(result);
+            if (HasFlag(args, "--profile"))
+            {
+                PrintProfile(result.Profile);
+            }
+
             return 0;
         }
         catch (Exception exception) when (
@@ -173,6 +180,29 @@ public static class CommandRouter
             Console.Error.WriteLine($"분석에 실패했다: {exception.Message}");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// 단계별 시간과 최대 메모리를 출력한다. 측정 없이 성능을 고치지 않기 위한 도구다.
+    /// 최대 메모리는 이 프로세스 전체 값이라 분석만의 값이 아니다 — 그대로 적는다.
+    /// </summary>
+    private static void PrintProfile(AnalysisProfile? profile)
+    {
+        if (profile is null)
+        {
+            Console.WriteLine("  프로파일 정보가 없다.");
+            return;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("단계별 시간:");
+        foreach (var stage in profile.Stages)
+        {
+            Console.WriteLine($"  {stage.Stage,-12} {stage.ElapsedMs,6}ms");
+        }
+
+        Console.WriteLine($"  {"합계",-12} {profile.Stages.Sum(item => item.ElapsedMs),6}ms");
+        Console.WriteLine($"  최대 작업 집합 {profile.PeakWorkingSetBytes / (1024 * 1024)}MB (프로세스 전체 값이다)");
     }
 
     private static void PrintAnalyzeSummary(AnalysisResult result)

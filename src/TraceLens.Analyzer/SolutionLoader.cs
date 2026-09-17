@@ -169,9 +169,58 @@ public sealed class LoadedSolution(
     /// <summary>MSBuildWorkspace가 남긴 경고. 프로젝트 로드 실패의 실제 이유가 여기에 있는 경우가 많다.</summary>
     public IReadOnlyList<string> WorkspaceFailures { get; init; } = [];
 
+    private readonly ConcurrentDictionary<DocumentId, DocumentSemantics?> semanticCache = new();
+
+    /// <summary>미리 만든 시맨틱 모델 수. 0이면 준비 단계를 건너뛰었다는 뜻이다(문서가 너무 많은 경우).</summary>
+    public int PrewarmedDocuments { get; private set; }
+
+    /// <summary>
+    /// 문서의 구문 트리와 시맨틱 모델을 한 번만 만들어 모든 수집기가 나눠 쓴다.
+    /// Roslyn이 들고 있는 캐시는 약한 참조라, 수집기 다섯 개가 차례로 돌면 같은 문서를 여러 번 바인딩하곤 한다.
+    /// </summary>
+    public async ValueTask<DocumentSemantics?> GetSemanticsAsync(Document document, CancellationToken cancellationToken)
+    {
+        if (semanticCache.TryGetValue(document.Id, out var cached))
+        {
+            return cached;
+        }
+
+        var root = await document.GetSyntaxRootAsync(cancellationToken);
+        var model = await document.GetSemanticModelAsync(cancellationToken);
+        var created = root is null || model is null ? null : new DocumentSemantics(root, model);
+        semanticCache[document.Id] = created;
+        return created;
+    }
+
+    /// <summary>
+    /// 분석할 문서의 구문 트리·시맨틱 모델을 미리 병렬로 만든다.
+    /// 문서가 <paramref name="maxDocuments"/>개를 넘으면 모델을 전부 들고 있는 메모리가 부담이라 건너뛴다.
+    /// 건너뛰어도 결과는 같다. 수집기마다 예전처럼 그때그때 만든다.
+    /// </summary>
+    public async Task PrewarmSemanticsAsync(int maxDocuments, CancellationToken cancellationToken = default)
+    {
+        var documents = Solution.Projects
+            .Where(project => AnalyzableProjectIds.Contains(project.Id))
+            .SelectMany(project => project.Documents.Where(document => document.SourceCodeKind == SourceCodeKind.Regular))
+            .ToArray();
+        if (documents.Length == 0 || documents.Length > maxDocuments)
+        {
+            return;
+        }
+
+        await Parallel.ForEachAsync(
+            documents,
+            new ParallelOptions { CancellationToken = cancellationToken, MaxDegreeOfParallelism = Environment.ProcessorCount },
+            async (document, token) => await GetSemanticsAsync(document, token));
+        PrewarmedDocuments = documents.Length;
+    }
+
     public ValueTask DisposeAsync()
     {
         workspace.Dispose();
         return ValueTask.CompletedTask;
     }
 }
+
+/// <summary>문서 하나의 구문 트리와 시맨틱 모델. 수집기 여러 개가 같은 문서를 다시 바인딩하지 않게 묶어 둔다.</summary>
+public sealed record DocumentSemantics(SyntaxNode Root, SemanticModel Model);

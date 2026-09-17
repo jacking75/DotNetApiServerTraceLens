@@ -12,6 +12,32 @@ namespace TraceLens.Analyzer;
 /// <param name="Stage">load · entrypoints · scan · rules · save 중 하나.</param>
 public sealed record AnalysisProgress(string Stage, string Message, int? Count = null);
 
+/// <param name="ElapsedMs">이 단계에만 쓴 시간. 단계는 순서대로 실행되므로 합이 전체와 거의 같다.</param>
+public sealed record AnalysisStageTiming(string Stage, long ElapsedMs);
+
+/// <param name="Stages">단계별 시간(load·entrypoints·scan·rules·save).</param>
+/// <param name="PeakWorkingSetBytes">이 프로세스가 분석 중에 쓴 최대 작업 집합. 분석 전 값과 비교한 것이 아니라 프로세스 전체 값이다.</param>
+public sealed record AnalysisProfile(IReadOnlyList<AnalysisStageTiming> Stages, long PeakWorkingSetBytes);
+
+/// <summary>단계별 시간을 재는 작은 도우미. <c>--profile</c>이 없어도 비용이 거의 없다.</summary>
+internal sealed class StageTimer
+{
+    private readonly List<AnalysisStageTiming> stages = [];
+    private readonly Stopwatch stopwatch = Stopwatch.StartNew();
+    private long lastMs;
+
+    public void Mark(string stage)
+    {
+        var now = stopwatch.ElapsedMilliseconds;
+        stages.Add(new AnalysisStageTiming(stage, now - lastMs));
+        lastMs = now;
+    }
+
+    public AnalysisProfile Build() => new(
+        stages,
+        System.Diagnostics.Process.GetCurrentProcess().PeakWorkingSet64);
+}
+
 public interface ITraceLensAnalyzer
 {
     /// <param name="targetPath">분석 대상 .sln 또는 .csproj 경로.</param>
@@ -81,6 +107,7 @@ public sealed class TraceLensAnalyzer(
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
+        var stageTimer = new StageTimer();
         var startedAtUtc = DateTime.UtcNow;
         var fullTargetPath = Path.GetFullPath(targetPath);
         var targetDirectory = Path.GetDirectoryName(fullTargetPath)
@@ -102,7 +129,18 @@ public sealed class TraceLensAnalyzer(
             // 설정 문제로 분석을 멈추지 않는다. 무엇을 기본값으로 대체했는지 로그와 진단에 남긴다.
             logger.LogWarning("tracelens.config.json: {Message}", issue.Message);
         }
+        // 수집기 다섯 개가 같은 문서를 차례로 바인딩한다. 시맨틱 모델을 미리 병렬로 만들어 한 번만 하게 한다.
+        progress?.Report(new AnalysisProgress("load", "구문 트리와 시맨틱 모델을 준비하는 중이다."));
+        await loaded.PrewarmSemanticsAsync(PrewarmDocumentLimit, cancellationToken);
+        if (loaded.PrewarmedDocuments == 0)
+        {
+            logger.LogInformation(
+                "문서가 {Limit}개를 넘어 시맨틱 모델을 미리 만들지 않는다. 결과는 같고 시간만 더 걸린다.",
+                PrewarmDocumentLimit);
+        }
+
         await diResolver.BuildAsync(loaded, cancellationToken);
+        stageTimer.Mark("load");
         progress?.Report(new AnalysisProgress("entrypoints", "HTTP 진입점을 찾는 중이다."));
         var entryPointScan = await entryPointScanner.ScanAsync(loaded, config, solutionDirectory, cancellationToken);
         var entryPoints = entryPointScan.EntryPoints;
@@ -114,6 +152,7 @@ public sealed class TraceLensAnalyzer(
             .Where(item => item.Kind is CallableKind.Lambda or CallableKind.LocalFunction)
             .DistinctBy(item => item.NodeId, StringComparer.Ordinal)
             .ToArray();
+        stageTimer.Mark("entrypoints");
         progress?.Report(new AnalysisProgress("scan", "타입과 호출을 훑는 중이다."));
         var scan = await solutionScanner.ScanAsync(
             loaded,
@@ -157,15 +196,26 @@ public sealed class TraceLensAnalyzer(
                 .Concat(scan.Classes.Select(item => item.File)),
             cancellationToken);
         progress?.Report(new AnalysisProgress("scan", "메서드 노드를 모았다.", nodes.Count));
-        var startupFlows = await startupFlowScanner.ScanAllAsync(loaded, config, solutionDirectory, cancellationToken);
-        var startupFlow = startupFlows.Count > 0 ? startupFlows[0] : null;
-
+        stageTimer.Mark("scan");
         progress?.Report(new AnalysisProgress("rules", "DB·캐시와 미들웨어 규칙을 확인하는 중이다."));
-        DataAccessScanResult? dataScan = null;
+
+        // 시작 흐름 스캔과 DB·캐시 스캔은 서로를 읽지 않는다. Roslyn Solution은 불변이라 함께 돌려도 안전하다.
+        var startupFlowTask = startupFlowScanner.ScanAllAsync(loaded, config, solutionDirectory, cancellationToken);
+        Task<DataAccessScanResult?> dataScanTask = config.IncludeDataAccess
+            ? ScanDataAccessAsync()
+            : Task.FromResult<DataAccessScanResult?>(null);
+
+        async Task<DataAccessScanResult?> ScanDataAccessAsync() =>
+            await dataAccessScanner.ScanAsync(loaded, config, solutionDirectory, cancellationToken);
+
+        await Task.WhenAll(startupFlowTask, dataScanTask);
+
+        var startupFlows = await startupFlowTask;
+        var startupFlow = startupFlows.Count > 0 ? startupFlows[0] : null;
+        var dataScan = await dataScanTask;
         DataAccessDocument? dataAccess = null;
-        if (config.IncludeDataAccess)
+        if (dataScan is not null)
         {
-            dataScan = await dataAccessScanner.ScanAsync(loaded, config, solutionDirectory, cancellationToken);
             var effects = compensationAnalyzer.BuildEffects(
                 dataScan.Methods, dataScan.MethodDataSources, cancellationToken);
             var writePaths = compensationAnalyzer.BuildWritePaths(
@@ -182,6 +232,7 @@ public sealed class TraceLensAnalyzer(
             "점검을 마쳤다.",
             (dataAccess?.Findings.Count ?? 0) + middlewarePipelines.Sum(item => item.Findings.Count)));
 
+        stageTimer.Mark("rules");
         var changedDuringAnalysis = FindChangedInputs(
             solutionDirectory, manifestResult, fileHashes.Keys, startedAtUtc);
         var diagnostics = BuildDiagnostics(
@@ -250,6 +301,7 @@ public sealed class TraceLensAnalyzer(
         }
 
         stopwatch.Stop();
+        stageTimer.Mark("save");
         return new AnalysisResult(
             document,
             stopwatch.ElapsedMilliseconds,
@@ -257,7 +309,10 @@ public sealed class TraceLensAnalyzer(
             scan.MemberCount,
             scan.MemberElapsedMs,
             json.Length,
-            (dataAccess?.Findings.Count ?? 0) + (middleware?.Findings.Count ?? 0));
+            (dataAccess?.Findings.Count ?? 0) + middlewarePipelines.Sum(item => item.Findings.Count))
+        {
+            Profile = stageTimer.Build()
+        };
     }
 
     /// <summary>
@@ -387,6 +442,12 @@ public sealed class TraceLensAnalyzer(
     }
 
     /// <summary>이 크기를 넘으면 <c>includeMembers</c>를 끄라고 안내한다.</summary>
+    /// <summary>
+    /// 시맨틱 모델을 미리 만들어 둘 문서 수 상한. 넘으면 준비 단계를 건너뛴다(결과는 같고 시간만 더 걸린다).
+    /// 모델을 전부 강하게 붙들고 있으면 메모리가 문서 수에 비례해 늘기 때문이다.
+    /// </summary>
+    private const int PrewarmDocumentLimit = 3000;
+
     private const int GraphSizeWarningKb = 500;
 
     /// <summary>
@@ -448,4 +509,8 @@ public sealed record AnalysisResult(
     int MemberCount,
     long MemberElapsedMs,
     int GraphSizeBytes,
-    int FindingCount);
+    int FindingCount)
+{
+    /// <summary>단계별 시간과 최대 메모리. <c>analyze --profile</c>이 이 값을 출력한다.</summary>
+    public AnalysisProfile? Profile { get; init; }
+}

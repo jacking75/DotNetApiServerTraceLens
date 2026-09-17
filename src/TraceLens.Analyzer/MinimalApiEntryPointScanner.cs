@@ -57,12 +57,13 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
                     continue;
                 }
 
-                var root = await document.GetSyntaxRootAsync(cancellationToken);
-                var model = await document.GetSemanticModelAsync(cancellationToken);
-                if (root is null || model is null)
+                var semantics = await loaded.GetSemanticsAsync(document, cancellationToken);
+                if (semantics is null)
                 {
                     continue;
                 }
+
+                var (root, model) = (semantics.Root, semantics.Model);
 
                 foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
                 {
@@ -89,6 +90,12 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
         var results = new List<ScannedEntryPoint>();
         var usedIds = new HashSet<string>(StringComparer.Ordinal);
 
+        // 등록자 이름 → 그 등록자를 부르는 호출들. 매번 전체 등록을 훑으면 등록 수 × 등록자 수가 된다.
+        var callsByTarget = registrations
+            .SelectMany(item => item.RegistrarCalls)
+            .GroupBy(call => call.Target.ToDisplayString(), StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<RegistrarCall>)group.ToArray(), StringComparer.Ordinal);
+
         foreach (var registration in registrations.Where(item => item.PrefixOwner is null && item.HttpMethods.Count > 0))
         {
             Emit(registration, registration.LocalPrefix, results, usedIds, notes, []);
@@ -99,7 +106,7 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
         {
             var registrar = items[0].PrefixOwner!;
             var callers = EnumerateRegistrarCallSites(
-                registrations, methodKey, 0, new HashSet<string>(StringComparer.Ordinal)).ToArray();
+                callsByTarget, methodKey, 0, new HashSet<string>(StringComparer.Ordinal)).ToArray();
             if (callers.Length == 0)
             {
                 foreach (var item in items.Where(item => item.HttpMethods.Count > 0))
@@ -135,7 +142,7 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
 
     /// <summary>등록자 메서드를 호출하는 지점을 따라 접두사를 모은다. 깊이 제한을 넘으면 그 사유를 남긴다.</summary>
     private static IEnumerable<(string Prefix, IReadOnlyList<string> Notes)> EnumerateRegistrarCallSites(
-        IReadOnlyList<Registration> all,
+        IReadOnlyDictionary<string, IReadOnlyList<RegistrarCall>> callsByTarget,
         string registrarKey,
         int depth,
         HashSet<string> visited)
@@ -151,11 +158,7 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
             yield break;
         }
 
-        var calls = all
-            .SelectMany(item => item.RegistrarCalls)
-            .Where(call => string.Equals(call.Target.ToDisplayString(), registrarKey, StringComparison.Ordinal))
-            .ToArray();
-        if (calls.Length == 0)
+        if (!callsByTarget.TryGetValue(registrarKey, out var calls) || calls.Count == 0)
         {
             yield break;
         }
@@ -168,7 +171,7 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
                 continue;
             }
 
-            foreach (var outer in EnumerateRegistrarCallSites(all, call.PrefixOwner.ToDisplayString(), depth + 1, visited))
+            foreach (var outer in EnumerateRegistrarCallSites(callsByTarget, call.PrefixOwner.ToDisplayString(), depth + 1, visited))
             {
                 yield return (EndpointIdentity.Append(outer.Prefix, call.Prefix), [.. outer.Notes, .. call.Notes]);
             }

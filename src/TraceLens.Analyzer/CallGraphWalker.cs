@@ -63,7 +63,7 @@ public sealed class CallGraphWalker(
             }
 
             foreach (var call in await GetCallsAsync(
-                         loaded.Solution, callable, solutionDirectory, config, registeredLambdas, cancellationToken))
+                         loaded, callable, solutionDirectory, config, registeredLambdas, cancellationToken))
             {
                 if (!call.IsEdge || call.Target is null)
                 {
@@ -114,7 +114,7 @@ public sealed class CallGraphWalker(
     }
 
     private async Task<IReadOnlyList<ResolvedCall>> GetCallsAsync(
-        Solution solution,
+        LoadedSolution loaded,
         AnalysisCallable callable,
         string solutionDirectory,
         TraceLensConfig config,
@@ -129,13 +129,13 @@ public sealed class CallGraphWalker(
             return [];
         }
 
-        var document = solution.GetDocument(syntax.SyntaxTree);
+        var document = loaded.Solution.GetDocument(syntax.SyntaxTree);
         if (document is null)
         {
             return [];
         }
 
-        var model = await document.GetSemanticModelAsync(cancellationToken);
+        var model = (await loaded.GetSemanticsAsync(document, cancellationToken))?.Model;
         return model is null
             ? []
             : invocationResolver.ResolveCalls(

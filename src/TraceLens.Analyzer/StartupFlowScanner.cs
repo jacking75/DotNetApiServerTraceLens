@@ -59,12 +59,13 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
         CancellationToken cancellationToken)
     {
         var programDocument = host.Document;
-        var root = await programDocument.GetSyntaxRootAsync(cancellationToken);
-        var model = await programDocument.GetSemanticModelAsync(cancellationToken);
-        if (root is null || model is null)
+        var semantics = await loaded.GetSemanticsAsync(programDocument, cancellationToken);
+        if (semantics is null)
         {
             return null;
         }
+
+        var (root, model) = (semantics.Root, semantics.Model);
 
         var context = new ScanContext(loaded, solutionDirectory);
         var serviceSteps = new List<StartupStep>();
@@ -201,7 +202,9 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
         }
 
         var methodDocument = context.Loaded.Solution.GetDocument(reference.SyntaxTree);
-        var methodModel = methodDocument is null ? null : await methodDocument.GetSemanticModelAsync(cancellationToken);
+        var methodModel = methodDocument is null
+            ? null
+            : (await context.Loaded.GetSemanticsAsync(methodDocument, cancellationToken))?.Model;
         if (methodModel is null)
         {
             return [];

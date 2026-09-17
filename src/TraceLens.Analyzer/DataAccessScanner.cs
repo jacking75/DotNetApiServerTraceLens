@@ -171,12 +171,13 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
                     continue;
                 }
 
-                var root = await document.GetSyntaxRootAsync(cancellationToken);
-                var model = await document.GetSemanticModelAsync(cancellationToken);
-                if (root is null || model is null)
+                var semantics = await loaded.GetSemanticsAsync(document, cancellationToken);
+                if (semantics is null)
                 {
                     continue;
                 }
+
+                var (root, model) = (semantics.Root, semantics.Model);
 
                 foreach (var member in root.DescendantNodes().OfType<MemberDeclarationSyntax>())
                 {
@@ -614,12 +615,13 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
                     continue;
                 }
 
-                var root = await document.GetSyntaxRootAsync(cancellationToken);
-                var model = await document.GetSemanticModelAsync(cancellationToken);
-                if (root is null || model is null)
+                var semantics = await loaded.GetSemanticsAsync(document, cancellationToken);
+                if (semantics is null)
                 {
                     continue;
                 }
+
+                var (root, model) = (semantics.Root, semantics.Model);
 
                 foreach (var methodSyntax in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
                 {

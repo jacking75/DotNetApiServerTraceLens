@@ -1,6 +1,7 @@
-import { useMemo, type RefObject } from 'react'
+import { useCallback, useMemo, useState, type RefObject } from 'react'
 import type { ClassDiagramOptions, ClassDiagramView } from '../graph/classDiagram'
 import { shortenNamespace } from '../graph/classDiagram'
+import { cullToViewport, type Viewport } from '../graph/treeLayout'
 import type { RelationType } from '../graph/relations'
 import type { GraphClass, GraphClassMember, Selection } from '../types/graph'
 import { DiagramCanvas, type CanvasPath } from './DiagramCanvas'
@@ -47,6 +48,13 @@ export function ClassDiagram({
   onFitZoom,
 }: ClassDiagramProps) {
   const { t } = useI18n()
+  // 클래스가 수백 개면 보이는 박스만 그린다. 스크롤하면 바로 채워진다(여백 600px).
+  const [viewport, setViewport] = useState<Viewport | null>(null)
+  const onViewportChange = useCallback((next: Viewport) => setViewport((current) =>
+    current && Math.abs(current.left - next.left) < 80 && Math.abs(current.top - next.top) < 80 &&
+    current.width === next.width && current.height === next.height
+      ? current
+      : next), [])
   // 선택한 클래스에 붙은 선만 강조하고, 그 선이 닿지 않는 박스는 흐리게 만든다.
   const { paths, related } = useMemo(() => {
     const connected = new Set<string>()
@@ -90,8 +98,9 @@ export function ClassDiagram({
         ariaLabel={t('classmap.aria')}
         onZoomChange={onZoomChange}
         onFitZoom={onFitZoom}
+        onViewportChange={onViewportChange}
       >
-        {view.visible.map((graphClass) => {
+        {cullToViewport(view.visible, view.boxes, viewport).map((graphClass) => {
           const box = view.boxes.get(graphClass.id)
           if (!box) return null
           return (

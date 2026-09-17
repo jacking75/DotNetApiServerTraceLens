@@ -73,7 +73,7 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
                     continue;
                 }
 
-                await CollectRegistrationsAsync(document, cancellationToken);
+                await CollectRegistrationsAsync(loaded, document, cancellationToken);
             }
         }
 
@@ -212,14 +212,15 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
         return RegistrationHints.Any(hint => text.Contains(hint, StringComparison.Ordinal));
     }
 
-    private async Task CollectRegistrationsAsync(Document document, CancellationToken cancellationToken)
+    private async Task CollectRegistrationsAsync(LoadedSolution loaded, Document document, CancellationToken cancellationToken)
     {
-        var root = await document.GetSyntaxRootAsync(cancellationToken);
-        var model = await document.GetSemanticModelAsync(cancellationToken);
-        if (root is null || model is null)
+        var semantics = await loaded.GetSemanticsAsync(document, cancellationToken);
+        if (semantics is null)
         {
             return;
         }
+
+        var (root, model) = (semantics.Root, semantics.Model);
 
         foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {

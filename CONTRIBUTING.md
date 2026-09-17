@@ -51,6 +51,16 @@ cd ..
 .\pack.ps1                            # 배포물을 만들고 체크섬·검증 절차를 남긴다
 ```
 
+성능을 손댈 때는 재고 나서 고친다. 재는 명령은 두 개다.
+
+```powershell
+dotnet run --project src/TraceLens.Cli -- analyze <대상> --profile   # 단계별 시간과 최대 작업 집합
+cd client; npm run measure:layout                                    # treeLayout·cullToViewport 배치 비용
+```
+
+`measure:layout`은 `vitest bench`라서 `npm test`에 끼지 않는다. 임계값 assert(성능 가드)를 두지 않는 이유는
+기계마다 값이 달라 CI에서 깜빡이는 실패만 늘기 때문이다. 나온 수치는 CHANGELOG에 **측정 조건과 함께** 적는다.
+
 > **타입 검사는 `npm run build`(= `tsc -b`)가 한다.** `tsc --noEmit`은 이 저장소의 tsconfig가
 > 프로젝트 참조만 담고 있어서 아무것도 검사하지 않는다. 고친 뒤에는 `npm run build`로 확인한다.
 >
@@ -82,6 +92,7 @@ cd ..
 | `RequestGuardsTests` | Origin 검사와 500 응답의 errorId |
 | `DiResolverTests` | 자기 등록·팩토리·open generic·조건부·분기 등록 |
 | `AnalyzerAccuracyTests` | 제네릭·확장 메서드 노드 ID, 절대 라우트, 설정 파일 검증 |
+| `SemanticCacheTests` | 문서별 시맨틱 모델 공유·준비 상한 |
 
 ## 코딩 규칙
 

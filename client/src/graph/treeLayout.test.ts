@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ClassRelation } from './relations'
-import { assignLayers, buildLayers, countCrossings, layoutTree, reduceCrossings } from './treeLayout'
+import { assignLayers, buildLayers, countCrossings, cullToViewport, layoutTree, reduceCrossings } from './treeLayout'
 
 const node = (id: string) => ({ id, w: 200, h: 60 })
 const depend = (from: string, to: string): ClassRelation => ({ from, to, type: 'depend' })
@@ -116,5 +116,41 @@ describe('트리 배치', () => {
 
     expect(layout.boxes.size).toBe(0)
     expect(layout.size).toEqual({ width: 0, height: 0 })
+  })
+})
+
+describe('뷰포트 컬링', () => {
+  const boxes = new Map([
+    ['A', { x: 0, y: 0, w: 200, h: 100 }],
+    ['B', { x: 900, y: 0, w: 200, h: 100 }],
+    ['C', { x: 4000, y: 4000, w: 200, h: 100 }],
+  ])
+  const items = [{ id: 'A' }, { id: 'B' }, { id: 'C' }]
+
+  it('뷰포트를 모르면 전부 그린다', () => {
+    expect(cullToViewport(items, boxes, null)).toHaveLength(3)
+  })
+
+  it('여백 안에 걸치는 박스까지 남기고 멀리 있는 것은 뺀다', () => {
+    const visible = cullToViewport(items, boxes, { left: 0, top: 0, width: 800, height: 600 }, 600)
+
+    // A는 화면 안, B는 여백(600px) 안, C는 4000px 밖이다.
+    expect(visible.map((item) => item.id)).toEqual(['A', 'B'])
+  })
+
+  it('배치에 없는 박스는 그리지 않는다', () => {
+    const visible = cullToViewport([{ id: 'ZZ' }], boxes, { left: 0, top: 0, width: 800, height: 600 })
+
+    expect(visible).toHaveLength(0)
+  })
+
+  it('클래스 564개에서 1600x900 화면에 그릴 박스만 남긴다', () => {
+    const nodes = Array.from({ length: 564 }, (_, index) => ({ id: `N${index}`, w: 200, h: 180 }))
+    const layout = layoutTree(nodes, [])
+    const visible = cullToViewport(nodes, layout.boxes, { left: 0, top: 0, width: 1600, height: 900 })
+
+    // 정확한 개수는 배치에 따라 달라진다. 줄어들었다는 것만 확인한다.
+    expect(visible.length).toBeLessThan(nodes.length)
+    expect(visible.length).toBeGreaterThan(0)
   })
 })
