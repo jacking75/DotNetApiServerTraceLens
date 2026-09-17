@@ -842,6 +842,13 @@ npm run dev</code></pre>
         <tr><td><code>db</code></td><td>아래 참고</td><td>사내 DB·캐시 계층의 모양을 알려주는 설정. 비워 둬도 SQL 리터럴과 타입 이름에서 짐작해서 동작한다.</td></tr>
       </table>
 
+      <p>
+        모르는 키가 있으면 <b>경고로 알리고 무시한다</b>(분석을 멈추지 않는다). 값의 형식이 틀려도
+        같은 방식으로 경고하고 기본값을 쓴다. 이 경고는 분석 결과의 한계 목록에도 들어가서 화면에서
+        확인할 수 있다. <code>_comment</code>와 <code>$schema</code>는 주석용으로 허용한다 —
+        JSON에는 주석이 없기 때문이다.
+      </p>
+
       <h4 class="mini-h"><code>db</code> 섹션 — 샤딩·Redis·보상 처리 설정</h4>
       <p>
         사내 DB 계층(자체 커넥션 팩토리, 샤딩, Redis 래퍼 등)의 이름 규칙을 알려주면 "DB · 캐시" 보기의
@@ -858,7 +865,24 @@ npm run dev</code></pre>
         <tr><td><code>compensation.pairs</code></td><td>이름 규칙(Insert↔Delete 등)으로 못 잡는 되돌리기 짝을 <code>{ "do": "...", "undo": "..." }</code>로 직접 지정.</td></tr>
         <tr><td><code>compensation.irreversible</code></td><td>취소 수단이 없는 호출 패턴(예: 발송 API).</td></tr>
         <tr><td><code>compensation.idempotent</code></td><td>재실행해도 안전해서 되돌릴 필요가 없는 호출 패턴.</td></tr>
+        <tr><td><code>queryBuilders</code></td><td>쿼리 빌더의 모양. <code>{ root, queryType, terminals, joinMethods }</code>로 적는다. 기본값은 SqlKata 한 종류(<code>QueryFactory.Query("table")</code>에서 시작해 <code>GetAsync</code>·<code>InsertAsync</code> 같은 종단 메서드로 실행하는 형태)다.</td></tr>
+        <tr><td><code>transactionWrappers</code></td><td>람다를 받아 그 안에서 트랜잭션을 여닫는 사내 래퍼 메서드 패턴. 적지 않아도 본문에 <code>BeginTransaction*</code>이 있고 델리게이트 파라미터를 부르는 메서드는 자동으로 찾는다.</td></tr>
+        <tr><td><code>cacheWrappers</code></td><td>솔루션 안에 선언됐지만 캐시 <b>클라이언트</b>로 봐야 하는 래퍼 패턴. 기본적으로 솔루션 안 메서드는 클라이언트로 보지 않는다 — 래퍼 안쪽을 봐야 만료 인자를 판단할 수 있고, 겉만 보고 "만료 없음"이라고 하면 오판이기 때문이다.</td></tr>
       </table>
+
+      <h4 class="mini-h">쿼리 빌더는 어디까지 읽나</h4>
+      <p>
+        빌더로 만든 SQL은 리터럴이 없어서 테이블 이름을 본문에서 찾아야 한다. TraceLens는 종단 메서드에서
+        거꾸로 올라가 빌더의 <b>시작점</b>(<code>Query("table")</code>)을 찾고, 그 인자가 문자열 상수면
+        테이블 이름을 <b>확실</b>로, 변수·보간 문자열이면 <code>?</code>와 <b>추정</b>으로 남긴다.
+        <code>join</code> 계열로 붙인 테이블도 같은 방법으로 읽는다.
+      </p>
+      <p>
+        읽지 못하는 것은 분명히 말한다: 빌더를 필드·프로퍼티에 담아 다른 메서드에서 실행하면 시작점을
+        찾지 못해 접근이 잡히지 않는다. <code>db.queryBuilders</code>에 맞는 항목이 없는 빌더 라이브러리도
+        마찬가지다. 이런 경우는 "접근이 없다"가 아니라 <b>못 본 것</b>이다 — 규칙 카탈로그와 한계 목록에서
+        확인한다.
+      </p>
 
       <pre><code>{
   "db": {
@@ -1096,8 +1120,24 @@ npm run dev</code></pre>
         <tr><th>하위 보기</th><th>내용</th></tr>
         <tr><td>파이프라인</td><td>미들웨어 등록 순서와 각 단계의 요청/응답 구간 코드.</td></tr>
         <tr><td>단락 지점</td><td>요청이 거기서 끊길 때 <b>실행되지 않는 것</b>과, 그래도 <b>실행되는 응답 후처리</b>를 나란히 보여준다.</td></tr>
-        <tr><td>점검 결과</td><td>인증·인가·CORS 순서, 생성자에 Scoped 서비스를 받는 미들웨어, 엔드포인트 매핑 뒤에 등록해 실행되지 않는 미들웨어 등 MW 규칙 위반 목록.</td></tr>
+        <tr><td>점검 결과</td><td>인증·인가·CORS 순서, 생성자에 Scoped 서비스를 받는 미들웨어, 종단 뒤에 등록해 실행되지 않는 미들웨어 등 MW 규칙 위반 목록.</td></tr>
       </table>
+
+      <h4 class="mini-h">단계의 세 종류 — 미들웨어 · 엔드포인트 등록 · 종단</h4>
+      <p>
+        <code>app.UseXxx()</code> 줄이 모두 같은 것은 아니다. 파이프라인의 각 단계에는 종류가 붙는다.
+      </p>
+      <table>
+        <tr><th>종류</th><th>무엇인가</th></tr>
+        <tr><td><b>미들웨어</b></td><td>요청을 순서대로 통과하는 보통의 단계. <code>UseAuthentication</code>·<code>UseCors</code> 등.</td></tr>
+        <tr><td><b>엔드포인트 등록</b></td><td><code>MapControllers()</code>·<code>MapGet()</code>·<code>MapOpenApi()</code>처럼 <b>등록만</b> 하는 줄이다. 실제 실행은 파이프라인 맨 끝이라, 이 줄 뒤에 등록한 미들웨어도 정상으로 실행된다.</td></tr>
+        <tr><td><b>종단</b></td><td>요청을 여기서 끝내는 단계다. <code>UseEndpoints(...)</code>와 <code>app.Run(delegate)</code> 두 가지뿐이다. 이 뒤에 등록한 미들웨어는 실행되지 않는다(MW-012).</td></tr>
+      </table>
+      <p>
+        이 구분이 중요한 이유는 <code>MapControllers()</code>를 종단으로 보면 그 뒤의 인증 미들웨어를
+        "실행되지 않는다"고 잘못 말하기 때문이다. 0.8.0에서 고쳤고, 실제 프로젝트에서 MW-012 오판 3건이
+        사라졌다.
+      </p>
       <figure class="shot">
         <img src="screenshots/middleware.jpg" alt="미들웨어 보기 — RequestLoggingMiddleware부터 UseExceptionHandler·MapOpenApi·UseSwaggerUI·UseHttpsRedirection·GameAuthMiddleware까지 app.UseXxx() 등록 순서대로 파이프라인이 나열되고, UseSwaggerUI·UseHttpsRedirection 단계에 MW-012 점검 배지가 붙은 화면">
         <figcaption>실제 Program.cs의 미들웨어 등록 순서 그대로 그린 파이프라인. UseSwaggerUI·UseHttpsRedirection처럼 조건부로 응답하고 끝나는 단계에는 실행 여부와 상태 코드, 점검 규칙(MW-012) 배지가 함께 붙는다.</figcaption>

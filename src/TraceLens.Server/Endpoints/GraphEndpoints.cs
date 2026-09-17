@@ -9,19 +9,19 @@ public static class GraphEndpoints
         group.MapGet("/graph/entrypoints", (IGraphStore store) =>
             store.Current is { } graph
                 ? Results.Ok(graph.EntryPoints)
-                : Results.NotFound(new { error = "먼저 솔루션을 분석해야 한다." }));
+                : ApiResults.NotAnalyzed());
         group.MapGet("/graph/classes", (IGraphStore store) =>
             store.Current is { } graph
                 ? Results.Ok(graph.Classes.Select(GraphClassSummary.From).ToArray())
-                : Results.NotFound(new { error = "먼저 솔루션을 분석해야 한다." }));
+                : ApiResults.NotAnalyzed());
         group.MapGet("/graph/namespaces", (IGraphStore store) =>
             store.Current is { } graph
                 ? Results.Ok(GraphNamespaceSummary.From(graph))
-                : Results.NotFound(new { error = "먼저 솔루션을 분석해야 한다." }));
+                : ApiResults.NotAnalyzed());
         group.MapGet("/graph", (IGraphStore store) =>
             store.Current is { } graph
                 ? Results.Ok(graph)
-                : Results.NotFound(new { error = "먼저 솔루션을 분석해야 한다." }));
+                : ApiResults.NotAnalyzed());
         return group;
     }
 }

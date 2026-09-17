@@ -10,6 +10,7 @@ import type {
   Selection,
 } from '../types/graph'
 import { useI18n } from '../i18n/I18nProvider'
+import { ruleText } from '../i18n/ruleText'
 import { MiddlewareStepRow } from './MiddlewareView'
 
 type DataTab = 'entries' | 'sources' | 'targets' | 'rules'
@@ -53,7 +54,7 @@ export function DataSidePanel({
     return counts
   }, [data.findings])
 
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const keyword = search.trim().toLowerCase()
   const matches = (value: string) => keyword.length === 0 || value.toLowerCase().includes(keyword)
 
@@ -132,7 +133,7 @@ export function DataSidePanel({
 
         {tab === 'rules' && (
           <RuleList
-            rules={data.rules.filter((rule) => matches(`${rule.id} ${rule.name}`))}
+            rules={data.rules.filter((rule) => matches(`${rule.id} ${rule.name} ${ruleText(rule, lang).name}`))}
             counts={ruleCounts}
             selection={selection}
             onSelect={onSelect}
@@ -208,7 +209,7 @@ function RuleList({
   selection: Selection | null
   onSelect: (selection: Selection) => void
 }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const hit = rules.filter((rule) => (counts.get(rule.id) ?? 0) > 0)
   const clean = rules.filter((rule) => (counts.get(rule.id) ?? 0) === 0 && rule.enabled)
   const off = rules.filter((rule) => !rule.enabled)
@@ -223,7 +224,7 @@ function RuleList({
     >
       <span className="grow">
         <span className="rule-id">{rule.id}</span>
-        <span className="sub">{rule.name}</span>
+        <span className="sub">{ruleText(rule, lang).name}</span>
       </span>
       <span className="count">{label}</span>
     </button>

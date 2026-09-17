@@ -1,5 +1,6 @@
 import { compensationLabelKeys, dataSourceTone, severityLabelKeys } from '../graph/dataView'
 import { useI18n } from '../i18n/I18nProvider'
+import { ruleText } from '../i18n/ruleText'
 import type {
   DataAccessDocument,
   Finding,
@@ -20,7 +21,7 @@ interface DataDetailPanelProps {
  * 점검 항목은 "무엇이 걸렸나 → 판정 근거 → 왜 문제인가 → 제안" 순서로 보여준다.
  */
 export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: DataDetailPanelProps) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const data = graph.dataAccess
   const pipeline = graph.middleware
 
@@ -149,12 +150,12 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: Data
         </div>
         <div className="detail-path">
           {t('dd.ruleJudge', {
-            name: rule.name,
+            name: ruleText(rule, lang).name,
             confidence: rule.judge === 'Certain' ? t('data.certain') : t('data.estimated'),
           })}
           {rule.shardOnly ? t('dd.shardOnly') : ''}
         </div>
-        <Section title={t('dd.ruleDescription')}><p>{rule.description}</p></Section>
+        <Section title={t('dd.ruleDescription')}><p>{ruleText(rule, lang).description}</p></Section>
         {!rule.enabled && (
           <Section title={t('dd.notCheckedTitle')}>
             <p>

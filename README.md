@@ -56,6 +56,10 @@ resolved**:
 | `SingleImplementation` | No DI registration, but exactly one implementation exists in the solution. | **estimated** |
 | `Ambiguous` | Several candidates. **No edge is created** — the reason is recorded instead. | — |
 | `Unresolved` | The symbol could not be resolved (compile error, unsupported syntax). | — |
+| `External` | A call outside the solution (framework, package). No edge, and **excluded from the resolution-rate denominator.** | — |
+
+`External` stays out of the denominator because counting framework calls would turn the
+"resolution rate" into a measure of how much framework you use, not of how well your code was read.
 
 So when an AI answers "this controller writes to the `orders` table", you can follow `call:3` to
 `Controllers/OrdersController.cs:22` and check it yourself.
@@ -107,9 +111,11 @@ on the right stays put. All three panes are resizable (double-click a divider to
 
 #### Call flow — one entry point, step by step
 
-Pick a route on the left. It draws from that entry point to the nearest branch point, and each node
-marked `⊕` expands one more level on click. This keeps a large solution readable: you go where you
-are curious instead of rendering ten thousand nodes.
+Pick a route on the left. It draws from that entry point to the nearest branch point, and clicking a
+node marked `⊕` expands **two hops** from it — not one, because one hop usually reveals a single
+pass-through method and makes you click again. A window holds at most **120 nodes**; anything beyond
+that is counted as "N more". This keeps a large solution readable: you go where you are curious
+instead of rendering ten thousand nodes.
 
 The detail panel shows the selected method's signature, accessibility, declaring class, routes,
 direct callers and callees — and the **call evidence** behind each of those edges.
@@ -173,9 +179,10 @@ Rule `COMP-006` catches the easy-to-miss case where a `catch` has an undo but an
 like `if (!ok) return` does not. Sharding rules only switch on when `tracelens.config.json` declares
 a shard, so you do not get noise about a concept your system does not use.
 
-**42 rules** across `COMP` (compensation), `TX`, `CACHE`, `CONN`, `RW`, `SHARD`, `PERF`, `IDX`,
-`MAP`, `SEC` and `MW`. Every finding carries evidence and a confidence level; every rule that did not
-run stays listed as "off".
+The catalog holds **42 rules**, of which **26 run by default** (12 off, 4 that need a declared shard).
+They span `COMP` (compensation), `TX`, `CACHE`, `CONN`, `RW`, `SHARD`, `PERF`, `IDX`, `MAP`, `SEC`
+and `MW`. Every finding carries evidence and a confidence level; a rule that did not run is never
+removed from the list — it stays there as "off".
 
 #### Middleware — what a request passes through, and where it stops
 
@@ -202,8 +209,10 @@ involved in building it — in this priority order:
 6. **Test candidates** found in the graph — labelled `reached in graph` vs `name match only`, and never presented as "the tests pass"
 7. What was omitted for length, and how to fetch more
 
-**Intent** (understand code / plan a change / review a change / investigate data) changes what gets
-priority. **Length** (short / balanced / detailed) is enforced by deterministic caps on characters,
+**Intent** — four of them (understand code / plan a change / review a change / investigate data) —
+changes what gets priority. The API has a fifth value, `Share`, which is deliberately not in the
+dropdown: it belongs to the share-report button, where the point is to strip source bodies and
+absolute paths, and mixing it into the "ask" flow would only confuse the two. **Length** (short / balanced / detailed) is enforced by deterministic caps on characters,
 nodes and source lines, so the same selection with the same budget always produces the same context.
 
 Three ways to use it:
@@ -293,11 +302,20 @@ and the **set** of `.cs` files under the project folders.
 
 ```text
 tracelens doctor  [--target <path>] [--json]   Checks the environment; never installs or changes settings.
-tracelens analyze <path> [--json]              One analysis, with a summary of what it did and did not see.
-tracelens serve   [--target <path>] [--port n] The UI server (loopback only).
+tracelens analyze <path> [--json] [--profile]  One analysis, with a summary of what it did and did not see.
+tracelens serve   [--target <path>] [--port n] [--no-browser]
+                                               The UI server (loopback only).
 tracelens mcp     --graph <graph.json path>    The local stdio MCP server.
 tracelens demo    [--dir <destination>]        Copies the example project and explains what to look at.
 ```
+
+`--no-browser` skips opening a browser (for remote shells and containers). `--profile` prints
+per-stage times and the peak working set alongside the summary.
+
+**Where the result is written.** For a `.sln`, `.tracelens/graph.json` sits next to the solution.
+For a `.csproj` it goes under the **common parent folder that holds the project and everything it
+references** — not the project folder. The actual path is printed as `outputPath` by `analyze`, and
+`serve` walks up to 8 levels from the target to find it.
 
 `doctor` reports codes like `SDK_NOT_FOUND`, `SDK_MISMATCH`, `TARGET_NOT_FOUND`,
 `UNSUPPORTED_TARGET_FORMAT`, `OUTPUT_NOT_WRITABLE`, `PORT_IN_USE`, `MCP_HOST_MISSING` with a
@@ -312,7 +330,7 @@ counts — no invented percentage — and can be **canceled**, which keeps the p
 
 ### Other things worth knowing
 
-- **Korean and English UI.** The Korean dictionary is the source of truth and the English one is type-constrained by its keys, so a missing translation is a compile error. Symbols, routes, code and file paths are never translated.
+- **Korean and English UI.** The Korean dictionary is the source of truth and the English one is type-constrained by its keys, so a missing translation is a compile error. Symbols, routes, code and file paths are never translated. Rule names and descriptions are translated (all 42, keyed by rule id); the text of an individual finding is not — it is composed at analysis time from your own symbol and table names, and the tool shows it as the analyzer wrote it rather than pretending to translate it.
 - **View state persists.** The view, filters and selection you were looking at survive a refresh and a re-analysis; only selections pointing at code that no longer exists get cleared.
 - **First-run guidance.** Before anything is analyzed you get the example, your own project, the supported scope, and four recipes — not an empty canvas.
 - **Configurable for your codebase.** `tracelens.config.json` lets you point `db.queryApis` at your in-house data wrapper, set `analysisScope`, `maxCallDepth`, excluded namespaces, and turn individual collectors off.

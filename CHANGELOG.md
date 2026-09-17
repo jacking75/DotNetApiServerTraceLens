@@ -78,6 +78,23 @@
 - 롤링 파일 로그(`%LOCALAPPDATA%\TraceLens\logs`)와 500 응답의 `errorId`.
 - 상태를 바꾸는 `/api/*` 요청의 Origin 검사(`FORBIDDEN_ORIGIN`).
 - 영어 UI 완성과 하드코딩 한국어 회귀 테스트.
+- **규칙 카탈로그 42개의 영어 문구**(`client/src/i18n/ruleText.ts`, 규칙 ID로 대응).
+  분석기가 규칙을 늘리면 `ruleText.test.ts`가 분석기 소스에서 ID를 읽어 대조해 실패한다.
+  개별 점검 결과(what·why·fix)는 번역하지 않는다 — 분석할 때 실제 심볼·테이블 이름을 섞어 만드는
+  문장이라 미리 번역할 수 없다. 영어 화면에서도 분석기가 만든 그대로 보여 주고 번역한 척하지 않는다.
+- `GET /api/graph` 계열과 `/api/browse`의 실패 응답에도 `code`를 담는다(옛 `error` 필드는 그대로).
+
+### 문서
+
+- README·README_kr: 해석 종류 표에 `External`(해석률 분모에서 빼는 이유 포함), CLI 표에 `--no-browser`·
+  `--profile`, `.csproj` 대상의 결과 저장 위치, 규칙 수를 "42개 중 기본 실행 26개(꺼짐 12 · 샤드 전용 4)"로,
+  `⊕` 확장이 **2홉**이라는 사실과 창 상한 120개, 작업 목적 네 가지와 다섯 번째 `Share`를 목록에 두지 않는 이유.
+- `docs/data-contract.md`: 부가 필드 표(`edges[].confidence`·`callSites[].viaLambda`·`manifest.ignoredSources`·
+  `dataAccess.accesses[].confidence/note/transactionWrapper`·`transactions[].kind/wrapperName`·
+  `middleware.steps[].kind`·`startupFlows[]`·`middlewarePipelines[]`), 새 엔드포인트와 오류 코드 전체,
+  `db.queryBuilders`·`transactionWrappers`·`cacheWrappers`, 모르는 설정 키 처리.
+- 매뉴얼(한·영): 설정 표를 실제 키와 맞추고, 미들웨어 단계의 세 종류(미들웨어 · 엔드포인트 등록 · 종단)와
+  쿼리 빌더를 어디까지 읽는지(못 읽는 경우 포함)를 적었다.
 
 ---
 

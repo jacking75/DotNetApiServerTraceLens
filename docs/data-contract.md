@@ -18,6 +18,25 @@
 | v6 | `dataAccess`(DB·캐시 접근과 보상 처리), `middleware`(미들웨어 파이프라인) |
 | **v7** | `snapshotId`, `inputFingerprint`, `manifest`, `diagnostics`, `callSites`, `analyzerVersion`, `rulesVersion`, 진입점의 `endpointId`·출처·확실도, 노드의 `callable`·`stableKey`·지문 |
 
+**부가 필드는 버전을 올리지 않는다.** 기본값이 있고 옛 문서를 그대로 읽을 수 있으면 v7 안에서 더한다.
+0.8.0에서 이렇게 더한 필드는 아래와 같다. 읽는 쪽은 없으면 이 기본값으로 채운다(2절 1번 규칙).
+
+| 필드 | 뜻 | 없을 때 |
+|---|---|---|
+| `edges[].confidence` | 이 엣지를 확정했는지(`Certain`/`Estimated`) | `Certain` |
+| `callSites[].viaLambda` | 람다 본문 안의 호출이라 감싸는 메서드에 귀속했다 | `false` |
+| `manifest.ignoredSources` | 입력 목록에 넣지 않은 소스(생성 코드 등). 신선도의 "새 파일"에서도 뺀다 | `[]` |
+| `dataAccess.accesses[].confidence` | 대상 이름을 상수로 확정했는지 | `Certain` |
+| `dataAccess.accesses[].note` | 그렇게 판정한 근거 한 줄 | `""` |
+| `dataAccess.accesses[].transactionWrapper` | 이 접근을 감싼 트랜잭션 래퍼 메서드 이름 | `""` |
+| `dataAccess.transactions[].kind` | `Explicit`(직접 Begin/Commit) 또는 `Wrapper`(람다를 받는 래퍼) | `Explicit` |
+| `dataAccess.transactions[].wrapperName` | `Wrapper`일 때 그 래퍼 이름 | `""` |
+| `middleware.steps[].kind` | `Middleware` / `EndpointRegistration` / `Terminal` | `Middleware` |
+| `startupFlows[]` | 호스트가 여럿인 솔루션의 시작 흐름 전부. `startupFlow`는 그중 첫 번째 | `[]` |
+| `middlewarePipelines[]` | 같은 이유로 파이프라인 전부. `middleware`는 그중 첫 번째 | `[]` |
+
+`startupFlow`/`middleware` 단수 필드는 호환을 위해 남긴다. **새 코드는 복수 쪽을 읽는다.**
+
 ## 2. 이행 규칙
 
 읽는 쪽이 지켜야 할 규칙이다. 클라이언트는 `api/client.ts`의 `normalizeGraph`가, 서버·MCP는
@@ -81,7 +100,7 @@
       "bodyFingerprint": "sha256:…"
     }
   ],
-  "edges": [{ "from": "…OrdersController.CreateAsync(…)", "to": "…OrderService.CreateAsync(…)" }],
+  "edges": [{ "from": "…OrdersController.CreateAsync(…)", "to": "…OrderService.CreateAsync(…)", "confidence": "Certain" }],
   "callSites": [
     {
       "from": "…OrdersController.CreateAsync(…)",
@@ -91,6 +110,7 @@
       "line": 22,
       "resolution": "DiRegistration",
       "confidence": "Certain",
+      "viaLambda": false,
       "note": "DI 등록으로 OrderService에 연결했다."
     }
   ],
@@ -100,6 +120,7 @@
     "sourceRoots": ["."],
     "excludedDirectories": ["bin", "obj", ".git", ".tracelens", ".vs", "node_modules"],
     "linkedSources": [],
+    "ignoredSources": [],
     "limitations": ["MSBuild import 전개 결과와 analyzer·source generator가 만든 소스는 입력 목록에 넣지 않는다."]
   },
   "diagnostics": {
@@ -123,7 +144,9 @@
   },
   "startupFlow": null,
   "dataAccess": null,
-  "middleware": null
+  "middleware": null,
+  "startupFlows": [],
+  "middlewarePipelines": []
 }
 ```
 
@@ -169,20 +192,37 @@
 | `POST /api/snapshots/compare` | 보관한 기준과 비교한다. 임의 경로는 받지 않는다. | `404 BASELINE_NOT_FOUND` |
 | `GET /api/mcp-setup` | 대상·호스트에 맞춘 MCP 설정 미리보기를 준다. | `400 MCP_HOST_MISSING` |
 | `POST /api/ask` | 문맥을 만들어 외부 CLI에 전달하고 응답을 SSE로 중계한다. | `404 NO_ANALYSIS`, `409 SNAPSHOT_MISMATCH` |
-| `GET /api/browse` | 로컬 디렉터리를 훑어 `.sln`/`.csproj`를 찾는 대상 선택용 API(브라우저 파일 선택창은 절대 경로를 안 주므로). | — |
-| `GET /api/graph`, `/graph/entrypoints`, `/graph/classes`, `/graph/namespaces` | 현재 메모리 그래프 전체/진입점/클래스 요약/네임스페이스 요약을 돌려준다(옛 `{ error }` 형태). | `404` |
+| `DELETE /api/ask/{runId}` | 진행 중인 질문 실행을 취소한다. | `404 RUN_NOT_FOUND` |
+| `GET /api/samples` | 배포물에 함께 넣은 예제 목록과 예상 결과를 돌려준다. | — |
+| `POST /api/samples/{id}/prepare` | 예제를 `%LOCALAPPDATA%\TraceLens\samples\{id}`에 복사한다. 이미 있으면 그대로 쓴다(`overwrite`로 덮어쓴다). | `404 SAMPLE_NOT_FOUND`, `500 SAMPLE_COPY_FAILED` |
+| `GET /api/browse` | 로컬 디렉터리를 훑어 `.sln`/`.csproj`를 찾는 대상 선택용 API(브라우저 파일 선택창은 절대 경로를 안 주므로). | `400 SOURCE_DENIED`, `400 INVALID_REQUEST` |
+| `GET /api/graph`, `/graph/entrypoints`, `/graph/classes`, `/graph/namespaces` | 현재 메모리 그래프 전체/진입점/클래스 요약/네임스페이스 요약을 돌려준다. 실패 응답은 옛 `error` 필드를 유지하면서 `code`를 함께 담는다. | `404 NO_ANALYSIS` |
 
 ### 오류 코드
 
 `NO_ANALYSIS`, `SNAPSHOT_MISMATCH`, `SELECTION_NOT_FOUND`, `INVALID_REQUEST`, `SOURCE_DENIED`,
-`ANALYZE_FAILED`, `OFFLINE_SNAPSHOT`, `GRAPH_INVALID`, `INPUT_MISMATCH`, `BASELINE_NOT_FOUND`,
-`SNAPSHOT_NOT_FOUND`, `JOB_NOT_FOUND`, `JOB_NOT_CANCELABLE`, `MCP_HOST_MISSING`.
+`ANALYZE_FAILED`, `OFFLINE_SNAPSHOT`, `GRAPH_INVALID`, `GRAPH_TOO_LARGE`, `INPUT_MISMATCH`,
+`BASELINE_NOT_FOUND`, `SNAPSHOT_NOT_FOUND`, `SNAPSHOT_SAVE_FAILED`, `JOB_NOT_FOUND`,
+`JOB_NOT_CANCELABLE`, `JOB_ALREADY_RUNNING`, `RUN_NOT_FOUND`, `AGENT_NOT_FOUND`, `AGENT_TIMEOUT`,
+`SAMPLE_NOT_FOUND`, `SAMPLE_COPY_FAILED`, `MCP_HOST_MISSING`, `FORBIDDEN_ORIGIN`, `UNEXPECTED_ERROR`.
+
+- `JOB_ALREADY_RUNNING`(409) — 같은 대상의 분석이 이미 돌고 있다. 두 번째 요청은 시작하지 않는다.
+- `FORBIDDEN_ORIGIN`(403) — 상태를 바꾸는 `/api/*` 요청의 `Origin`이 이 서버가 아니다. 루프백 전용 도구라
+  브라우저 밖에서 온 요청(Origin 없음)은 막지 않는다.
+- `UNEXPECTED_ERROR`(500) — 처리하지 못한 예외다. `details.errorId`가 로그 파일의 같은 id와 이어진다.
+- 클라이언트는 서버에 닿지 못했을 때 `NETWORK`(status 0)를 자체적으로 만든다. 서버가 보내는 코드가 아니다.
 
 doctor는 별도로 `SDK_NOT_FOUND`, `SDK_MISMATCH`, `TARGET_NOT_FOUND`, `UNSUPPORTED_TARGET_FORMAT`,
-`OUTPUT_NOT_WRITABLE`, `PORT_IN_USE`, `MCP_HOST_MISSING`을 쓴다.
+`OUTPUT_NOT_WRITABLE`, `PORT_IN_USE`, `MCP_HOST_MISSING`을 쓴다(정상일 때는 `SDK_FOUND`·`TARGET_FOUND`·
+`OUTPUT_WRITABLE`·`PORT_FREE`·`MCP_HOST_FOUND`처럼 같은 자리에 성공 코드를 넣는다).
+
+`graph.json`을 읽을 때 쓰는 코드는 따로다: `E_NOT_FOUND`, `E_EMPTY`, `E_INVALID_JSON`,
+`E_SCHEMA_TOO_NEW`, `E_NO_TARGET`와 경고 `W_DUPLICATE_NODE`·`W_DANGLING_EDGE`·
+`W_DANGLING_ENTRYPOINT`·`W_NO_FILE`.
 
 ## 6. 문맥 DTO (`contextVersion` 1)
 
+요청은 `{ kind, id, intent, budget, question, includeSource, excludeFiles[], expectedSnapshotId }`다.
 `POST /api/context`와 MCP의 `get_context`가 **같은 DTO**를 돌려준다. UI 미리보기·클립보드·인앱 실행이
 모두 이 하나에서 나오므로 어디서 복사해도 같은 문맥이 된다.
 
@@ -202,6 +242,12 @@ question, markdown, characters, estimatedTokens, containsSource, files[]
 - `estimatedTokens`는 모델별 tokenizer가 아니라 문자 수에서 추정한 값이다. 화면에도 "예상"이라고 쓴다.
 - `sourceVersion`이 `current`면 분석 이후에 바뀐 현재 소스다. 오래된 위치에 현재 코드를 붙여 놓고 "분석 당시 코드"라고 부르지 않는다.
 - `freshness.status`가 `stale`이면 수정용 문맥에 소스 본문을 기본으로 넣지 않는다.
+- `intent`는 `Explain`·`PlanChange`·`ReviewChange`·`InvestigateData`·`Share` 다섯이다.
+  화면 목록에는 앞의 네 개만 둔다 — `Share`는 공유 보고서(`POST /api/report`)가 쓰는 값이고,
+  소스 본문과 절대 경로를 빼는 것이 목적이라 "질문" 흐름과 섞지 않는다.
+- 요청의 `excludeFiles`(접두사 일치)에 든 파일은 `sourceSnippets`에서 빠진다. 근거(`evidence`)의 위치는
+  남으므로 "어디를 뺐는지"는 보인다. `files[]`는 근거와 소스에 실제로 등장한 파일을 합친 목록이다.
+  비밀값을 자동으로 찾아내는 기능에 기대지 않고 **손으로 빼는 수단**을 두는 것이 이 필드의 목적이다.
 
 ## 7. `tracelens.config.json`
 
@@ -223,7 +269,22 @@ question, markdown, characters, estimatedTokens, containsSource, files[]
 | `includeCallSites` | `true` | 호출 근거(`callSites`)를 저장할지 |
 | `maxCallSitesPerEdge` | `3` | 한 엣지에 남길 근거 수 상한 |
 | `maxBoundaryCallSites` | `300` | 미해석·모호 호출의 상한 |
-| `db` | — | 사내 DB·캐시 계층 설정(`queryApis`, `cacheApis`, `dataSources`, `compensation` 등) |
+| `db` | — | 사내 DB·캐시 계층 설정. 아래 표 참고 |
+
+`db` 아래 키:
+
+| 키 | 기본값 | 설명 |
+|---|---|---|
+| `queryApis` · `cacheApis` | Dapper·EF·StackExchange.Redis 등 | DB·캐시 호출로 볼 메서드 패턴(`*IDbConnection.QueryAsync` 같은 와일드카드) |
+| `dataSources` | — | 커넥션 문자열 이름 → 표시 이름·역할 |
+| `compensation` | — | 보상 처리로 볼 메서드·되돌릴 수 없는 동작 |
+| `queryBuilders` | SqlKata 1종 | 쿼리 빌더의 루트(`QueryFactory.Query`)·빌더 타입·실행 종단 메서드·조인 메서드. 빌더로 만든 SQL의 테이블을 여기서 읽는다 |
+| `transactionWrappers` | `[]` | 람다를 받아 그 안에서 트랜잭션을 여닫는 사내 래퍼. 적지 않아도 본문에 `BeginTransaction*`이 있고 델리게이트 파라미터를 부르면 자동으로 찾는다 |
+| `cacheWrappers` | `[]` | 솔루션 안에 선언됐지만 캐시 **클라이언트**로 봐야 하는 래퍼. 적지 않으면 솔루션 안 메서드는 클라이언트로 보지 않는다(만료 인자를 판단할 수 없기 때문이다) |
+
+`_comment`와 `$schema`는 주석용으로 허용한다. 그 밖의 모르는 키는 **경고로 알리고 무시한다**(분석을 멈추지 않는다).
+값의 형식이 틀리면(숫자 자리에 문자열 등) 같은 방식으로 경고하고 기본값을 쓴다. 이 경고는 분석 결과의
+`diagnostics.limitations`에도 들어가서 UI에서 볼 수 있다.
 
 예제 설정은 [`samples/OrderApi/tracelens.config.json`](../samples/OrderApi/tracelens.config.json)에 있다.
 

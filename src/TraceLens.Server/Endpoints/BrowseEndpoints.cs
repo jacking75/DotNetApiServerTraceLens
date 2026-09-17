@@ -47,11 +47,13 @@ public static class BrowseEndpoints
         }
         catch (UnauthorizedAccessException)
         {
-            return Results.BadRequest(new { error = "이 디렉터리를 읽을 권한이 없다." });
+            return ApiResults.LegacyError(
+                StatusCodes.Status400BadRequest, ApiResults.SourceDenied, "이 디렉터리를 읽을 권한이 없다.");
         }
         catch (IOException exception)
         {
-            return Results.BadRequest(new { error = exception.Message });
+            return ApiResults.LegacyError(
+                StatusCodes.Status400BadRequest, ApiResults.InvalidRequest, exception.Message);
         }
     }
 

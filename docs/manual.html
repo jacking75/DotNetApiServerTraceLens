@@ -865,6 +865,13 @@ npm run dev</code></pre>
         <tr><td><code>db</code></td><td>see below</td><td>Configuration describing the shape of your in-house DB/cache layer. Works even when left empty, by guessing from SQL literals and type names.</td></tr>
       </table>
 
+      <p>
+        An unknown key is <b>reported as a warning and ignored</b> — it never stops the analysis. A value
+        of the wrong shape is handled the same way: warn, then fall back to the default. Those warnings
+        also land in the analysis limitations list, so you can see them in the UI.
+        <code>_comment</code> and <code>$schema</code> are allowed as comment keys, since JSON has no comments.
+      </p>
+
       <h4 class="mini-h">The <code>db</code> section — sharding, Redis, and compensation settings</h4>
       <p>
         Telling TraceLens the naming conventions of your in-house DB layer (custom connection
@@ -883,7 +890,26 @@ npm run dev</code></pre>
         <tr><td><code>compensation.pairs</code></td><td>Explicitly declare undo pairs that name-based heuristics (Insert↔Delete, etc.) can't catch, as <code>{ "do": "...", "undo": "..." }</code>.</td></tr>
         <tr><td><code>compensation.irreversible</code></td><td>Call patterns with no way to cancel them (e.g. a send/notify API).</td></tr>
         <tr><td><code>compensation.idempotent</code></td><td>Call patterns that are safe to re-run, so they don't need undoing.</td></tr>
+        <tr><td><code>queryBuilders</code></td><td>The shape of a query builder, as <code>{ root, queryType, terminals, joinMethods }</code>. The default covers SqlKata: start at <code>QueryFactory.Query("table")</code> and execute through a terminal like <code>GetAsync</code> or <code>InsertAsync</code>.</td></tr>
+        <tr><td><code>transactionWrappers</code></td><td>Patterns for in-house wrapper methods that take a lambda and open/close the transaction inside it. You don't have to list them: a method whose body contains <code>BeginTransaction*</code> and invokes a delegate parameter is detected automatically.</td></tr>
+        <tr><td><code>cacheWrappers</code></td><td>Patterns for wrappers declared inside the solution that should nonetheless count as a cache <b>client</b>. By default a solution-declared method is not treated as a client — you have to look inside the wrapper to judge the expiry argument, and calling it "no expiry" from the outside would be a false verdict.</td></tr>
       </table>
+
+      <h4 class="mini-h">How far query builders are read</h4>
+      <p>
+        Builder-built SQL has no literal to read, so the table name has to be found in the body.
+        TraceLens walks back from the terminal call to the builder's <b>root</b>
+        (<code>Query("table")</code>). If that argument is a string constant the table name is
+        <b>certain</b>; if it is a variable or an interpolated string it is recorded as <code>?</code>
+        and <b>estimated</b>. Tables added through <code>join</code> methods are read the same way.
+      </p>
+      <p>
+        What it cannot read is stated plainly: if the builder is stored in a field or property and
+        executed from another method, the root is not found and the access is not recorded. The same
+        goes for a builder library with no matching <code>db.queryBuilders</code> entry. These are not
+        "no access" — they are <b>not seen</b>, and they show up in the rule catalog and the
+        limitations list.
+      </p>
 
       <pre><code>{
   "db": {
@@ -1134,12 +1160,35 @@ npm run dev</code></pre>
         <tr><th>Sub-view</th><th>Contents</th></tr>
         <tr><td>Pipeline</td><td>Middleware registration order and the request/response section code for each step.</td></tr>
         <tr><td>Short-circuit points</td><td>Shows, side by side, <b>what doesn't run</b> when a request gets cut off there, and <b>what still runs</b> as response post-processing.</td></tr>
-        <tr><td>Findings</td><td>A list of MW rule violations — authentication/authorization/CORS ordering, middleware that takes a Scoped service through its constructor, middleware registered after endpoint mapping that never runs, and so on.</td></tr>
+        <tr><td>Findings</td><td>A list of MW rule violations — authentication/authorization/CORS ordering, middleware that takes a Scoped service through its constructor, middleware registered after a terminal that never runs, and so on.</td></tr>
       </table>
+
+      <h4 class="mini-h">Three kinds of step — middleware, endpoint registration, terminal</h4>
+      <p>Not every <code>app.UseXxx()</code> line is the same thing. Each pipeline step carries a kind.</p>
+      <table>
+        <tr><th>Kind</th><th>What it is</th></tr>
+        <tr><td><b>Middleware</b></td><td>An ordinary step a request passes through in order — <code>UseAuthentication</code>, <code>UseCors</code>, and so on.</td></tr>
+        <tr><td><b>Endpoint registration</b></td><td>A line that only <b>registers</b>: <code>MapControllers()</code>, <code>MapGet()</code>, <code>MapOpenApi()</code>. The actual execution happens at the very end of the pipeline, so middleware registered after this line still runs normally.</td></tr>
+        <tr><td><b>Terminal</b></td><td>A step that ends the request here. There are exactly two: <code>UseEndpoints(...)</code> and <code>app.Run(delegate)</code>. Middleware registered after one of these does not run (MW-012).</td></tr>
+      </table>
+      <p>
+        The distinction matters because treating <code>MapControllers()</code> as a terminal makes the
+        tool wrongly claim that an authentication middleware registered after it "never runs". That was
+        fixed in 0.8.0, and it removed 3 false MW-012 findings on a real project.
+      </p>
       <figure class="shot">
         <img src="screenshots/middleware.jpg" alt="Middleware view — the pipeline listed in app.UseXxx() registration order, from RequestLoggingMiddleware through UseExceptionHandler, MapOpenApi, UseSwaggerUI, UseHttpsRedirection to GameAuthMiddleware, with an MW-012 finding badge on the UseSwaggerUI and UseHttpsRedirection steps">
         <figcaption>The pipeline drawn exactly in the order it's registered in the real Program.cs. Steps that conditionally short-circuit, like UseSwaggerUI and UseHttpsRedirection, carry their status code and a rule finding badge (MW-012).</figcaption>
       </figure>
+
+      <h4 class="mini-h">A note on language</h4>
+      <p>
+        Rule <b>names and descriptions</b> are shown in English. Individual <b>findings</b> — the
+        "what / why / suggested fix" text on each hit — are shown in the language the analyzer wrote
+        them in, which is Korean. They are composed at analysis time out of your own symbol names,
+        table names and line numbers, so they cannot be translated ahead of time, and the tool does
+        not pretend otherwise. The evidence itself (file, line, symbol) is language-neutral.
+      </p>
 
       <h4 class="mini-h">Findings, in general — confidence and evidence</h4>
       <p>Data Access and Middleware findings always come with these two badges together.</p>
