@@ -7,13 +7,27 @@ import { useI18n } from '../i18n/I18nProvider'
 interface GraphViewProps {
   graphWindow: GraphWindow | null
   selectedNodeId: string | null
+  /** 영향 목록에서 온 경우 진입점 → 대상 경로. 이 경로의 엣지를 굵게 그린다. */
+  highlightPath?: readonly string[]
   onSelectNode: (node: GraphNode) => void
   onDrilldown: (node: GraphNode) => void
 }
 
-export function GraphView({ graphWindow, selectedNodeId, onSelectNode, onDrilldown }: GraphViewProps) {
+export function GraphView({
+  graphWindow,
+  selectedNodeId,
+  highlightPath = [],
+  onSelectNode,
+  onDrilldown,
+}: GraphViewProps) {
   const { t } = useI18n()
   const containerRef = useRef<HTMLDivElement>(null)
+  const instanceRef = useRef<cytoscape.Core | null>(null)
+
+  // 콜백은 ref로 들고 있는다. App이 리렌더될 때마다 새 함수가 와도 그래프를 다시 그리면 안 된다
+  // (30초 신선도 틱에 팬·줌이 초기화되던 원인).
+  const handlersRef = useRef({ onSelectNode, onDrilldown })
+  handlersRef.current = { onSelectNode, onDrilldown }
 
   useEffect(() => {
     if (!containerRef.current || !graphWindow || graphWindow.nodes.length === 0) {
@@ -30,10 +44,14 @@ export function GraphView({ graphWindow, selectedNodeId, onSelectNode, onDrilldo
             label: `${graphWindow.branchNodeIds.has(node.id) ? '⊕  ' : ''}${node.displayName}`,
             color: kindColors[node.kind],
           },
-          classes: node.id === selectedNodeId ? 'selected' : '',
         })),
         ...graphWindow.edges.map((edge, index) => ({
-          data: { id: `edge-${index}-${edge.from}-${edge.to}`, source: edge.from, target: edge.to },
+          data: {
+            id: `edge-${index}-${edge.from}-${edge.to}`,
+            source: edge.from,
+            target: edge.to,
+          },
+          classes: edge.confidence === 'Estimated' ? 'estimated' : '',
         })),
       ],
       style: [
@@ -68,6 +86,19 @@ export function GraphView({ graphWindow, selectedNodeId, onSelectNode, onDrilldo
             'curve-style': 'bezier',
           },
         },
+        {
+          // 람다 본문 안의 호출만 있는 엣지는 추정이다. 실선과 구분해서 그린다.
+          selector: 'edge.estimated',
+          style: { 'line-style': 'dashed' },
+        },
+        {
+          selector: 'edge.on-path',
+          style: { width: 4, 'line-color': '#8ddcff', 'target-arrow-color': '#8ddcff' },
+        },
+        {
+          selector: 'node.on-path',
+          style: { 'border-width': 2, 'border-color': '#8ddcff' },
+        },
       ],
       layout: { name: 'breadthfirst', directed: true, spacingFactor: 1.25, padding: 30 },
     })
@@ -75,18 +106,49 @@ export function GraphView({ graphWindow, selectedNodeId, onSelectNode, onDrilldo
     instance.on('tap', 'node', (event) => {
       const currentNode = nodeMap.get(event.target.id())
       if (!currentNode) return
-      onSelectNode(currentNode)
+      handlersRef.current.onSelectNode(currentNode)
       if (graphWindow.branchNodeIds.has(currentNode.id)) {
-        onDrilldown(currentNode)
+        handlersRef.current.onDrilldown(currentNode)
       }
     })
 
-    return () => instance.destroy()
-  }, [graphWindow, onDrilldown, onSelectNode, selectedNodeId])
+    instanceRef.current = instance
+    return () => {
+      instanceRef.current = null
+      instance.destroy()
+    }
+  }, [graphWindow])
+
+  // 선택 강조만 바꿀 때는 그래프를 다시 만들지 않는다.
+  useEffect(() => {
+    const instance = instanceRef.current
+    if (!instance) return
+    instance.nodes().removeClass('selected')
+    if (selectedNodeId) instance.$id(selectedNodeId).addClass('selected')
+  }, [selectedNodeId, graphWindow])
+
+  // 영향 목록에서 온 경로를 굵게 그린다.
+  useEffect(() => {
+    const instance = instanceRef.current
+    if (!instance) return
+    instance.elements().removeClass('on-path')
+    const onPath = new Set(highlightPath)
+    for (const id of onPath) instance.$id(id).addClass('on-path')
+    instance.edges().forEach((edge) => {
+      const index = highlightPath.indexOf(edge.data('source') as string)
+      if (index >= 0 && highlightPath[index + 1] === edge.data('target')) edge.addClass('on-path')
+    })
+  }, [highlightPath, graphWindow])
 
   return (
     <div className="graph-shell">
-      <div className="graph-help">{t('graph.expandHint')}</div>
+      <div className="graph-help">
+        {t('graph.expandHint')}
+        {graphWindow?.hiddenCount
+          ? ` ${t('graph.windowLimit', { shown: graphWindow.nodes.length, hidden: graphWindow.hiddenCount })}`
+          : ''}
+        {highlightPath.length > 0 ? ` ${t('graph.pathHighlight')}` : ''}
+      </div>
       {(!graphWindow || graphWindow.nodes.length === 0) && (
         <div className="panel-message canvas-empty">
           {graphWindow ? t('graph.emptyWindow') : t('graph.pickEntryPoint')}

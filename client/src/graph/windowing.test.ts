@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { getDrilldownWindow, getInitialWindow } from './windowing'
-import type { GraphClass, GraphDocument, GraphNode } from '../types/graph'
+import { getDrilldownWindow, getInitialWindow, getPathWindow, MaxWindowNodes } from './windowing'
+import type { GraphClass, GraphDocument, GraphEdge, GraphNode } from '../types/graph'
 import { entryPoint, graphDefaults, nodeDefaults } from '../types/testFactories'
 
 const node = (id: string, classId = 'Tests.Sample'): GraphNode => ({
@@ -91,5 +91,39 @@ describe('포커스 기반 윈도잉', () => {
 
     expect(result.nodes.map((item) => item.id)).toEqual(['C', 'D', 'E', 'F'])
     expect(result.edges).toHaveLength(3)
+  })
+})
+
+describe('창 크기 상한', () => {
+  /** 한 진입점에서 폭넓게 갈라지는 그래프. 2홉이면 노드가 상한을 넘는다. */
+  const wide = (): GraphDocument => {
+    const nodes = [node('root')]
+    const edges: GraphEdge[] = []
+    for (let i = 0; i < 20; i += 1) {
+      nodes.push(node(`mid${i}`))
+      edges.push({ from: 'root', to: `mid${i}`, confidence: 'Certain' })
+      for (let j = 0; j < 20; j += 1) {
+        nodes.push(node(`leaf${i}-${j}`))
+        edges.push({ from: `mid${i}`, to: `leaf${i}-${j}`, confidence: 'Certain' })
+      }
+    }
+
+    return { ...graph, nodes, edges, classes: [], entryPoints: [] }
+  }
+
+  it('상한을 넘으면 더 넣지 않고 남은 수를 알려준다', () => {
+    const window = getDrilldownWindow(wide(), 'root')
+
+    expect(window.nodes.length).toBeLessThanOrEqual(MaxWindowNodes)
+    expect(window.hiddenCount).toBeGreaterThan(0)
+  })
+
+  it('경로 창은 진입점에서 대상까지를 모두 담는다', () => {
+    const window = getPathWindow(wide(), 'root', ['root', 'mid3', 'leaf3-7'])
+    const ids = new Set(window.nodes.map((item) => item.id))
+
+    expect(ids.has('root')).toBe(true)
+    expect(ids.has('mid3')).toBe(true)
+    expect(ids.has('leaf3-7')).toBe(true)
   })
 })

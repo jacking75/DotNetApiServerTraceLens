@@ -236,7 +236,7 @@ export function FlowSidePanel({
     }
 
     return [...grouped.entries()]
-  }, [entryPoints, classIdOfMethod])
+  }, [entryPoints, classIdOfMethod, t])
 
   return (
     <div className="side-list">

@@ -689,6 +689,10 @@ export const ko = {
   'error.errorId': '오류 ID {id} — 문의할 때 이 값을 함께 알려주면 된다.',
   'error.dismiss': '닫기',
   'app.restoreFailed': '마지막 분석 결과를 되살리지 못했다: {reason}',
+
+  /* 호출 흐름 창 */
+  'graph.windowLimit': '이 창은 노드 {shown}개까지만 그린다(+{hidden}개 더 있다). 노드를 눌러 그 아래로 내려가면 된다.',
+  'graph.pathHighlight': '영향 목록에서 고른 대상까지의 경로를 강조했다.',
 } as const
 
 export type TranslationKey = keyof typeof ko

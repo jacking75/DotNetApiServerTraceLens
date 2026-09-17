@@ -272,6 +272,8 @@ export type GraphWindowKind = 'callFlow'
 export interface GraphWindow {
   kind: GraphWindowKind
   focusNodeId: string
+  /** 상한 때문에 이 창에 넣지 못한 노드 수. 0이면 다 보여 준 것이다. */
+  hiddenCount?: number
   nodes: GraphNode[]
   edges: GraphEdge[]
   /** 아직 창에 없는 관계가 남아 있어 눌러서 더 펼칠 수 있는 노드. */

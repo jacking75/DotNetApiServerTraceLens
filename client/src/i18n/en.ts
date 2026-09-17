@@ -692,4 +692,8 @@ export const en: Dictionary = {
   'error.errorId': 'Error ID {id} — include this when reporting the problem.',
   'error.dismiss': 'Dismiss',
   'app.restoreFailed': 'Could not restore the last analysis: {reason}',
+
+  /* 호출 흐름 창 */
+  'graph.windowLimit': 'This window draws up to {shown} nodes (+{hidden} more). Click a node to go deeper.',
+  'graph.pathHighlight': 'The path to the target you picked in the impact list is highlighted.',
 }

@@ -47,7 +47,7 @@ import { countBySeverity } from './graph/dataView'
 import { buildEntryFlow, buildEntryMap } from './graph/flowMap'
 import { collapseEdgesToClasses, deriveRelations } from './graph/relations'
 import { findStartupStep } from './graph/startupFlow'
-import { getDrilldownWindow, getInitialWindow } from './graph/windowing'
+import { getDrilldownWindow, getInitialWindow, getPathWindow } from './graph/windowing'
 import { translateError, useI18n, type Language } from './i18n/I18nProvider'
 import type { TranslationKey } from './i18n/ko'
 import {
@@ -128,6 +128,10 @@ export default function App() {
   const [preparingSample, setPreparingSample] = useState(false)
   /** 예제로 분석했다면 그 예제. 안내에 "이 예제에서 보이는 것"을 함께 띄운다. */
   const [activeSample, setActiveSample] = useState<SampleView | null>(null)
+  /** 영향 목록에서 고른 대상까지의 경로. 비어 있으면 평소의 창 규칙을 쓴다. */
+  const [highlightPath, setHighlightPath] = useState<string[]>([])
+  /** 저장해 둔 보기 위치를 한 번만 되살린다. */
+  const [restoredView, setRestoredView] = useState(false)
   /** 가져온 분석의 원본 루트를 고르는 대화상자. */
   const [rootPickerOpen, setRootPickerOpen] = useState(false)
   const [adoptMessage, setAdoptMessage] = useState<string | null>(null)
@@ -142,6 +146,56 @@ export default function App() {
   /* ---------------------------------------------------------------- 파생 데이터 */
 
   const nodeById = useMemo(() => new Map((graph?.nodes ?? []).map((node) => [node.id, node])), [graph])
+  /** 역방향 인접 맵. 진입점 역추적과 경로 찾기가 매번 전체 엣지를 훑지 않게 한다. */
+  const incomingByNode = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const edge of graph?.edges ?? []) {
+      const list = map.get(edge.to)
+      if (list) list.push(edge.from)
+      else map.set(edge.to, [edge.from])
+    }
+
+    return map
+  }, [graph])
+  const outgoingByNode = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const edge of graph?.edges ?? []) {
+      const list = map.get(edge.from)
+      if (list) list.push(edge.to)
+      else map.set(edge.from, [edge.to])
+    }
+
+    return map
+  }, [graph])
+  /** from에서 to까지의 가장 짧은 경로(노드 ID 목록). 없으면 빈 배열이다. */
+  const findPath = useCallback((from: string, to: string): string[] => {
+    if (from === to) return [from]
+    const cameFrom = new Map<string, string>()
+    const seen = new Set([from])
+    const queue = [from]
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      for (const next of outgoingByNode.get(current) ?? []) {
+        if (seen.has(next)) continue
+        seen.add(next)
+        cameFrom.set(next, current)
+        if (next === to) {
+          const path = [to]
+          let cursor = to
+          while (cameFrom.has(cursor)) {
+            cursor = cameFrom.get(cursor)!
+            path.unshift(cursor)
+          }
+
+          return path
+        }
+
+        queue.push(next)
+      }
+    }
+
+    return []
+  }, [outgoingByNode])
   const classIdOfMethod = useCallback((nodeId: string) => nodeById.get(nodeId)?.classId, [nodeById])
   const namespacePrefix = useMemo(
     () => commonNamespacePrefix((graph?.classes ?? []).map((item) => item.namespace)),
@@ -179,9 +233,11 @@ export default function App() {
 
   const callFlowWindow: GraphWindow | null = useMemo(() => {
     if (!graph || viewMode !== 'callflow' || !callFlowEntry) return null
+    // 영향 목록에서 온 경우에는 대상까지의 경로를 그대로 펼친다(대상이 창 밖에 있으면 이동한 보람이 없다).
+    if (highlightPath.length > 0) return getPathWindow(graph, callFlowEntry.nodeId, highlightPath)
     const focus = focusStack.length > 0 ? focusStack[focusStack.length - 1] : callFlowEntry.nodeId
     return focusStack.length === 0 ? getInitialWindow(graph, focus) : getDrilldownWindow(graph, focus)
-  }, [graph, viewMode, callFlowEntry, focusStack])
+  }, [graph, viewMode, callFlowEntry, focusStack, highlightPath])
 
   const dataAccess = graph?.dataAccess ?? null
   const middlewarePipeline = graph?.middleware ?? null
@@ -204,8 +260,44 @@ export default function App() {
   /* ---------------------------------------------------------------- 상태 저장 */
 
   useEffect(() => {
-    saveState({ viewMode, classMap, depth, selection, columns, solutionPath, dataView, middlewareView })
-  }, [viewMode, classMap, depth, selection, columns, solutionPath, dataView, middlewareView])
+    saveState({
+      viewMode,
+      classMap,
+      depth,
+      selection,
+      columns,
+      solutionPath,
+      dataView,
+      middlewareView,
+      callFlowEndpointId: callFlowEntry?.endpointId ?? null,
+      focusStack,
+      flowEntryId,
+    })
+  }, [
+    viewMode, classMap, depth, selection, columns, solutionPath, dataView, middlewareView,
+    callFlowEntry, focusStack, flowEntryId,
+  ])
+
+  /**
+   * 새로고침 뒤 호출 흐름·전체 흐름도의 위치를 되살린다.
+   * 저장한 진입점·노드가 지금 그래프에 없으면(재분석으로 사라졌다면) 조용히 버린다.
+   */
+  useEffect(() => {
+    if (!graph || restoredView) return
+    setRestoredView(true)
+    const entry = initial.callFlowEndpointId
+      ? graph.entryPoints.find((item) => item.endpointId === initial.callFlowEndpointId)
+      : undefined
+    if (entry) {
+      setCallFlowEntry(entry)
+      const known = new Set(graph.nodes.map((node) => node.id))
+      setFocusStack(initial.focusStack.filter((id) => known.has(id)))
+    }
+
+    if (initial.flowEntryId && graph.nodes.some((node) => node.id === initial.flowEntryId)) {
+      setFlowEntryId(initial.flowEntryId)
+    }
+  }, [graph, restoredView, initial])
 
   /* ---------------------------------------------------------------- 첫 사용 안내 진행 */
 
@@ -236,10 +328,14 @@ export default function App() {
     if (shellRef.current) setShellWidth(shellRef.current.clientWidth)
   }, [])
 
+  // 폭이 바뀌면 CSS 변수에 반영한다. 리스너 등록과 분리해야 폭을 바꿀 때마다 리스너를 다시 달지 않는다.
   useEffect(() => {
     applyColumns(columns)
     measureShell()
-    // 창이 줄어들 때도 같은 클램프를 다시 돌리고, 배치는 디바운스해서 다시 계산한다.
+  }, [columns, applyColumns, measureShell])
+
+  // 창이 줄어들 때도 같은 클램프를 다시 돌리고, 배치는 디바운스해서 다시 계산한다.
+  useEffect(() => {
     let timer = 0
     const onResize = () => {
       setColumns((current) => applyColumns(current))
@@ -252,7 +348,7 @@ export default function App() {
       window.removeEventListener('resize', onResize)
       window.clearTimeout(timer)
     }
-  }, [applyColumns, measureShell]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [applyColumns, measureShell])
 
   useEffect(() => { measureShell() }, [viewMode, columns, measureShell])
 
@@ -293,9 +389,11 @@ export default function App() {
       } catch {
         // GraphStore가 비어 있다. 아래에서 저장된 파일을 찾아본다.
       }
-      if (!solutionPath.trim()) return
+      // 마운트 시점에 한 번만 도는 effect다. 나중에 바뀐 상태를 읽지 않도록 저장값에서 직접 읽는다.
+      const savedPath = initial.solutionPath.trim()
+      if (!savedPath) return
       try {
-        const nextSummary = await loadSavedGraph(solutionPath.trim())
+        const nextSummary = await loadSavedGraph(savedPath)
         const nextGraph = await loadGraphData()
         applyAnalyzedGraph(nextGraph, nextSummary)
       } catch (reason) {
@@ -320,9 +418,11 @@ export default function App() {
       showFields: false,
       showMethods: false,
       relations: { ...current.relations, depend: false },
-      zoom: 0.5,
     }))
-  }, [graph, autoTuned])
+    // README가 약속한 대로 "맞춤 줌"으로 시작한다. 배치가 끝난 뒤에 재야 해서 다음 프레임에 부른다.
+    window.setTimeout(() => fitZoom(), 0)
+    // fitZoom은 아래에서 선언한다. 이 effect는 렌더 뒤에 돌아서 그때는 이미 초기화돼 있다.
+  }, [graph, autoTuned]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const describeError = useCallback((reason: unknown, fallback: string) => {
     if (reason instanceof ApiError) {
@@ -334,6 +434,29 @@ export default function App() {
     setErrorId(null)
     return fallback
   }, [t])
+
+  /** 작업 경로로 분석했을 때는 요약을 그래프에서 다시 만든다(서버 응답을 한 번 더 받지 않는다). */
+  const summarizeFrom = useCallback(async (nextGraph: GraphDocument): Promise<AnalyzeSummary> => ({
+    entryPointCount: nextGraph.entryPoints.length,
+    classCount: nextGraph.classes.length,
+    interfaceCount: nextGraph.classes.filter((item) => item.typeKind === 'Interface').length,
+    nodeCount: nextGraph.nodes.length,
+    edgeCount: nextGraph.edges.length,
+    memberCount: nextGraph.classes.reduce((total, item) => total + item.members.length, 0),
+    graphSizeBytes: 0,
+    elapsedMs: 0,
+    analyzedAt: nextGraph.analyzedAt,
+    previousAnalyzedAt: summary?.analyzedAt ?? null,
+    findingCount: (nextGraph.dataAccess?.findings.length ?? 0) + (nextGraph.middleware?.findings.length ?? 0),
+    snapshotId: nextGraph.snapshotId,
+    callSiteCount: nextGraph.callSites.length,
+    resolutionRate: nextGraph.diagnostics?.calls.resolutionRate ?? 0,
+    unresolvedCallSites:
+      (nextGraph.diagnostics?.calls.ambiguous ?? 0) + (nextGraph.diagnostics?.calls.unresolved ?? 0),
+    minimalApiCount: nextGraph.entryPoints.filter((item) => item.source === 'MinimalApi').length,
+    origin: 'live',
+    notice: nextGraph.diagnostics?.entryPointNotes.join(' ') || null,
+  }), [summary])
 
   /**
    * 분석을 작업으로 실행해서 단계별 진행 상태를 보여 주고 취소도 받는다.
@@ -381,30 +504,8 @@ export default function App() {
       setProgress(null)
       setJobId(null)
     }
-  }, [solutionPath, loadGraphData, applyAnalyzedGraph, describeError, t])
+  }, [solutionPath, loadGraphData, applyAnalyzedGraph, describeError, summarizeFrom, t])
 
-  /** 작업 경로로 분석했을 때는 요약을 그래프에서 다시 만든다(서버 응답을 한 번 더 받지 않는다). */
-  const summarizeFrom = async (nextGraph: GraphDocument): Promise<AnalyzeSummary> => ({
-    entryPointCount: nextGraph.entryPoints.length,
-    classCount: nextGraph.classes.length,
-    interfaceCount: nextGraph.classes.filter((item) => item.typeKind === 'Interface').length,
-    nodeCount: nextGraph.nodes.length,
-    edgeCount: nextGraph.edges.length,
-    memberCount: nextGraph.classes.reduce((total, item) => total + item.members.length, 0),
-    graphSizeBytes: 0,
-    elapsedMs: 0,
-    analyzedAt: nextGraph.analyzedAt,
-    previousAnalyzedAt: summary?.analyzedAt ?? null,
-    findingCount: (nextGraph.dataAccess?.findings.length ?? 0) + (nextGraph.middleware?.findings.length ?? 0),
-    snapshotId: nextGraph.snapshotId,
-    callSiteCount: nextGraph.callSites.length,
-    resolutionRate: nextGraph.diagnostics?.calls.resolutionRate ?? 0,
-    unresolvedCallSites:
-      (nextGraph.diagnostics?.calls.ambiguous ?? 0) + (nextGraph.diagnostics?.calls.unresolved ?? 0),
-    minimalApiCount: nextGraph.entryPoints.filter((item) => item.source === 'MinimalApi').length,
-    origin: 'live',
-    notice: nextGraph.diagnostics?.entryPointNotes.join(' ') || null,
-  })
 
   const cancelAnalysis = async () => {
     if (jobId) await cancelAnalysisJob(jobId)
@@ -544,7 +645,7 @@ export default function App() {
     window.setTimeout(() => scrollToClass(classId), 0)
   }, [graph, scrollToClass])
 
-  /** 어떤 메서드에서 거슬러 올라가 가장 가까운 진입점을 찾는다. */
+  /** 어떤 메서드에서 거슬러 올라가 가장 가까운 진입점을 찾는다. 역방향 인접 맵은 한 번만 만든다. */
   const findEntryPointFor = useCallback((nodeId: string): string | null => {
     if (!graph) return null
     const entryIds = new Set(graph.entryPoints.map((item) => item.nodeId))
@@ -553,15 +654,15 @@ export default function App() {
     while (queue.length > 0) {
       const current = queue.shift()!
       if (entryIds.has(current)) return current
-      for (const edge of graph.edges) {
-        if (edge.to !== current || seen.has(edge.from)) continue
-        seen.add(edge.from)
-        queue.push(edge.from)
+      for (const from of incomingByNode.get(current) ?? []) {
+        if (seen.has(from)) continue
+        seen.add(from)
+        queue.push(from)
       }
     }
 
     return null
-  }, [graph])
+  }, [graph, incomingByNode])
 
   const openFlow = useCallback((nodeId: string) => {
     const entryNodeId = findEntryPointFor(nodeId) ?? nodeId
@@ -570,15 +671,19 @@ export default function App() {
     setSelection({ type: 'method', key: nodeId })
   }, [findEntryPointFor])
 
-  /** 변경 영향 목록에서 고른 진입점을 기존 호출 흐름 보기로 연다(새 모드를 만들지 않는다). */
+  /**
+   * 변경 영향 목록에서 고른 진입점을 기존 호출 흐름 보기로 연다(새 모드를 만들지 않는다).
+   * 진입점 → 대상까지의 대표 경로를 찾아 창에 펼치고 그 경로를 강조한다.
+   */
   const openEntryPointFromImpact = useCallback((handlerNodeId: string, targetNodeId: string) => {
     const entry = entryPoints.find((item) => item.nodeId === handlerNodeId)
     if (!entry) return
     setViewMode('callflow')
     setCallFlowEntry(entry)
     setFocusStack([])
+    setHighlightPath(findPath(handlerNodeId, targetNodeId))
     setSelection({ type: 'method', key: targetNodeId })
-  }, [entryPoints])
+  }, [entryPoints, findPath])
 
   const detailActions: DetailActions = useMemo(() => ({
     onSelect: setSelection,
@@ -1281,8 +1386,9 @@ export default function App() {
               <GraphView
                 graphWindow={callFlowWindow}
                 selectedNodeId={selection?.type === 'method' ? selection.key : null}
+                highlightPath={highlightPath}
                 onSelectNode={(node) => setSelection({ type: 'method', key: node.id })}
-                onDrilldown={(node) => drilldown(node.id)}
+                onDrilldown={(node) => { setHighlightPath([]); drilldown(node.id) }}
               />
             </Suspense>
           )}

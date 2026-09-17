@@ -49,6 +49,12 @@ export interface PersistedState {
   solutionPath: string
   dataView: DataViewState
   middlewareView: MiddlewareViewState
+  /** 호출 흐름에서 고른 진입점의 엔드포인트 ID. 복원할 때 존재를 확인한 뒤에만 쓴다. */
+  callFlowEndpointId: string | null
+  /** 호출 흐름에서 펼쳐 들어간 노드 스택. */
+  focusStack: string[]
+  /** 전체 흐름도에서 고른 진입점 노드 ID. null이면 전체 지도다. */
+  flowEntryId: string | null
 }
 
 export const defaultColumns = { left: 272, right: 392 }
@@ -79,6 +85,9 @@ export const defaultState: PersistedState = {
     onlyCertain: false,
   },
   middlewareView: { sub: 'pipe', showPost: true, severity: 'all' },
+  callFlowEndpointId: null,
+  focusStack: [],
+  flowEntryId: null,
 }
 
 const storageKey = 'tracelens.view'
@@ -96,6 +105,7 @@ export function loadState(): PersistedState {
       columns: { ...defaultColumns, ...parsed.columns },
       dataView: { ...defaultState.dataView, ...parsed.dataView },
       middlewareView: { ...defaultState.middlewareView, ...parsed.middlewareView },
+      focusStack: Array.isArray(parsed.focusStack) ? parsed.focusStack : [],
     }
   } catch {
     return defaultState

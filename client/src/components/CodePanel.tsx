@@ -22,14 +22,18 @@ export function SourceView({ target, height, emptyMessage }: SourceViewProps) {
   const [source, setSource] = useState<SourceResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // target 객체는 매 렌더 새로 만들어질 수 있다. 값 세 개만 의존으로 두고 같은 위치면 다시 읽지 않는다.
+  const file = target?.file
+  const startLine = target?.startLine
+  const endLine = target?.endLine
   useEffect(() => {
     setSource(null)
     setError(null)
-    if (!target) return
-    void getSource(target.file, target.startLine, target.endLine)
+    if (file === undefined || startLine === undefined || endLine === undefined) return
+    void getSource(file, startLine, endLine)
       .then(setSource)
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : t('code.loadFailed')))
-  }, [target?.file, target?.startLine, target?.endLine]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [file, startLine, endLine, t])
 
   const handleMount: OnMount = (editor) => {
     if (!source) return

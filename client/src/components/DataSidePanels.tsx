@@ -10,7 +10,6 @@ import type {
   Selection,
 } from '../types/graph'
 import { useI18n } from '../i18n/I18nProvider'
-import { SeverityBadge } from './DataAccessView'
 import { MiddlewareStepRow } from './MiddlewareView'
 
 type DataTab = 'entries' | 'sources' | 'targets' | 'rules'
