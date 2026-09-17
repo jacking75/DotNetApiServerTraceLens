@@ -120,9 +120,32 @@ export function normalizeGraph(graph: GraphDocument): GraphDocument {
   const base: GraphDocument = {
     ...graph,
     startupFlow: graph.startupFlow ?? null,
+    middleware: graph.middleware
+      ? {
+          ...graph.middleware,
+          steps: (graph.middleware.steps ?? []).map((item) => ({ ...item, kind: item.kind ?? 'Middleware' })),
+        }
+      : graph.middleware,
     manifest: graph.manifest ?? null,
     diagnostics: graph.diagnostics ?? null,
-    callSites: graph.callSites ?? [],
+    callSites: (graph.callSites ?? []).map((item) => ({ ...item, viaLambda: item.viaLambda ?? false })),
+    edges: (graph.edges ?? []).map((item) => ({ ...item, confidence: item.confidence ?? 'Certain' })),
+    dataAccess: graph.dataAccess
+      ? {
+          ...graph.dataAccess,
+          accesses: (graph.dataAccess.accesses ?? []).map((item) => ({
+            ...item,
+            confidence: item.confidence ?? 'Certain',
+            note: item.note ?? '',
+            transactionWrapper: item.transactionWrapper ?? '',
+          })),
+          transactions: (graph.dataAccess.transactions ?? []).map((item) => ({
+            ...item,
+            kind: item.kind ?? 'Explicit',
+            wrapperName: item.wrapperName ?? '',
+          })),
+        }
+      : graph.dataAccess,
     snapshotId: graph.snapshotId ?? '',
     inputFingerprint: graph.inputFingerprint ?? '',
     analyzerVersion: graph.analyzerVersion ?? '',

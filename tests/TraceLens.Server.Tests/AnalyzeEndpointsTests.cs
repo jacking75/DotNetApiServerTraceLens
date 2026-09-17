@@ -85,6 +85,74 @@ public sealed class AnalyzeEndpointsTests
     }
 
     [Fact]
+    public async Task LoadSavedAsync_FindsGraphInAncestorDirectory_ForProjectTarget()
+    {
+        // 분석기는 참조 프로젝트까지 담는 공통 상위 폴더에 결과를 쓴다. 복원은 대상 폴더만 보면 안 된다.
+        var rootDirectory = Path.Combine(Path.GetTempPath(), "tracelens-load-ancestor-" + Guid.NewGuid().ToString("N"));
+        var projectDirectory = Path.Combine(rootDirectory, "GameServer");
+        var projectPath = Path.Combine(projectDirectory, "GameServer.csproj");
+        Directory.CreateDirectory(projectDirectory);
+        Directory.CreateDirectory(Path.Combine(rootDirectory, ".tracelens"));
+        try
+        {
+            var savedAt = DateTimeOffset.Parse("2026-09-17T18:00:00+09:00");
+            var savedGraph = CreateGraph(savedAt) with { SolutionPath = projectPath, RootDirectory = rootDirectory };
+            await File.WriteAllTextAsync(
+                Path.Combine(rootDirectory, ".tracelens", "graph.json"),
+                JsonSerializer.Serialize(savedGraph, GraphDocument.JsonOptions));
+            var graphStore = new GraphStore();
+
+            var result = await AnalyzeEndpoints.LoadSavedAsync(
+                new AnalyzeRequest(projectPath),
+                graphStore,
+                CancellationToken.None);
+
+            var valueResult = Assert.IsAssignableFrom<IValueHttpResult>(result);
+            var response = Assert.IsType<AnalyzeResponse>(valueResult.Value);
+            Assert.Equal(savedAt, response.AnalyzedAt);
+            Assert.Equal(projectPath, graphStore.Current?.SolutionPath);
+        }
+        finally
+        {
+            Directory.Delete(rootDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LoadSavedAsync_IgnoresAncestorGraphOfAnotherTarget()
+    {
+        var rootDirectory = Path.Combine(Path.GetTempPath(), "tracelens-load-other-" + Guid.NewGuid().ToString("N"));
+        var projectDirectory = Path.Combine(rootDirectory, "GameServer");
+        var projectPath = Path.Combine(projectDirectory, "GameServer.csproj");
+        Directory.CreateDirectory(projectDirectory);
+        Directory.CreateDirectory(Path.Combine(rootDirectory, ".tracelens"));
+        try
+        {
+            var savedGraph = CreateGraph(DateTimeOffset.UtcNow) with
+            {
+                SolutionPath = Path.Combine(rootDirectory, "AccountServer", "AccountServer.csproj")
+            };
+            await File.WriteAllTextAsync(
+                Path.Combine(rootDirectory, ".tracelens", "graph.json"),
+                JsonSerializer.Serialize(savedGraph, GraphDocument.JsonOptions));
+            var graphStore = new GraphStore();
+
+            var result = await AnalyzeEndpoints.LoadSavedAsync(
+                new AnalyzeRequest(projectPath),
+                graphStore,
+                CancellationToken.None);
+
+            var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+            Assert.Equal(StatusCodes.Status404NotFound, statusResult.StatusCode);
+            Assert.Null(graphStore.Current);
+        }
+        finally
+        {
+            Directory.Delete(rootDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ImportAsync_ReadsPostedGraphJson()
     {
         var analyzedAt = DateTimeOffset.Parse("2026-08-11T18:00:00+09:00");

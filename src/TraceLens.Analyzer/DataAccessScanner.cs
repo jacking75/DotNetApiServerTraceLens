@@ -60,6 +60,21 @@ public sealed record DataCallSite(
     string? AssignedVariable)
 {
     public bool IsWrite => Operation is AccessOperation.Write or AccessOperation.Delete;
+
+    /// <summary>이 자리를 감싼 트랜잭션 래퍼 메서드의 표시 이름. 래퍼 람다 안이 아니면 null이다.</summary>
+    public string? TransactionWrapper { get; init; }
+
+    /// <summary>이 자리를 얼마나 확실하게 짚었는지.</summary>
+    public FindingConfidence Confidence { get; init; } = FindingConfidence.Certain;
+
+    /// <summary>추정일 때 그 사유 한 줄.</summary>
+    public string Note { get; init; } = string.Empty;
+
+    /// <summary>
+    /// SQL 리터럴이 아니라 빌더 체인에서 합성한 <c>Statement</c>인지.
+    /// SQL 본문을 읽는 규칙(RW·PERF·IDX)은 합성 문장을 검사하지 않는다.
+    /// </summary>
+    public bool IsSynthesized { get; init; }
 }
 
 /// <summary>실패 처리 경로 하나(<c>catch</c> 블록 또는 조기 <c>return</c>이 있는 분기).</summary>
@@ -86,7 +101,15 @@ public sealed record MethodDataFacts(
     IReadOnlyList<DataCallSite> Sites,
     IReadOnlyList<FailurePath> FailurePaths,
     bool HasTransaction,
-    bool HasCommit);
+    bool HasCommit)
+{
+    /// <summary>이 메서드가 부른 트랜잭션 래퍼 호출들. 경계는 래퍼 안에 있어 Begin/Commit이 보이지 않는다.</summary>
+    public IReadOnlyList<WrapperTransaction> Wrappers { get; init; } = [];
+}
+
+/// <param name="Name">래퍼 메서드의 표시 이름.</param>
+/// <param name="AccessIds">이 경계 안에서 일어난 접근 id(수집 뒤 채운다).</param>
+public sealed record WrapperTransaction(int Position, int Line, string Name);
 
 /// <param name="MethodDataSources">메서드 노드 id → 그 메서드의 쿼리가 실행되는 데이터소스 이름.</param>
 public sealed record DataAccessScanResult(
@@ -127,6 +150,15 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         var accesses = new List<DataAccess>();
         var transactions = new List<TransactionScopeInfo>();
         var dataSourceKinds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var seenAccesses = new HashSet<(string File, int Line, string Target, AccessOperation Operation)>();
+        var autoWrappers = await DetectTransactionWrappersAsync(loaded, cancellationToken);
+        if (autoWrappers.Count > 0)
+        {
+            logger.LogInformation(
+                "트랜잭션 래퍼 {Count}개를 본문에서 찾았다: {Names}",
+                autoWrappers.Count,
+                string.Join(", ", autoWrappers.Take(5)));
+        }
 
         foreach (var project in loaded.Solution.Projects.Where(project => loaded.AnalyzableProjectIds.Contains(project.Id)))
         {
@@ -158,14 +190,15 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
                         continue;
                     }
 
-                    var facts = BuildFacts(member, symbol, model, config, relativePath, solutionDirectory, cancellationToken);
+                    var facts = BuildFacts(
+                        member, symbol, model, config, relativePath, solutionDirectory, autoWrappers, cancellationToken);
                     if (facts is null)
                     {
                         continue;
                     }
 
                     methods.Add(facts);
-                    CollectAccesses(facts, accesses, dataSourceKinds, config);
+                    CollectAccesses(facts, accesses, dataSourceKinds, seenAccesses, config);
                     CollectTransaction(facts, transactions);
                 }
             }
@@ -248,6 +281,7 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         TraceLensConfig config,
         string relativePath,
         string solutionDirectory,
+        IReadOnlySet<string> autoWrappers,
         CancellationToken cancellationToken)
     {
         SyntaxNode? body = member switch
@@ -261,13 +295,19 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             return null;
         }
 
+        var wrapperCalls = CollectWrapperCalls(body, model, config, autoWrappers, cancellationToken);
         var sites = new List<DataCallSite>();
         var transactionDepth = 0;
         foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>()
                      .OrderBy(node => node.SpanStart))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var site = BuildSite(invocation, model, config, solutionDirectory, transactionDepth > 0, cancellationToken);
+            var enclosingWrapper = FindEnclosingWrapper(invocation, wrapperCalls);
+            var site = BuildSite(
+                invocation, model, config, solutionDirectory,
+                transactionDepth > 0 || enclosingWrapper is not null,
+                enclosingWrapper?.Name,
+                cancellationToken);
             if (site is null)
             {
                 continue;
@@ -311,7 +351,10 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             sites,
             CollectFailurePaths(body, sites),
             sites.Any(site => site.Kind == SiteKind.TransactionBegin),
-            sites.Any(site => site.Kind == SiteKind.TransactionEnd));
+            sites.Any(site => site.Kind == SiteKind.TransactionEnd))
+        {
+            Wrappers = wrapperCalls.Select(item => item.Call).ToArray()
+        };
     }
 
     private DataCallSite? BuildSite(
@@ -320,6 +363,7 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         TraceLensConfig config,
         string solutionDirectory,
         bool inTransaction,
+        string? transactionWrapper,
         CancellationToken cancellationToken)
     {
         var symbolInfo = model.GetSymbolInfo(invocation, cancellationToken);
@@ -352,9 +396,12 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         var (statement, dynamicSql) = ReadStringArgument(arguments, model, cancellationToken);
         var isSql = statement is not null && SqlVerb.IsMatch(statement) && SqlClause.IsMatch(statement);
         var matchesQueryApi = PatternMatch.MatchesAny(calleeSymbol, options.QueryApis);
-        var isCacheApi = IsCacheApi(calleeSymbol, containingType, options);
-        var isConnectionOpen = IsConnectionOpen(calleeSymbol, containingType, method, options);
         var isSolutionMethod = InvocationResolver.IsSolutionMethod(method, solutionDirectory, config);
+        var isCacheApi = IsCacheApi(calleeSymbol, containingType, options, isSolutionMethod);
+        var isConnectionOpen = IsConnectionOpen(calleeSymbol, containingType, method, options);
+        var builder = isSql || matchesQueryApi
+            ? null
+            : ResolveQueryBuilderSite(invocation, method, model, options, cancellationToken);
 
         var kind = SiteKind.Plain;
         var operation = AccessOperation.Other;
@@ -365,6 +412,10 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         string? assignedVariable = null;
         var shardKeyIsLiteral = false;
         var hasExpiry = false;
+        var isSynthesized = false;
+        var confidence = FindingConfidence.Certain;
+        var note = string.Empty;
+        var inTransactionByArgument = false;
 
         if (name.StartsWith("BeginTransaction", StringComparison.Ordinal))
         {
@@ -388,9 +439,30 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             kind = SiteKind.Cache;
             operation = ClassifyCacheOperation(name);
             dataSource = ResolveCacheName(containingType, options);
-            target = ReadKeyArgument(arguments, model, cancellationToken);
+            var cacheTarget = ReadCacheTarget(invocation, arguments, model, cancellationToken);
+            target = cacheTarget.Text;
             display = $"{ClassifyCacheCommand(name)} {target}".Trim();
             hasExpiry = HasExpiryArgument(arguments, model, cancellationToken);
+            if (!cacheTarget.Certain)
+            {
+                confidence = FindingConfidence.Estimated;
+                note = cacheTarget.Note;
+            }
+        }
+        else if (builder is not null)
+        {
+            kind = SiteKind.Db;
+            operation = builder.Operation;
+            target = builder.Table;
+            dataSource = string.Empty;
+            display = builder.Statement;
+            isSynthesized = true;
+            inTransactionByArgument = HasTransactionArgument(arguments, model, cancellationToken);
+            if (!builder.TableCertain)
+            {
+                confidence = FindingConfidence.Estimated;
+                note = $"\ubc14\uc778\ub354 \uccb4\uc778\uc758 \ud14c\uc774\ube14 \uc778\uc790\uac00 \uc0c1\uc218\uac00 \uc544\ub2c8\ub2e4: {builder.TableExpression}";
+            }
         }
         else if (isSql || matchesQueryApi)
         {
@@ -412,6 +484,8 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         {
             return null;
         }
+
+        inTransaction = inTransaction || inTransactionByArgument;
 
         return new DataCallSite(
             invocation.SpanStart,
@@ -435,7 +509,177 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             IsInUsing(invocation),
             shardKey,
             shardKeyIsLiteral,
-            assignedVariable);
+            assignedVariable)
+        {
+            TransactionWrapper = transactionWrapper,
+            IsSynthesized = isSynthesized,
+            Confidence = confidence,
+            Note = note
+        };
+    }
+
+    /* ------------------------------------------------------- 트랜잭션 래퍼 */
+
+    /// <param name="Call">래퍼 호출 자체(위치·줄·이름).</param>
+    /// <param name="LambdaSpans">그 호출에 인자로 넘어간 람다들의 구문 범위. 이 안의 호출은 트랜잭션 안으로 본다.</param>
+    private sealed record WrapperCall(WrapperTransaction Call, IReadOnlyList<Microsoft.CodeAnalysis.Text.TextSpan> LambdaSpans)
+    {
+        public string Name => Call.Name;
+    }
+
+    /// <summary>
+    /// 메서드 본문에서 트랜잭션 래퍼 호출을 찾고, 그 호출에 넘어간 람다의 범위를 함께 기록한다.
+    /// 설정 패턴(<c>db.transactionWrappers</c>)이나 자동으로 찾은 래퍼 이름에 맞아야 한다.
+    /// </summary>
+    private static IReadOnlyList<WrapperCall> CollectWrapperCalls(
+        SyntaxNode body,
+        SemanticModel model,
+        TraceLensConfig config,
+        IReadOnlySet<string> autoWrappers,
+        CancellationToken cancellationToken)
+    {
+        var result = new List<WrapperCall>();
+        foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var lambdas = invocation.ArgumentList.Arguments
+                .Select(argument => argument.Expression)
+                .OfType<AnonymousFunctionExpressionSyntax>()
+                .Select(lambda => lambda.Span)
+                .ToArray();
+            if (lambdas.Length == 0)
+            {
+                continue;
+            }
+
+            var symbolInfo = model.GetSymbolInfo(invocation, cancellationToken);
+            if ((symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault()) is not IMethodSymbol called)
+            {
+                continue;
+            }
+
+            var method = called.ReducedFrom ?? called;
+            var fullName = $"{method.ContainingType?.ToDisplayString() ?? string.Empty}.{method.Name}";
+            if (!PatternMatch.MatchesAny(fullName, config.Db.TransactionWrappers) && !autoWrappers.Contains(fullName))
+            {
+                continue;
+            }
+
+            result.Add(new WrapperCall(
+                new WrapperTransaction(
+                    invocation.SpanStart,
+                    invocation.GetLocation().GetLineSpan().StartLinePosition.Line + 1,
+                    SymbolNames.GetDisplayName(method)),
+                lambdas));
+        }
+
+        return result;
+    }
+
+    /// <summary>이 호출이 트랜잭션 래퍼에 넘긴 람다 안에 있으면 그 래퍼를 돌려준다. 가장 안쪽 래퍼가 이긴다.</summary>
+    private static WrapperCall? FindEnclosingWrapper(SyntaxNode node, IReadOnlyList<WrapperCall> wrappers)
+    {
+        WrapperCall? best = null;
+        foreach (var wrapper in wrappers)
+        {
+            foreach (var span in wrapper.LambdaSpans)
+            {
+                if (span.Contains(node.SpanStart) && (best is null || span.Length < best.LambdaSpans.Max(item => item.Length)))
+                {
+                    best = wrapper;
+                }
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// 솔루션 안에서 "본문에 <c>BeginTransaction</c>이 있고 대리자 파라미터를 직접 부르는" 메서드를 래퍼로 본다.
+    /// 설정 패턴에 없어도 <c>GameDbBase.TransactionAsync(Func&lt;…&gt;)</c> 같은 사내 관용 형태를 잡기 위한 것이다.
+    /// </summary>
+    private static async Task<IReadOnlySet<string>> DetectTransactionWrappersAsync(
+        LoadedSolution loaded, CancellationToken cancellationToken)
+    {
+        var found = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var project in loaded.Solution.Projects.Where(project => loaded.AnalyzableProjectIds.Contains(project.Id)))
+        {
+            foreach (var document in project.Documents.Where(document => document.SourceCodeKind == SourceCodeKind.Regular))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var text = await document.GetTextAsync(cancellationToken);
+                // 전체 문서를 다시 파싱하지 않도록 텍스트로 먼저 거른다. 래퍼는 드물다.
+                if (!text.ToString().Contains("BeginTransaction", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var root = await document.GetSyntaxRootAsync(cancellationToken);
+                var model = await document.GetSemanticModelAsync(cancellationToken);
+                if (root is null || model is null)
+                {
+                    continue;
+                }
+
+                foreach (var methodSyntax in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
+                {
+                    if (model.GetDeclaredSymbol(methodSyntax, cancellationToken) is not IMethodSymbol symbol)
+                    {
+                        continue;
+                    }
+
+                    if (!symbol.Parameters.Any(parameter => parameter.Type.TypeKind == TypeKind.Delegate))
+                    {
+                        continue;
+                    }
+
+                    SyntaxNode? methodBody = (SyntaxNode?)methodSyntax.Body ?? methodSyntax.ExpressionBody;
+                    if (methodBody is null || !HasTransactionBegin(methodBody) || !InvokesDelegateParameter(methodBody, symbol))
+                    {
+                        continue;
+                    }
+
+                    found.Add($"{symbol.ContainingType?.ToDisplayString() ?? string.Empty}.{symbol.Name}");
+                }
+            }
+        }
+
+        return found;
+    }
+
+    private static bool HasTransactionBegin(SyntaxNode body) => body.DescendantNodes()
+        .OfType<InvocationExpressionSyntax>()
+        .Any(invocation => invocation.Expression is MemberAccessExpressionSyntax member &&
+                           member.Name.Identifier.Text.StartsWith("BeginTransaction", StringComparison.Ordinal));
+
+    /// <summary><c>action(…)</c> 또는 <c>action.Invoke(…)</c>처럼 대리자 파라미터를 본문에서 부르는지.</summary>
+    private static bool InvokesDelegateParameter(SyntaxNode body, IMethodSymbol symbol)
+    {
+        var delegateParameters = symbol.Parameters
+            .Where(parameter => parameter.Type.TypeKind == TypeKind.Delegate)
+            .Select(parameter => parameter.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        if (delegateParameters.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            var name = invocation.Expression switch
+            {
+                IdentifierNameSyntax identifier => identifier.Identifier.Text,
+                MemberAccessExpressionSyntax { Name.Identifier.Text: "Invoke" } member =>
+                    (member.Expression as IdentifierNameSyntax)?.Identifier.Text,
+                _ => null
+            };
+            if (name is not null && delegateParameters.Contains(name))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>인터페이스 호출은 DI 등록으로 구현체까지 연결해야 호출 그래프의 노드 id와 맞는다.</summary>
@@ -512,6 +756,7 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         MethodDataFacts facts,
         List<DataAccess> accesses,
         Dictionary<string, string> dataSourceKinds,
+        HashSet<(string File, int Line, string Target, AccessOperation Operation)> seen,
         TraceLensConfig config)
     {
         var currentDataSource = facts.Sites.FirstOrDefault(site => site.Kind == SiteKind.ConnectionOpen)?.DataSource;
@@ -532,12 +777,19 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             var dataSource = site.Kind == SiteKind.Cache
                 ? site.DataSource
                 : site.DataSource.Length > 0 ? site.DataSource : currentDataSource ?? "Db";
+            var target = site.Target.Length > 0 ? site.Target : site.Name;
+            // 같은 (파일, 줄, 대상, 연산)은 한 번만 남긴다. 같은 자리를 두 경로로 잡으면 목록에 두 번 나온다.
+            if (!seen.Add((facts.File, site.Line, target, site.Operation)))
+            {
+                continue;
+            }
+
             dataSourceKinds.TryAdd(dataSource, site.Kind == SiteKind.Cache ? "cache" : "single");
             accesses.Add(new DataAccess(
                 $"{facts.NodeId}#{site.Line}#{accesses.Count}",
                 site.Kind == SiteKind.Cache ? StorageKind.Cache : StorageKind.Database,
                 dataSource,
-                site.Target.Length > 0 ? site.Target : site.Name,
+                target,
                 site.Operation,
                 site.Statement,
                 facts.NodeId,
@@ -546,12 +798,45 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
                 facts.File,
                 site.Line,
                 site.InTransaction,
-                site.InLoop));
+                site.InLoop)
+            {
+                Confidence = site.Confidence,
+                Note = site.Note,
+                TransactionWrapper = site.TransactionWrapper ?? string.Empty
+            });
         }
     }
 
     private static void CollectTransaction(MethodDataFacts facts, List<TransactionScopeInfo> transactions)
     {
+        // \ub798\ud37c\uc5d0 \ub118\uae34 \ub78c\ub2e4\ub3c4 \ud558\ub098\uc758 \ud2b8\ub79c\uc7ad\uc158 \uacbd\uacc4\ub2e4. \uacbd\uacc4\ub294 \ub798\ud37c \uc548\uc5d0 \uc788\uc5b4 Begin/Commit\uc774 \uc774 \uba54\uc11c\ub4dc\uc5d0\ub294 \ubcf4\uc774\uc9c0 \uc54a\ub294\ub2e4.
+        foreach (var wrapper in facts.Wrappers)
+        {
+            var scoped = facts.Sites.Where(site => site.TransactionWrapper == wrapper.Name).ToArray();
+            transactions.Add(new TransactionScopeInfo(
+                $"tx:{facts.NodeId}#{wrapper.Line}",
+                facts.NodeId,
+                facts.DisplayName,
+                facts.ClassId,
+                facts.File,
+                wrapper.Line,
+                true,
+                scoped.Where(site => site.Kind == SiteKind.ConnectionOpen)
+                    .Select(site => site.DataSource)
+                    .Where(name => name.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                [],
+                scoped.Where(site => site.Kind == SiteKind.External)
+                    .Select(site => $"{site.Statement} ({site.Line}\uc904)").ToArray(),
+                scoped.Where(site => site.Kind == SiteKind.Cache)
+                    .Select(site => $"{site.Statement} ({site.Line}\uc904)").ToArray())
+            {
+                Kind = TransactionScopeKind.Wrapper,
+                WrapperName = wrapper.Name
+            });
+        }
+
         if (!facts.HasTransaction)
         {
             return;
@@ -584,9 +869,29 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
 
     /* ------------------------------------------------------------------ 판정 도우미 */
 
-    private static bool IsCacheApi(string calleeSymbol, INamedTypeSymbol? containingType, DataAccessOptions options)
+    /// <summary>
+    /// 캐시 클라이언트 호출인지. 기본 패턴 <c>*Cache.*</c>는 솔루션 안 래퍼 타입(<c>…RankCache</c>)에도 걸리므로,
+    /// <b>솔루션 안에 선언된 메서드는 캐시 API로 보지 않는다</b>. 래퍼 본문에서 실제 클라이언트 API를 만나는 곳에서만 캐시 자리를 만든다.
+    /// 호출자는 접근 요약 전파로 래퍼의 캐시 접근을 물려받으므로 쓰기 경로에는 계속 나타난다.
+    /// 내부 래퍼를 굳이 클라이언트로 보고 싶으면 <c>db.cacheWrappers</c>에 적는다.
+    /// </summary>
+    private static bool IsCacheApi(
+        string calleeSymbol,
+        INamedTypeSymbol? containingType,
+        DataAccessOptions options,
+        bool isSolutionMethod)
     {
         if (containingType is null)
+        {
+            return false;
+        }
+
+        if (PatternMatch.MatchesAny(calleeSymbol, options.CacheWrappers))
+        {
+            return true;
+        }
+
+        if (isSolutionMethod)
         {
             return false;
         }
@@ -815,18 +1120,322 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         return text ?? arguments[0].Expression.ToString();
     }
 
+    /// <summary>
+    /// 만료 인자가 있는지. <c>TimeSpan?</c>(Nullable)과 명명 인자(<c>expiry:</c>),
+    /// <c>CommandFlags</c> 뒤에 오는 만료 인자까지 본다. 인자 순서를 가정하지 않고 전부 훑는다.
+    /// </summary>
     private static bool HasExpiryArgument(
         SeparatedSyntaxList<ArgumentSyntax> arguments, SemanticModel model, CancellationToken cancellationToken)
     {
         foreach (var argument in arguments)
         {
-            if (argument.NameColon?.Name.Identifier.Text.Contains("expir", StringComparison.OrdinalIgnoreCase) == true)
+            var name = argument.NameColon?.Name.Identifier.Text;
+            if (name is not null &&
+                (name.Contains("expir", StringComparison.OrdinalIgnoreCase) ||
+                 name.Contains("ttl", StringComparison.OrdinalIgnoreCase) ||
+                 name.Contains("absolute", StringComparison.OrdinalIgnoreCase) ||
+                 name.Contains("sliding", StringComparison.OrdinalIgnoreCase)))
             {
                 return true;
             }
 
+            if (IsExpiryType(model.GetTypeInfo(argument.Expression, cancellationToken).Type))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary><c>TimeSpan</c>·<c>DateTimeOffset</c> 등과 그 Nullable 형태를 만료 값으로 본다.</summary>
+    private static bool IsExpiryType(ITypeSymbol? type)
+    {
+        if (type is null)
+        {
+            return false;
+        }
+
+        if (type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullable &&
+            nullable.TypeArguments.Length == 1)
+        {
+            type = nullable.TypeArguments[0];
+        }
+
+        return type.Name is "TimeSpan" or "DateTimeOffset" or "DateTime" or "DistributedCacheEntryOptions"
+            or "MemoryCacheEntryOptions";
+    }
+
+    /// <param name="Text">화면에 보여줄 대상(캐시 키 또는 "필드 x(추정)").</param>
+    /// <param name="Certain">키를 이 자리에서 확정했는지.</param>
+    internal sealed record CacheTarget(string Text, bool Certain, string Note);
+
+    /// <summary>
+    /// 캐시 대상을 읽는다. 상수·보간 문자열이면 그대로 키다.
+    /// CloudStructures처럼 키가 클라이언트 생성자에 있고 호출에는 값만 넘기는 API는 변수 이름을 키로 쓰지 않고,
+    /// 수신 필드 이름을 "필드 x(추정)"로 적는다.
+    /// </summary>
+    private static CacheTarget ReadCacheTarget(
+        InvocationExpressionSyntax invocation,
+        SeparatedSyntaxList<ArgumentSyntax> arguments,
+        SemanticModel model,
+        CancellationToken cancellationToken)
+    {
+        if (arguments.Count > 0)
+        {
+            var first = arguments[0].Expression;
+            var constant = model.GetConstantValue(first, cancellationToken);
+            if (constant.HasValue && constant.Value is string literal && literal.Length > 0)
+            {
+                return new CacheTarget(literal.Trim(), true, string.Empty);
+            }
+
+            if (first is InterpolatedStringExpressionSyntax)
+            {
+                var (text, _) = ReadStringArgument([arguments[0]], model, cancellationToken);
+                if (text is not null)
+                {
+                    return new CacheTarget(text, true, string.Empty);
+                }
+            }
+
+            // 첫 인자가 문자열이면 그 API에서는 그것이 키다. 값을 모르니 변수 이름을 "{name}" 꼴로만 적는다.
+            var firstType = model.GetTypeInfo(first, cancellationToken).Type;
+            if (firstType?.SpecialType == SpecialType.System_String && GetIdentifier(first) is { } keyName)
+            {
+                return new CacheTarget(
+                    "{" + keyName + "}",
+                    false,
+                    "키를 이 자리에서 확정하지 못했다. 호출자가 넘기는 값이다.");
+            }
+        }
+
+        // CloudStructures처럼 키가 클라이언트 생성 시점에 정해지고 호출에는 값만 넘기는 API다.
+        var receiver = invocation.Expression is MemberAccessExpressionSyntax memberAccess
+            ? GetIdentifier(memberAccess.Expression)
+            : null;
+        return receiver is null
+            ? new CacheTarget("?", false, "키를 이 자리에서 확정하지 못했다.")
+            : new CacheTarget(
+                $"필드 {receiver}(추정)",
+                false,
+                $"키가 호출 인자에 없다. 클라이언트 {receiver}를 만들 때 정해진 키로 본다.");
+    }
+
+    /// <summary>terminal 호출의 인자 중 <c>IDbTransaction</c> 파생이 있으면 트랜잭션 안이다.</summary>
+    private static bool HasTransactionArgument(
+        SeparatedSyntaxList<ArgumentSyntax> arguments, SemanticModel model, CancellationToken cancellationToken)
+    {
+        foreach (var argument in arguments)
+        {
             var type = model.GetTypeInfo(argument.Expression, cancellationToken).Type;
-            if (type?.Name is "TimeSpan" or "DateTimeOffset" or "DateTime" or "DistributedCacheEntryOptions")
+            if (IsDbTransaction(type))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsDbTransaction(ITypeSymbol? type)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            if (current.Name is "DbTransaction" or "IDbTransaction")
+            {
+                return true;
+            }
+        }
+
+        return type?.AllInterfaces.Any(item => item.Name == "IDbTransaction") ?? false;
+    }
+
+    /* ------------------------------------------------------- 쿼리 빌더(SqlKata 등) */
+
+    /// <param name="TableExpression">테이블 인자의 원문. 상수가 아닐 때 근거로 남긴다.</param>
+    internal sealed record QueryBuilderSite(
+        string Table,
+        bool TableCertain,
+        string TableExpression,
+        AccessOperation Operation,
+        string Statement);
+
+    /// <summary>
+    /// <c>db.Query("t").Where(…).UpdateAsync(…)</c> 같은 빌더 체인의 <b>실행 지점</b>을 DB 접근으로 인식한다.
+    /// terminal 이름이 설정에 있고 수신식 타입이 빌더의 <c>queryType</c>일 때만 후보로 보고,
+    /// 체인을 거슬러 올라가 <c>root</c> 호출에서 테이블 이름을 읽는다.
+    /// </summary>
+    private static QueryBuilderSite? ResolveQueryBuilderSite(
+        InvocationExpressionSyntax invocation,
+        IMethodSymbol method,
+        SemanticModel model,
+        DataAccessOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (options.QueryBuilders.Count == 0 || invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+        {
+            return null;
+        }
+
+        foreach (var builder in options.QueryBuilders)
+        {
+            if (!builder.Terminals.TryGetValue(method.Name, out var operationName))
+            {
+                continue;
+            }
+
+            var receiverType = model.GetTypeInfo(memberAccess.Expression, cancellationToken).Type;
+            if (!IsOrDerivesFrom(receiverType, builder.QueryType))
+            {
+                continue;
+            }
+
+            var joins = new List<string>();
+            var root = FindBuilderRoot(memberAccess.Expression, model, builder, joins, cancellationToken);
+            var operation = operationName switch
+            {
+                AccessOperationName.Read => AccessOperation.Read,
+                AccessOperationName.Write => AccessOperation.Write,
+                AccessOperationName.Delete => AccessOperation.Delete,
+                _ => AccessOperation.Other
+            };
+            var verb = operation switch
+            {
+                AccessOperation.Read => "SELECT",
+                AccessOperation.Delete => "DELETE",
+                AccessOperation.Write => method.Name.StartsWith("Insert", StringComparison.OrdinalIgnoreCase)
+                    ? "INSERT"
+                    : "UPDATE",
+                _ => "QUERY"
+            };
+
+            string table;
+            var certain = false;
+            var expression = string.Empty;
+            if (root is null)
+            {
+                table = "?";
+                expression = memberAccess.Expression.ToString();
+            }
+            else
+            {
+                var argumentList = root.ArgumentList.Arguments;
+                if (argumentList.Count <= builder.TableArgumentIndex)
+                {
+                    table = "?";
+                    expression = root.ToString();
+                }
+                else
+                {
+                    var argument = argumentList[builder.TableArgumentIndex].Expression;
+                    expression = argument.ToString();
+                    var constant = model.GetConstantValue(argument, cancellationToken);
+                    if (constant.HasValue && constant.Value is string name && name.Length > 0)
+                    {
+                        table = name;
+                        certain = true;
+                    }
+                    else
+                    {
+                        table = "?";
+                    }
+                }
+            }
+
+            var statement = joins.Count == 0
+                ? $"{verb} {table}"
+                : $"{verb} {table} JOIN {string.Join(", ", joins)}";
+            return new QueryBuilderSite(table, certain, expression, operation, statement);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 빌더 체인을 거슬러 올라가 <c>root</c> 호출을 찾는다. 지역 변수에 담긴 체인은 같은 메서드 안 선언자의 초기화식을 한 단계 따라간다.
+    /// 지나치는 join 메서드의 상수 테이블 이름은 읽기 대상으로 모은다.
+    /// </summary>
+    private static InvocationExpressionSyntax? FindBuilderRoot(
+        ExpressionSyntax start,
+        SemanticModel model,
+        QueryBuilderOption builder,
+        List<string> joins,
+        CancellationToken cancellationToken)
+    {
+        var expression = start;
+        var followedVariable = false;
+        for (var step = 0; step < 64 && expression is not null; step++)
+        {
+            switch (expression)
+            {
+                case InvocationExpressionSyntax invocation:
+                {
+                    var symbolInfo = model.GetSymbolInfo(invocation, cancellationToken);
+                    if ((symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault()) is IMethodSymbol called)
+                    {
+                        var reduced = called.ReducedFrom ?? called;
+                        var fullName = $"{reduced.ContainingType?.ToDisplayString() ?? string.Empty}.{reduced.Name}";
+                        if (PatternMatch.Matches(fullName, builder.Root))
+                        {
+                            return invocation;
+                        }
+
+                        if (builder.JoinMethods.Contains(reduced.Name, StringComparer.OrdinalIgnoreCase) &&
+                            invocation.ArgumentList.Arguments.Count > 0)
+                        {
+                            var constant = model.GetConstantValue(
+                                invocation.ArgumentList.Arguments[0].Expression, cancellationToken);
+                            if (constant.HasValue && constant.Value is string joined && joined.Length > 0)
+                            {
+                                joins.Add(joined);
+                            }
+                        }
+                    }
+
+                    expression = (invocation.Expression as MemberAccessExpressionSyntax)?.Expression;
+                    continue;
+                }
+
+                case MemberAccessExpressionSyntax member:
+                    expression = member.Expression;
+                    continue;
+
+                case IdentifierNameSyntax identifier when !followedVariable:
+                {
+                    followedVariable = true;
+                    expression = FindLocalInitializer(identifier, model, cancellationToken);
+                    continue;
+                }
+
+                default:
+                    return null;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>같은 메서드 안에서 이 식별자를 선언한 지역 변수의 초기화식을 돌려준다(한 단계만 따라간다).</summary>
+    private static ExpressionSyntax? FindLocalInitializer(
+        IdentifierNameSyntax identifier, SemanticModel model, CancellationToken cancellationToken)
+    {
+        if (model.GetSymbolInfo(identifier, cancellationToken).Symbol is not ILocalSymbol local)
+        {
+            return null;
+        }
+
+        var reference = local.DeclaringSyntaxReferences.FirstOrDefault();
+        return reference?.GetSyntax(cancellationToken) is VariableDeclaratorSyntax declarator
+            ? declarator.Initializer?.Value
+            : null;
+    }
+
+    private static bool IsOrDerivesFrom(ITypeSymbol? type, string fullName)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            if (string.Equals(current.OriginalDefinition.ToDisplayString(), fullName, StringComparison.Ordinal))
             {
                 return true;
             }

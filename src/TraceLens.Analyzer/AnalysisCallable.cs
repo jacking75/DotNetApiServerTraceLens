@@ -89,39 +89,63 @@ public sealed class AnalysisCallable
     };
 }
 
+/// <summary>이미 별도 callable로 등록된 람다(Minimal API 핸들러 등)를 가리키는 키.</summary>
+public readonly record struct LambdaKey(string File, int SpanStart)
+{
+    public static LambdaKey For(SyntaxNode node) => new(node.SyntaxTree.FilePath ?? string.Empty, node.SpanStart);
+}
+
+/// <param name="Lambda">이 노드를 감싼 가장 바깥 람다. 람다 밖이면 null이다.</param>
+internal readonly record struct BodyNode(SyntaxNode Node, AnonymousFunctionExpressionSyntax? Lambda);
+
 /// <summary>
-/// callable의 본문을 훑을 때 중첩된 callable(람다·로컬 함수) 안으로 들어가지 않도록 경계를 지키는 순회다.
-/// 부모 메서드의 <c>DescendantNodes()</c>를 그대로 쓰면, 실제로 실행되지 않은 중첩 본문의 호출까지
-/// 부모의 직접 호출로 잡히기 때문이다.
+/// callable의 본문을 훑는 순회다. 로컬 함수는 자기 노드가 따로 있으므로 경계에서 멈춘다.
+/// 람다는 <b>순회하되</b> "어떤 람다 안에 있는지"를 함께 넘긴다. 람다 본문의 호출을 아예 버리면
+/// 트랜잭션 래퍼(<c>TransactionAsync(async (db, tx) =&gt; …)</c>)에 넘긴 호출이 그래프에도 경계 목록에도 남지 않아
+/// 호출자가 없는 것처럼 보이기 때문이다. 대신 확실도를 낮추고 근거에 "람다 본문"을 남긴다.
+/// 이미 별도 callable로 등록된 람다(Minimal API 핸들러)는 중복 귀속을 막으려고 건너뛴다.
 /// </summary>
 internal static class CallableBodies
 {
-    public static IEnumerable<SyntaxNode> EnumerateOwnNodes(SyntaxNode declaration)
+    public static IEnumerable<BodyNode> EnumerateOwnNodes(
+        SyntaxNode declaration,
+        IReadOnlySet<LambdaKey>? excludedLambdas = null)
     {
-        var stack = new Stack<SyntaxNode>();
-        PushChildren(declaration);
+        var stack = new Stack<BodyNode>();
+        PushChildren(declaration, null);
         while (stack.Count > 0)
         {
-            var node = stack.Pop();
-            if (IsBoundary(node))
+            var (node, lambda) = stack.Pop();
+            if (node is LocalFunctionStatementSyntax)
             {
                 continue;
             }
 
-            yield return node;
-            PushChildren(node);
+            if (node is AnonymousFunctionExpressionSyntax anonymous)
+            {
+                if (excludedLambdas is not null && excludedLambdas.Contains(LambdaKey.For(anonymous)))
+                {
+                    continue;
+                }
+
+                // 람다 식 자체는 호출이 아니다. 본문만 "이 람다 경유"로 표시해 순회한다.
+                PushChildren(anonymous, lambda ?? anonymous);
+                continue;
+            }
+
+            yield return new BodyNode(node, lambda);
+            PushChildren(node, lambda);
         }
 
-        void PushChildren(SyntaxNode parent)
+        void PushChildren(SyntaxNode parent, AnonymousFunctionExpressionSyntax? lambda)
         {
             foreach (var child in parent.ChildNodes())
             {
-                stack.Push(child);
+                stack.Push(new BodyNode(child, lambda));
             }
         }
     }
 
-    /// <summary>여기서부터는 다른 callable의 본문이다.</summary>
-    public static bool IsBoundary(SyntaxNode node) =>
-        node is AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax;
+    /// <summary>여기서부터는 다른 callable의 본문이다(자기 노드가 따로 생긴다).</summary>
+    public static bool IsBoundary(SyntaxNode node) => node is LocalFunctionStatementSyntax;
 }

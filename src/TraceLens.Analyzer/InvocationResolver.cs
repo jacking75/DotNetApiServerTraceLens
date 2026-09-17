@@ -20,12 +20,16 @@ public sealed record ResolvedCall(
 {
     public bool IsEdge => Target is not null &&
                           Resolution is CallResolution.Direct or CallResolution.DiRegistration or CallResolution.SingleImplementation;
+
+    /// <summary>람다 본문 안에서 나온 호출인지. 실행 여부를 이 자리에서 증명할 수 없어 확실도를 낮춘다.</summary>
+    public bool ViaLambda { get; init; }
 }
 
 /// <summary>
 /// 메서드 본문 안의 호출식을 심볼로 해석하고, 인터페이스 호출은 DI 등록으로 구현체까지 연결한다.
 /// <c>new X()</c>도 생성자(.ctor) 호출이므로 <see cref="TraceLensConfig.IncludeObjectCreation"/>이 켜져 있으면 함께 모은다.
-/// 중첩된 람다·로컬 함수 본문은 <see cref="CallableBodies"/>가 경계에서 멈추므로 부모의 직접 호출로 잡히지 않는다.
+/// 로컬 함수 본문은 <see cref="CallableBodies"/>가 경계에서 멈추므로 부모의 호출로 잡히지 않는다.
+/// 람다 본문은 순회하되 <see cref="ResolvedCall.ViaLambda"/>로 표시하고 확실도를 <see cref="CallConfidence.Estimated"/>로 낮춘다.
 /// </summary>
 public sealed class InvocationResolver(DiResolver diResolver, ILogger<InvocationResolver> logger)
 {
@@ -34,10 +38,12 @@ public sealed class InvocationResolver(DiResolver diResolver, ILogger<Invocation
         SyntaxNode methodSyntax,
         string solutionDirectory,
         TraceLensConfig config,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<LambdaKey>? excludedLambdas = null)
     {
         var result = new List<ResolvedCall>();
-        foreach (var syntax in CallableBodies.EnumerateOwnNodes(methodSyntax))
+        var receiverNotes = new Dictionary<int, string>();
+        foreach (var (syntax, lambda) in CallableBodies.EnumerateOwnNodes(methodSyntax, excludedLambdas))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var isCall = syntax switch
@@ -51,10 +57,50 @@ public sealed class InvocationResolver(DiResolver diResolver, ILogger<Invocation
                 continue;
             }
 
-            result.Add(Resolve(model, syntax, solutionDirectory, config, cancellationToken));
+            var call = Resolve(model, syntax, solutionDirectory, config, cancellationToken);
+            if (lambda is null)
+            {
+                result.Add(call);
+                continue;
+            }
+
+            if (!receiverNotes.TryGetValue(lambda.SpanStart, out var note))
+            {
+                note = DescribeLambdaReceiver(model, lambda, cancellationToken);
+                receiverNotes[lambda.SpanStart] = note;
+            }
+
+            result.Add(call with
+            {
+                Confidence = CallConfidence.Estimated,
+                Note = call.Note.Length == 0 ? note : note + " " + call.Note,
+                ViaLambda = true
+            });
         }
 
         return result;
+    }
+
+    /// <summary>람다를 받는 쪽을 사람이 읽을 한 줄로 적는다. 호출 인자로 넘어간 람다면 그 메서드, 변수에 담은 람다면 변수 이름이다.</summary>
+    private static string DescribeLambdaReceiver(
+        SemanticModel model, AnonymousFunctionExpressionSyntax lambda, CancellationToken cancellationToken)
+    {
+        if (lambda.Parent is ArgumentSyntax { Parent: ArgumentListSyntax { Parent: { } owner } } &&
+            owner is InvocationExpressionSyntax or BaseObjectCreationExpressionSyntax)
+        {
+            var symbolInfo = model.GetSymbolInfo(owner, cancellationToken);
+            var receiver = (symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault()) as IMethodSymbol;
+            var display = receiver is null
+                ? owner is InvocationExpressionSyntax invocation ? invocation.Expression.ToString() : owner.ToString()
+                : SymbolNames.GetDisplayName(receiver.ReducedFrom ?? receiver);
+            return $"람다 본문 안의 호출. 실제 실행 여부는 이 람다를 받는 {display}가 결정한다.";
+        }
+
+        var variable = lambda.FirstAncestorOrSelf<VariableDeclaratorSyntax>()?.Identifier.Text
+            ?? (lambda.Parent as AssignmentExpressionSyntax)?.Left.ToString();
+        return variable is null
+            ? "람다 본문 안의 호출. 이 람다가 언제 실행되는지는 이 자리에서 확정할 수 없다."
+            : $"람다 본문 안의 호출. 실제 실행 여부는 대리자 변수 {variable}를 부르는 쪽이 결정한다.";
     }
 
     private ResolvedCall Resolve(

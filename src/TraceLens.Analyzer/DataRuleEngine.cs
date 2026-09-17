@@ -80,7 +80,8 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
                         break;
 
                     case SiteKind.Db:
-                        if (site.DynamicSql)
+                        // SEC-001은 SQL 본문을 읽는 규칙이다. 빌더 체인에서 합성한 문장은 원문이 아니므로 검사하지 않는다.
+                        if (site.DynamicSql && !site.IsSynthesized)
                         {
                             Add(Create("SEC-001", FindingConfidence.Certain, facts, site,
                                 "문자열 보간·결합으로 SQL을 만든다",
@@ -128,6 +129,8 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
                         break;
 
                     case SiteKind.Cache:
+                        // SiteKind.Cache는 만료 인자를 이 자리에서 판단할 수 있는 클라이언트 호출뿐이다.
+                        // 솔루션 안 래퍼를 경유한 접근은 여기까지 오지 않는다(IsCacheApi 참고).
                         if (site.Operation == AccessOperation.Write && !site.HasExpiryArgument &&
                             site.Statement.StartsWith("SET", StringComparison.OrdinalIgnoreCase))
                         {
@@ -541,7 +544,7 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
         new("CACHE-002", "캐시", "캐시를 먼저 갱신하고 DB 실패를 되돌리지 않음", FindingSeverity.Critical, FindingConfidence.Certain,
             "캐시가 먼저 바뀌고 뒤따르는 DB 쓰기가 실패하면 둘이 어긋난 채로 남는다.", false, true),
         new("CACHE-003", "캐시", "TTL 없이 SET", FindingSeverity.Warning, FindingConfidence.Estimated,
-            "만료가 없는 키가 쌓인다. 락이면 영구 잠김이 된다.", false, true),
+            "만료가 없는 키가 쌓인다. 락이면 영구 잠김이 된다. 키·만료를 이 자리에서 확정할 수 없는 호출(솔루션 안 캐시 래퍼 경유)은 검사하지 않는다.", false, true),
         new("CACHE-004", "캐시", "KEYS · FLUSH 등 전체 순회 명령", FindingSeverity.Critical, FindingConfidence.Certain,
             "운영 Redis를 블로킹한다.", false, true),
         new("CACHE-005", "캐시", "반복문 안에서 캐시 읽기", FindingSeverity.Warning, FindingConfidence.Certain,
@@ -569,7 +572,7 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
             "스레드풀을 막는다. 부하가 걸리면 커넥션 고갈로 이어진다.", false, true),
 
         new("SEC-001", "스키마·보안", "문자열 결합으로 만든 SQL", FindingSeverity.Critical, FindingConfidence.Certain,
-            "파라미터가 아닌 문자열 결합·보간으로 SQL을 만든다.", false, true),
+            "파라미터가 아닌 문자열 결합·보간으로 SQL을 만든다. 빌더 체인에서 합성한 문장은 원문 SQL이 아니라 검사하지 않는다.", false, true),
         new("IDX-001", "스키마·보안", "인덱스 없는 컬럼으로 조회", FindingSeverity.Info, FindingConfidence.Estimated,
             "schema.sql을 함께 읽을 때만 검사할 수 있다.", false, false),
         new("MAP-001", "스키마·보안", "프로시저 파라미터 불일치", FindingSeverity.Info, FindingConfidence.Estimated,

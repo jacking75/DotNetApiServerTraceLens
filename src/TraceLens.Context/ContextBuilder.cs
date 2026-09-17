@@ -112,7 +112,10 @@ public sealed class ContextBuilder(GraphFreshnessEvaluator freshnessEvaluator)
                     boundary.Line,
                     boundary.Resolution.ToString(),
                     boundary.Confidence.ToString(),
-                    string.IsNullOrEmpty(boundary.Note) ? boundary.DeclaredTarget : $"{boundary.DeclaredTarget} — {boundary.Note}"));
+                    string.IsNullOrEmpty(boundary.Note) ? boundary.DeclaredTarget : $"{boundary.DeclaredTarget} — {boundary.Note}")
+                {
+                    ViaLambda = boundary.ViaLambda
+                });
             }
 
             foreach (var path in BuildPaths(index, target.Id, limits.MaxNodes))
@@ -133,7 +136,10 @@ public sealed class ContextBuilder(GraphFreshnessEvaluator freshnessEvaluator)
                         step.StartLine,
                         step.Resolution,
                         step.Confidence,
-                        step.DisplayName));
+                        step.DisplayName)
+                    {
+                        ViaLambda = step.ViaLambda
+                    });
                 }
             }
 
@@ -313,7 +319,10 @@ public sealed class ContextBuilder(GraphFreshnessEvaluator freshnessEvaluator)
                         node.File,
                         node.StartLine,
                         site?.Resolution.ToString() ?? "declared",
-                        site?.Confidence.ToString() ?? nameof(CallConfidence.Certain)));
+                        site?.Confidence.ToString() ?? nameof(CallConfidence.Certain))
+                    {
+                        ViaLambda = site?.ViaLambda ?? false
+                    });
                     if (next is null || cursor == targetNodeId)
                     {
                         break;

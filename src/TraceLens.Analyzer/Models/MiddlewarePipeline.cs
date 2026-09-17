@@ -27,8 +27,8 @@ public sealed record EndpointFilterInfo(string Name, string Detail, string? Stat
 /// <param name="Pre"><c>_next</c> 호출 전에 하는 일. 프레임워크 미들웨어는 알려진 설명을 쓴다.</param>
 /// <param name="Post"><c>_next</c> 이후(응답이 돌아올 때) 하는 일. 없으면 null.</param>
 /// <param name="Condition"><c>UseWhen</c>이나 <c>if (env.IsDevelopment())</c>처럼 조건부로 등록됐을 때 그 조건 문자열.</param>
-/// <param name="IsTerminal">엔드포인트 실행처럼 요청을 끝내는 단계인지.</param>
-/// <param name="IsDead">터미널 뒤에 등록되어 실행되지 않는지.</param>
+/// <param name="IsTerminal">요청을 끝내는 종단 단계인지(<c>UseEndpoints</c>·<c>app.Run(delegate)</c>).</param>
+/// <param name="IsDead">종단 뒤에 등록되어 실행되지 않는지.</param>
 public sealed record MiddlewareStepInfo(
     string Id,
     int Order,
@@ -48,7 +48,28 @@ public sealed record MiddlewareStepInfo(
     bool IsTerminal,
     bool IsDead,
     string? Condition,
-    string? Note);
+    string? Note)
+{
+    /// <summary>
+    /// 이 단계가 미들웨어인지, 엔드포인트 등록인지, 종단인지.
+    /// <c>MapControllers()</c>·<c>MapGet()</c>은 <b>등록</b>이지 미들웨어가 아니다. 엔드포인트 실행은 파이프라인 맨 끝에서 일어나므로
+    /// 그 뒤에 등록한 미들웨어도 정상적으로 실행된다. v7 이전 문서에는 없고, 없으면 Middleware로 읽는다.
+    /// </summary>
+    public MiddlewareStepKind Kind { get; init; } = MiddlewareStepKind.Middleware;
+}
+
+/// <summary>파이프라인 한 줄의 성격.</summary>
+public enum MiddlewareStepKind
+{
+    /// <summary>요청을 순서대로 통과하는 미들웨어.</summary>
+    Middleware,
+
+    /// <summary>엔드포인트 등록(<c>MapGet</c>·<c>MapControllers</c>·<c>MapOpenApi</c> 등). 실행은 파이프라인 맨 끝이다.</summary>
+    EndpointRegistration,
+
+    /// <summary>요청을 여기서 끝내는 종단(<c>UseEndpoints</c>·<c>app.Run(delegate)</c>).</summary>
+    Terminal
+}
 
 /// <summary>미들웨어 보기 전체. Program.cs를 찾지 못했거나 설정에서 껐으면 null이다.</summary>
 public sealed record MiddlewarePipelineDocument(

@@ -52,11 +52,21 @@ export interface CallSite {
   resolution: CallResolution
   confidence: CallConfidence
   note: string
+  /**
+   * 람다 본문 안에서 나온 호출인지. 이 호출은 람다를 받는 쪽이 실제로 부를 때만 실행되므로
+   * `confidence`가 항상 'Estimated'다. v7 이전 문서를 읽으면 false로 채운다.
+   */
+  viaLambda: boolean
 }
 
 export interface GraphEdge {
   from: string
   to: string
+  /**
+   * 근거 중 가장 높은 확실도. 람다 본문 안의 호출만 있으면 'Estimated'다.
+   * v7 이전 문서를 읽으면 'Certain'으로 채운다.
+   */
+  confidence: CallConfidence
 }
 
 /**
@@ -444,7 +454,16 @@ export interface DataAccess {
   line: number
   inTransaction: boolean
   inLoop: boolean
+  /** 이 접근을 얼마나 확실하게 짚었는지. v7 이전 문서를 읽으면 'Certain'으로 채운다. */
+  confidence: FindingConfidence
+  /** 추정일 때 그 사유 한 줄. */
+  note: string
+  /** 트랜잭션 래퍼 안이면 그 래퍼 이름. */
+  transactionWrapper: string
 }
+
+/** 트랜잭션 경계를 무엇으로 잡았는지. v7부터 있다. */
+export type TransactionScopeKind = 'Explicit' | 'Wrapper'
 
 export interface TransactionScopeInfo {
   id: string
@@ -458,6 +477,10 @@ export interface TransactionScopeInfo {
   accessIds: string[]
   externalCalls: string[]
   cacheCalls: string[]
+  /** v7부터 있다. 없으면 'Explicit'으로 채운다. */
+  kind: TransactionScopeKind
+  /** `kind`가 'Wrapper'일 때 그 래퍼 메서드 이름. */
+  wrapperName: string
 }
 
 export interface WriteStep {
@@ -513,6 +536,12 @@ export interface DataAccessDocument {
 export type MiddlewareType = 'Custom' | 'Framework'
 export type ContextAccessMode = 'Read' | 'Write'
 
+/**
+ * 파이프라인 한 줄의 성격. v7부터 있다. 없으면 'Middleware'로 채운다.
+ * `MapControllers()`·`MapGet()`은 엔드포인트 **등록**이지 미들웨어가 아니다 — 실행은 파이프라인 맨 끝이다.
+ */
+export type MiddlewareStepKind = 'Middleware' | 'EndpointRegistration' | 'Terminal'
+
 export interface MiddlewareShortCircuit {
   statusCode: string
   condition: string
@@ -552,6 +581,8 @@ export interface MiddlewareStepInfo {
   isDead: boolean
   condition: string | null
   note: string | null
+  /** v7부터 있다. 없으면 'Middleware'로 채운다. */
+  kind: MiddlewareStepKind
 }
 
 export interface MiddlewarePipelineDocument {

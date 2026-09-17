@@ -343,6 +343,7 @@ export const en: Dictionary = {
   'detail.resolution.ambiguous': 'Several candidates, not resolved',
   'detail.resolution.unresolved': 'Symbol could not be resolved',
   'detail.resolution.external': 'Call outside the solution',
+  'detail.viaLambda': 'Inside a lambda (estimated)',
   'detail.entryPointNotes': 'Endpoint notes',
   'detail.callEvidence': 'Call evidence ({count})',
   'detail.callEvidenceHint': 'Why this edge exists. Click a file:line to read the real code.',

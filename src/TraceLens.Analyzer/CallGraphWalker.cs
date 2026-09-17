@@ -19,11 +19,18 @@ public sealed class CallGraphWalker(
         CancellationToken cancellationToken = default)
     {
         var nodes = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
-        var edges = new HashSet<GraphEdge>();
+        var edges = new EdgeCollector();
         var visitedDepth = new Dictionary<string, int>(StringComparer.Ordinal);
         var queue = new Queue<(AnalysisCallable Callable, int Depth)>();
         var collector = new CallSiteCollector(config.IncludeCallSites, config.MaxCallSitesPerEdge, config.MaxBoundaryCallSites);
         var depthLimitReached = false;
+
+        // 진입점 핸들러로 등록된 람다는 자기 노드가 있으므로, 그 람다를 감싼 메서드를 훑을 때 건너뛴다.
+        var registeredLambdas = entryPoints
+            .Select(item => item.Handler)
+            .Where(item => item.Kind == CallableKind.Lambda)
+            .Select(item => LambdaKey.For(item.Declaration))
+            .ToHashSet();
 
         foreach (var entryPoint in entryPoints)
         {
@@ -55,7 +62,8 @@ public sealed class CallGraphWalker(
                 continue;
             }
 
-            foreach (var call in await GetCallsAsync(loaded.Solution, callable, solutionDirectory, config, cancellationToken))
+            foreach (var call in await GetCallsAsync(
+                         loaded.Solution, callable, solutionDirectory, config, registeredLambdas, cancellationToken))
             {
                 if (!call.IsEdge || call.Target is null)
                 {
@@ -89,7 +97,7 @@ public sealed class CallGraphWalker(
                 }
 
                 nodes[calledCallable.NodeId] = calledNode;
-                edges.Add(new GraphEdge(methodId, calledCallable.NodeId));
+                edges.Add(methodId, calledCallable.NodeId, call.Confidence);
                 collector.Add(methodId, calledCallable.NodeId, call);
                 queue.Enqueue((calledCallable, depth + 1));
             }
@@ -98,7 +106,7 @@ public sealed class CallGraphWalker(
         var nodeIds = nodes.Keys.ToHashSet(StringComparer.Ordinal);
         return new CallGraphResult(
             nodes.Values.OrderBy(node => node.Id, StringComparer.Ordinal).ToArray(),
-            edges.OrderBy(edge => edge.From, StringComparer.Ordinal).ThenBy(edge => edge.To, StringComparer.Ordinal).ToArray(),
+            edges.Build(nodeIds),
             collector.Build(nodeIds),
             collector.Stats,
             depthLimitReached,
@@ -110,6 +118,7 @@ public sealed class CallGraphWalker(
         AnalysisCallable callable,
         string solutionDirectory,
         TraceLensConfig config,
+        IReadOnlySet<LambdaKey> registeredLambdas,
         CancellationToken cancellationToken)
     {
         var syntax = callable.Declaration;
@@ -129,7 +138,8 @@ public sealed class CallGraphWalker(
         var model = await document.GetSemanticModelAsync(cancellationToken);
         return model is null
             ? []
-            : invocationResolver.ResolveCalls(model, syntax, solutionDirectory, config, cancellationToken);
+            : invocationResolver.ResolveCalls(
+                model, syntax, solutionDirectory, config, cancellationToken, registeredLambdas);
     }
 
     /// <summary>호출 대상 심볼로 callable을 만든다. 기본 생성자는 선언 구문이 없으므로 그 타입 선언 위치를 쓴다.</summary>

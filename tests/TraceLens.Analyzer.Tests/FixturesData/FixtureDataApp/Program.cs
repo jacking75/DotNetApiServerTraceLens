@@ -35,6 +35,14 @@ builder.Services.AddScoped<MailSendService>();
 builder.Services.AddScoped<MailReceiveService>();
 builder.Services.AddScoped<FriendService>();
 builder.Services.AddScoped<RankingService>();
+builder.Services.AddSingleton<StackExchange.Redis.IDatabase, StackExchange.Redis.FakeDatabase>();
+builder.Services.AddSingleton<SqlKata.Execution.QueryFactory>();
+builder.Services.AddScoped<GameDbBase>();
+builder.Services.AddScoped<BuilderOrderRepository>();
+builder.Services.AddScoped<LedgerRepository>();
+builder.Services.AddScoped<BuilderOrderService>();
+builder.Services.AddSingleton<SessionCache>();
+builder.Services.AddScoped<SessionService>();
 
 var app = builder.Build();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
@@ -48,5 +56,7 @@ app.UseAuthentication();
 app.UseMiddleware<SessionValidationMiddleware>();
 app.UseMiddleware<MaintenanceMiddleware>();
 app.MapControllers();
-app.UseMiddleware<LegacyHeaderMiddleware>();   // 엔드포인트 매핑 뒤라 실행되지 않는다 — MW-012.
+app.UseMiddleware<LegacyHeaderMiddleware>();   // MapControllers는 엔드포인트 "등록"이라 이 미들웨어는 정상 실행된다 — MW-012가 나면 안 된다.
+app.UseEndpoints(_ => { });                    // 여기서 요청이 끝나는 종단이다.
+app.UseMiddleware<DeadHeaderMiddleware>();     // 종단 뒤라 실행되지 않는다 — MW-012.
 app.Run();

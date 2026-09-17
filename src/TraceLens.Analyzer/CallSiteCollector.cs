@@ -96,7 +96,8 @@ internal sealed class CallSiteCollector(bool enabled, int maxPerEdge, int maxBou
             call.Resolution,
             call.Confidence)
         {
-            Note = call.Note
+            Note = call.Note,
+            ViaLambda = call.ViaLambda
         });
     }
 

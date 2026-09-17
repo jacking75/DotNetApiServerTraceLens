@@ -103,3 +103,13 @@ public sealed class LegacyHeaderMiddleware(RequestDelegate next)
         await next(context);
     }
 }
+
+/// <summary>종단(UseEndpoints) 뒤에 등록되어 실제로 실행되지 않는다. MW-012 검증용이다.</summary>
+public sealed class DeadHeaderMiddleware(RequestDelegate next)
+{
+    public async Task InvokeAsync(HttpContext context)
+    {
+        context.Response.Headers["X-Dead"] = "1";
+        await next(context);
+    }
+}

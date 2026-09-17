@@ -38,6 +38,8 @@ export interface ContextEvidence {
   resolution: string
   confidence: string
   detail: string
+  /** 람다 본문 안의 호출이라 실행 여부를 이 자리에서 증명할 수 없는 근거인지. */
+  viaLambda: boolean
 }
 
 export interface ContextSourceSnippet {
@@ -58,6 +60,8 @@ export interface ContextPathStep {
   startLine: number
   resolution: string
   confidence: string
+  /** 이 단계로 오는 호출이 람다 본문 안에 있는지. */
+  viaLambda: boolean
 }
 
 export interface ContextPath {

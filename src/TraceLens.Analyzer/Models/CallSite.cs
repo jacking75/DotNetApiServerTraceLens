@@ -47,4 +47,11 @@ public sealed record CallSite(
 {
     /// <summary>확정하지 못한 이유나 후보 수처럼 사람이 읽을 보충 설명.</summary>
     public string Note { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 람다 본문 안에서 나온 호출인지. 이 호출은 람다를 받는 쪽이 실제로 부를 때만 실행되므로
+    /// <see cref="Confidence"/>가 항상 <see cref="CallConfidence.Estimated"/>다.
+    /// v7 이전에 저장된 문서에는 이 필드가 없고, 없으면 false로 읽는다.
+    /// </summary>
+    public bool ViaLambda { get; init; }
 }

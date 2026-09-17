@@ -105,13 +105,13 @@ public static class ServerHost
     {
         try
         {
-            var directory = Path.GetDirectoryName(Path.GetFullPath(targetPath));
-            if (directory is null)
+            var location = await GraphLocator.FindForTargetAsync(targetPath);
+            if (location.GraphPath is not { } graphPath)
             {
                 return;
             }
 
-            var loaded = await GraphJsonStore.LoadAsync(Path.Combine(directory, ".tracelens", "graph.json"));
+            var loaded = await GraphJsonStore.LoadAsync(graphPath);
             if (loaded.Ok && loaded.Graph is not null)
             {
                 app.Services.GetRequiredService<IGraphStore>().Set(loaded.Graph);

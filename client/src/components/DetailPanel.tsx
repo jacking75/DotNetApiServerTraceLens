@@ -393,6 +393,7 @@ function CallEvidenceSection({
             <span className={`chip small${site.confidence === 'Estimated' ? ' warn' : ''}`}>
               {t(resolutionKeys[site.resolution])}
             </span>
+            {site.viaLambda && <span className="chip small warn">{t('detail.viaLambda')}</span>}
             {site.note && <div className="detail-hint">{site.note}</div>}
           </li>
         ))}
@@ -406,6 +407,7 @@ function CallEvidenceSection({
             <b>{site.declaredTarget}</b>
             <code>{site.file}:{site.line}</code>
             <span className="chip small warn">{t(resolutionKeys[site.resolution])}</span>
+            {site.viaLambda && <span className="chip small warn">{t('detail.viaLambda')}</span>}
             {site.note && <div className="detail-hint">{site.note}</div>}
           </li>
         ))}

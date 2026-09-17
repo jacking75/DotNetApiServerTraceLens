@@ -29,13 +29,18 @@ public sealed class SolutionScanner(
     {
         var classes = new Dictionary<string, ClassBuilder>(StringComparer.Ordinal);
         var nodes = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
-        var edges = new HashSet<GraphEdge>();
+        var edges = new EdgeCollector();
         var pendingConstructors = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
         var memberStopwatch = new Stopwatch();
         var collector = new CallSiteCollector(config.IncludeCallSites, config.MaxCallSitesPerEdge, config.MaxBoundaryCallSites);
         var extraByDocument = extraCallables
             .GroupBy(item => item.Declaration.SyntaxTree.FilePath, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.OrdinalIgnoreCase);
+        // 이미 자기 노드가 있는 람다(Minimal API 핸들러)는 부모 순회에서 건너뛴다. 같은 호출이 두 번 귀속되지 않게 한다.
+        var registeredLambdas = extraCallables
+            .Where(item => item.Kind == CallableKind.Lambda)
+            .Select(item => LambdaKey.For(item.Declaration))
+            .ToHashSet();
 
         foreach (var project in loaded.Solution.Projects.Where(project => loaded.AnalyzableProjectIds.Contains(project.Id)))
         {
@@ -113,7 +118,7 @@ public sealed class SolutionScanner(
                         }
 
                         nodes[node.Id] = node;
-                        AddCalls(model, callable, node.Id, solutionDirectory, config, nodes, edges, pendingConstructors, collector, cancellationToken);
+                        AddCalls(model, callable, node.Id, solutionDirectory, config, nodes, edges, pendingConstructors, collector, registeredLambdas, cancellationToken);
                     }
                 }
 
@@ -138,7 +143,7 @@ public sealed class SolutionScanner(
                         owner.AddMethod(node.Id);
                     }
 
-                    AddCalls(model, callable, node.Id, solutionDirectory, config, nodes, edges, pendingConstructors, collector, cancellationToken);
+                    AddCalls(model, callable, node.Id, solutionDirectory, config, nodes, edges, pendingConstructors, collector, registeredLambdas, cancellationToken);
                 }
             }
         }
@@ -175,11 +180,7 @@ public sealed class SolutionScanner(
         return new SolutionScanResult(
             built,
             nodes.Values.OrderBy(node => node.Id, StringComparer.Ordinal).ToArray(),
-            edges
-                .Where(edge => nodes.ContainsKey(edge.From) && nodes.ContainsKey(edge.To))
-                .OrderBy(edge => edge.From, StringComparer.Ordinal)
-                .ThenBy(edge => edge.To, StringComparer.Ordinal)
-                .ToArray(),
+            edges.Build(nodes.Keys.ToHashSet(StringComparer.Ordinal)),
             memberCount,
             memberStopwatch.ElapsedMilliseconds,
             collector.Build(nodeIds),
@@ -194,13 +195,14 @@ public sealed class SolutionScanner(
         string solutionDirectory,
         TraceLensConfig config,
         Dictionary<string, GraphNode> nodes,
-        HashSet<GraphEdge> edges,
+        EdgeCollector edges,
         Dictionary<string, GraphNode> pendingConstructors,
         CallSiteCollector collector,
+        IReadOnlySet<LambdaKey> registeredLambdas,
         CancellationToken cancellationToken)
     {
         foreach (var call in invocationResolver.ResolveCalls(
-                     model, callable.Declaration, solutionDirectory, config, cancellationToken))
+                     model, callable.Declaration, solutionDirectory, config, cancellationToken, registeredLambdas))
         {
             if (!call.IsEdge || call.Target is null)
             {
@@ -209,7 +211,7 @@ public sealed class SolutionScanner(
             }
 
             var targetId = CallableIds.ForMethod(call.Target);
-            edges.Add(new GraphEdge(fromNodeId, targetId));
+            edges.Add(fromNodeId, targetId, call.Confidence);
             collector.Add(fromNodeId, targetId, call);
             QueueConstructorNode(call.Target, solutionDirectory, config, nodes, pendingConstructors, cancellationToken);
         }

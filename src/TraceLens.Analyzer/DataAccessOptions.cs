@@ -11,6 +11,13 @@ namespace TraceLens.Analyzer;
 /// <param name="ConnectionFactories">커넥션을 여는 메서드 패턴. 첫 인자를 샤드 키로 본다.</param>
 /// <param name="ShardKeyParameters">샤드 키로 쓰이는 파라미터 이름(<c>userNo</c> 등).</param>
 /// <param name="ExternalApis">상태를 바꾸는 외부 호출 패턴(HTTP 클라이언트 등). 트랜잭션 안 외부 호출 판정에 쓴다.</param>
+/// <param name="TransactionWrappers">
+/// 람다를 받아 그 안에서 트랜잭션을 여닫는 래퍼 메서드 패턴. 래퍼에 넘긴 람다 안의 쓰기는 트랜잭션 안으로 본다.
+/// 패턴으로 못 잡아도 "본문에 BeginTransaction이 있고 대리자 파라미터를 부르는 메서드"는 자동으로 래퍼로 본다.
+/// </param>
+/// <param name="CacheWrappers">
+/// 솔루션 안에 있어도 캐시 클라이언트로 취급할 래퍼 패턴. 기본은 솔루션 안 메서드를 캐시 API로 보지 않는다.
+/// </param>
 public sealed record DataAccessOptions(
     IReadOnlyList<string> QueryApis,
     IReadOnlyList<string> CacheApis,
@@ -18,16 +25,22 @@ public sealed record DataAccessOptions(
     IReadOnlyList<string> ShardKeyParameters,
     IReadOnlyList<string> ExternalApis,
     IReadOnlyList<DataSourceOption> DataSources,
-    CompensationOptions Compensation)
+    CompensationOptions Compensation,
+    IReadOnlyList<string> TransactionWrappers,
+    IReadOnlyList<string> CacheWrappers,
+    IReadOnlyList<QueryBuilderOption> QueryBuilders)
 {
     public static DataAccessOptions Default { get; } = new(
         ["Dapper.SqlMapper.*", "*.IDbConnection.*", "*DbConnection.Execute*", "*DbConnection.Query*"],
-        ["StackExchange.Redis.IDatabase.*", "*.IDistributedCache.*", "*Cache.*", "*Redis*.*"],
+        ["StackExchange.Redis.IDatabase.*", "*.IDistributedCache.*", "CloudStructures.*", "*Cache.*", "*Redis*.*"],
         ["*ConnectionFactory.Open*", "*ConnectionFactory.Create*", "*.OpenConnection*"],
         ["userNo", "userId", "uid", "playerNo", "memberNo", "accountId"],
         ["System.Net.Http.HttpClient.*", "*PushClient.*", "*MailSender.*", "*BillingClient.*"],
         [],
-        CompensationOptions.Default);
+        CompensationOptions.Default,
+        ["*.TransactionAsync", "*.InTransactionAsync", "*.ExecuteInTransaction*", "*.RunInTransaction*", "*.WithTransaction*"],
+        [],
+        QueryBuilderOption.Defaults);
 
     /// <summary>설정에 샤드로 표시한 데이터소스가 하나라도 있으면 SHARD 규칙군을 켠다.</summary>
     public bool ShardingEnabled => DataSources.Any(item =>
@@ -47,7 +60,10 @@ public sealed record DataAccessOptions(
             ReadStrings(db, "shardKeyParameters") ?? Default.ShardKeyParameters,
             ReadStrings(db, "externalApis") ?? Default.ExternalApis,
             ReadDataSources(db),
-            CompensationOptions.Read(db));
+            CompensationOptions.Read(db),
+            ReadStrings(db, "transactionWrappers") ?? Default.TransactionWrappers,
+            ReadStrings(db, "cacheWrappers") ?? Default.CacheWrappers,
+            QueryBuilderOption.Read(db) ?? Default.QueryBuilders);
     }
 
     private static IReadOnlyList<DataSourceOption> ReadDataSources(JsonElement db)

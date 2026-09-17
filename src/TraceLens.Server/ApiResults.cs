@@ -22,8 +22,8 @@ public static class ApiResults
         Results.Json(new ApiError(code, message, details), statusCode: statusCode);
 
     /// <summary>과거 응답 형태(<c>error</c>)를 유지하면서 code를 함께 돌려준다.</summary>
-    public static IResult LegacyError(int statusCode, string code, string message) =>
-        Results.Json(new { error = message, code, message }, statusCode: statusCode);
+    public static IResult LegacyError(int statusCode, string code, string message, object? details = null) =>
+        Results.Json(new { error = message, code, message, details }, statusCode: statusCode);
 
     public static IResult NotAnalyzed() =>
         LegacyError(StatusCodes.Status404NotFound, NoAnalysis, "먼저 솔루션을 분석해야 한다.");

@@ -35,13 +35,23 @@ public sealed class MiddlewarePipelineTests(FixtureDataAppFixture fixture)
             "SessionValidationMiddleware",
             "MaintenanceMiddleware",
             "MapControllers",
-            "LegacyHeaderMiddleware"
+            "LegacyHeaderMiddleware",
+            "UseEndpoints",
+            "DeadHeaderMiddleware"
         ], pipeline.Steps.Select(step => step.Name).ToArray());
 
         // app.Run()은 파이프라인 단계가 아니라 호스트를 띄우는 호출이다.
         Assert.DoesNotContain(pipeline.Steps, step => step.Name == "Run");
-        Assert.Contains(pipeline.Steps, step => step.Name == "MapControllers" && step.IsTerminal);
-        Assert.Contains(pipeline.Steps, step => step.Name == "LegacyHeaderMiddleware" && step.IsDead);
+
+        // MapControllers는 엔드포인트 "등록"이지 종단이 아니다. 그 뒤 미들웨어는 정상 실행된다.
+        Assert.Contains(pipeline.Steps, step =>
+            step.Name == "MapControllers" && step.Kind == MiddlewareStepKind.EndpointRegistration && !step.IsTerminal);
+        Assert.Contains(pipeline.Steps, step => step.Name == "LegacyHeaderMiddleware" && !step.IsDead);
+
+        // UseEndpoints는 종단이고, 그 뒤에 등록한 미들웨어만 실행되지 않는다.
+        Assert.Contains(pipeline.Steps, step =>
+            step.Name == "UseEndpoints" && step.Kind == MiddlewareStepKind.Terminal && step.IsTerminal);
+        Assert.Contains(pipeline.Steps, step => step.Name == "DeadHeaderMiddleware" && step.IsDead);
     }
 
     [Fact]
@@ -93,7 +103,9 @@ public sealed class MiddlewarePipelineTests(FixtureDataAppFixture fixture)
         Assert.Contains(byRule["MW-005"], finding => finding.Symbol == "SessionValidationMiddleware");
         Assert.Contains(byRule["MW-006"], finding => finding.Symbol == "RequestLoggingMiddleware");
         Assert.Contains(byRule["MW-008"], finding => finding.Symbol == "MaintenanceMiddleware");
-        Assert.Contains(byRule["MW-012"], finding => finding.Symbol == "LegacyHeaderMiddleware");
+        var dead = Assert.Single(byRule["MW-012"]);
+        Assert.Equal("DeadHeaderMiddleware", dead.Symbol);
+        Assert.DoesNotContain(byRule["MW-012"], finding => finding.Symbol == "LegacyHeaderMiddleware");
 
         // 예외 처리 미들웨어가 맨 앞이라 MW-001은 걸리지 않아야 한다.
         Assert.Empty(byRule["MW-001"]);

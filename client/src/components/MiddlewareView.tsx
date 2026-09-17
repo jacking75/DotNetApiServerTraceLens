@@ -52,7 +52,8 @@ export function MiddlewareView({ pipeline, view, selection, onSelect }: Middlewa
               type="button"
               className={[
                 'mw-card',
-                step.isTerminal ? 'endpoint' : '',
+                step.kind !== 'Middleware' ? 'endpoint' : '',
+                step.kind === 'EndpointRegistration' ? 'registration' : '',
                 step.isDead ? 'dim' : '',
                 findingsByStep.get(step.id)?.some((finding) => finding.severity === 'Critical') ? 'bad' : '',
                 findingsByStep.get(step.id)?.some((finding) => finding.severity === 'Warning') ? 'warn' : '',
@@ -63,6 +64,8 @@ export function MiddlewareView({ pipeline, view, selection, onSelect }: Middlewa
               <div className="mw-top">
                 <span className="mw-name">{step.name}</span>
                 <span className="tag">{step.type === 'Custom' ? '직접 작성' : '프레임워크'}</span>
+                {step.kind === 'EndpointRegistration' && <span className="tag">엔드포인트 등록</span>}
+                {step.kind === 'Terminal' && <span className="tag">종단</span>}
                 {step.condition && <span className="tag replica">조건부</span>}
                 {step.isDead && <span className="sev warn">실행되지 않음</span>}
                 {findingsByStep.get(step.id)?.map((finding) => (
@@ -108,6 +111,29 @@ export function MiddlewareView({ pipeline, view, selection, onSelect }: Middlewa
         </div>
       ))}
 
+      {pipeline.steps.some((step) => step.kind === 'EndpointRegistration') && (
+        <>
+          <div className="pipe-arrow">↓</div>
+          <div className="mwrow">
+            <div className="mwnum">·</div>
+            <div className="mw-card endpoint">
+              <div className="mw-top">
+                <span className="mw-name">엔드포인트 실행</span>
+                <span className="tag">가상 단계</span>
+              </div>
+              <div className="mw-line pre">
+                <span className="dir">요청 →</span>
+                <span>
+                  위에서 등록한 엔드포인트({pipeline.steps.filter((step) => step.kind === 'EndpointRegistration').map((step) => step.name).join(', ')})
+                  중 라우트가 맞는 것을 여기서 실행한다. 등록 순서와 실행 순서는 다르다.
+                </span>
+              </div>
+            </div>
+            <div className="mw-branch" />
+          </div>
+        </>
+      )}
+
       <div className="pipe-legend">
         <span><b className="pre-mark">요청 →</b> next 호출 전에 하는 일</span>
         <span><b className="post-mark">← 응답</b> next 이후, 응답이 돌아올 때 하는 일</span>
@@ -146,7 +172,7 @@ function ShortCircuitView({ pipeline }: { pipeline: MiddlewarePipelineDocument }
                 <ul>
                   {skipped.length === 0 && <li>없음 — 마지막 단계다</li>}
                   {skipped.map((item) => (
-                    <li key={item.id}>{item.name}{item.isTerminal ? ' (액션까지 전부)' : ''}</li>
+                    <li key={item.id}>{item.name}{item.kind !== 'Middleware' ? ' (액션까지 전부)' : ''}</li>
                   ))}
                 </ul>
               </div>

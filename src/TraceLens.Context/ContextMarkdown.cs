@@ -58,7 +58,9 @@ public static class ContextMarkdown
                 var location = item.StartLine == item.EndLine
                     ? $"{item.File}:{item.StartLine}"
                     : $"{item.File}:{item.StartLine}-{item.EndLine}";
-                builder.AppendLine($"| `{item.Id}` | {item.Kind} | {location} | {item.Resolution}/{item.Confidence} | {Escape(item.Detail)} |");
+                var lambdaMark = item.ViaLambda ? " · 람다 본문" : string.Empty;
+                builder.AppendLine(
+                    $"| `{item.Id}` | {item.Kind} | {location} | {item.Resolution}/{item.Confidence}{lambdaMark} | {Escape(item.Detail)} |");
             }
 
             builder.AppendLine();
@@ -101,7 +103,9 @@ public static class ContextMarkdown
                 builder.AppendLine($"- **{path.HttpMethod} {path.Route}** (`{path.EndpointId}`)");
                 foreach (var step in path.Steps)
                 {
-                    builder.AppendLine($"  - {step.DisplayName} — {step.File}:{step.StartLine} ({step.Resolution}/{step.Confidence})");
+                    builder.AppendLine(
+                        $"  - {step.DisplayName} — {step.File}:{step.StartLine} " +
+                        $"({step.Resolution}/{step.Confidence}{(step.ViaLambda ? " · 람다 본문" : string.Empty)})");
                 }
 
                 if (path.Truncated)

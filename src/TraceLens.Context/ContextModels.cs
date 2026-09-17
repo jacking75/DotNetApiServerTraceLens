@@ -77,7 +77,11 @@ public sealed record ContextEvidence(
     int EndLine,
     string Resolution,
     string Confidence,
-    string Detail);
+    string Detail)
+{
+    /// <summary>람다 본문 안의 호출이라 실행 여부를 이 자리에서 증명할 수 없는 근거인지.</summary>
+    public bool ViaLambda { get; init; }
+}
 
 /// <param name="SourceVersion">snapshot이면 분석 당시와 같은 내용이고, current면 분석 이후 바뀐 현재 소스다.</param>
 public sealed record ContextSourceSnippet(
@@ -99,7 +103,11 @@ public sealed record ContextPathStep(
     string File,
     int StartLine,
     string Resolution,
-    string Confidence);
+    string Confidence)
+{
+    /// <summary>이 단계로 오는 호출이 람다 본문 안에 있는지. 실행 여부는 그 람다를 받는 쪽이 정한다.</summary>
+    public bool ViaLambda { get; init; }
+}
 
 public sealed record ContextPath(
     string EndpointId,

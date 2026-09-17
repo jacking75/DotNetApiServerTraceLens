@@ -1,5 +1,6 @@
 {
   "db": {
+    "cacheWrappers": ["*IGameCache.*", "StackExchange.Redis.IDatabase.*"],
     "shardKeyParameters": ["userNo", "friendNo", "targetNo"],
     "dataSources": {
       "GameDb": { "kind": "shard", "shardCount": 8, "typePatterns": ["*IShardConnectionFactory", "*ShardConnectionFactory"] },

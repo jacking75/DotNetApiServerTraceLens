@@ -43,7 +43,8 @@ public static class CommandRouter
               tracelens serve [--target <경로>] [--port <번호>] [--no-browser]
                   UI 서버를 띄운다(기본 http://127.0.0.1:{ServerHost.DefaultPort}, 루프백 전용).
               tracelens analyze <solution-or-project-path> [--json]
-                  한 번 분석하고 결과 요약을 출력한다. 결과는 대상 폴더의 .tracelens/graph.json에 저장된다.
+                  한 번 분석하고 결과 요약을 출력한다.
+                  결과는 대상과 참조 프로젝트의 공통 상위 폴더의 .tracelens/graph.json에 저장된다(출력 위치는 analyze 결과의 outputPath).
               tracelens mcp --graph <graph-path>
                   로컬 stdio MCP 서버를 띄운다. AI 에이전트가 이 분석 결과를 읽는다.
               tracelens doctor [--target <경로>] [--json]

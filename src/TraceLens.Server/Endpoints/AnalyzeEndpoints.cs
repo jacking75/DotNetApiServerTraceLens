@@ -56,22 +56,23 @@ public static class AnalyzeEndpoints
             return ApiResults.LegacyError(StatusCodes.Status400BadRequest, ApiResults.InvalidRequest, "solutionPath가 필요하다.");
         }
 
-        string graphPath;
+        GraphLocation location;
         try
         {
-            var fullTargetPath = Path.GetFullPath(request.SolutionPath);
-            var solutionDirectory = Path.GetDirectoryName(fullTargetPath)
-                ?? throw new ArgumentException("분석 대상 디렉터리를 확인할 수 없다.", nameof(request));
-            graphPath = Path.Combine(solutionDirectory, ".tracelens", "graph.json");
+            location = await GraphLocator.FindForTargetAsync(request.SolutionPath, cancellationToken);
         }
         catch (Exception exception) when (exception is ArgumentException or PathTooLongException or NotSupportedException)
         {
             return ApiResults.LegacyError(StatusCodes.Status400BadRequest, ApiResults.InvalidRequest, exception.Message);
         }
 
-        if (!File.Exists(graphPath))
+        if (location.GraphPath is not { } graphPath)
         {
-            return ApiResults.LegacyError(StatusCodes.Status404NotFound, ApiResults.NoAnalysis, "저장된 분석 결과가 없다. 먼저 분석해야 한다.");
+            return ApiResults.LegacyError(
+                StatusCodes.Status404NotFound,
+                ApiResults.NoAnalysis,
+                "저장된 분석 결과가 없다. 먼저 분석해야 한다.",
+                new { searchedPaths = location.SearchedPaths });
         }
 
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();

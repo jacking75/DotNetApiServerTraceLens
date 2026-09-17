@@ -140,26 +140,65 @@ public sealed class EnvironmentDiagnostics
             Detail = fullPath
         });
 
-        var outputDirectory = Path.Combine(Path.GetDirectoryName(fullPath)!, ".tracelens");
-        try
+        // 실제 출력 위치는 분석 뒤에야 정해진다(.csproj면 참조 프로젝트까지 담는 공통 상위 폴더).
+        // 분석 전에는 후보 두 곳 — 대상 폴더와, 조상 중 .sln이 있는 폴더 — 을 함께 검사하고 검사한 경로를 적는다.
+        var checkedDirectories = new List<string>();
+        var failures = new List<string>();
+        foreach (var candidate in OutputDirectoryCandidates(fullPath))
         {
-            Directory.CreateDirectory(outputDirectory);
-            var probe = Path.Combine(outputDirectory, ".write-probe");
-            File.WriteAllText(probe, string.Empty);
-            File.Delete(probe);
-            items.Add(new DiagnosticItem(
-                "OUTPUT_WRITABLE", DiagnosticSeverity.Ok, $"분석 결과를 저장할 수 있다: {outputDirectory}", string.Empty)
+            var outputDirectory = Path.Combine(candidate, ".tracelens");
+            checkedDirectories.Add(outputDirectory);
+            try
             {
-                Detail = outputDirectory
+                Directory.CreateDirectory(outputDirectory);
+                var probe = Path.Combine(outputDirectory, ".write-probe");
+                File.WriteAllText(probe, string.Empty);
+                File.Delete(probe);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                failures.Add($"{outputDirectory} ({exception.Message})");
+            }
+        }
+
+        var checkedList = string.Join(", ", checkedDirectories);
+        if (failures.Count == 0)
+        {
+            items.Add(new DiagnosticItem(
+                "OUTPUT_WRITABLE", DiagnosticSeverity.Ok, $"분석 결과를 저장할 수 있다: {checkedList}", string.Empty)
+            {
+                Detail = checkedList
             });
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        else
         {
             items.Add(new DiagnosticItem(
                 "OUTPUT_NOT_WRITABLE",
                 DiagnosticSeverity.Error,
-                $"분석 결과 폴더에 쓸 수 없다: {outputDirectory} ({exception.Message})",
-                "폴더 권한을 확인하거나 쓰기 가능한 위치로 프로젝트를 옮겨야 한다.") { Detail = outputDirectory });
+                $"분석 결과 폴더에 쓸 수 없다: {string.Join(" / ", failures)}. 검사한 경로: {checkedList}",
+                "폴더 권한을 확인하거나 쓰기 가능한 위치로 프로젝트를 옮겨야 한다.") { Detail = checkedList });
+        }
+    }
+
+    /// <summary>분석 결과가 저장될 수 있는 폴더 후보. 대상 폴더와, 조상 중 <c>.sln</c>/<c>.slnx</c>이 있는 첫 폴더다.</summary>
+    private static IEnumerable<string> OutputDirectoryCandidates(string fullTargetPath)
+    {
+        var targetDirectory = Path.GetDirectoryName(fullTargetPath);
+        if (string.IsNullOrEmpty(targetDirectory))
+        {
+            yield break;
+        }
+
+        yield return targetDirectory;
+
+        var current = new DirectoryInfo(targetDirectory).Parent;
+        for (var level = 0; current is not null && level < GraphLocator.MaxAncestorLevels; level++, current = current.Parent)
+        {
+            if (current.EnumerateFiles("*.sln").Any() || current.EnumerateFiles("*.slnx").Any())
+            {
+                yield return current.FullName;
+                yield break;
+            }
         }
     }
 

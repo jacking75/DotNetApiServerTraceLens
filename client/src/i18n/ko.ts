@@ -340,6 +340,7 @@ export const ko = {
   'detail.resolution.ambiguous': '후보가 여러 개라 확정하지 못함',
   'detail.resolution.unresolved': '심볼을 해석하지 못함',
   'detail.resolution.external': '솔루션 밖 호출',
+  'detail.viaLambda': '람다 본문(추정)',
   'detail.entryPointNotes': '진입점 참고',
   'detail.callEvidence': '호출 근거 ({count})',
   'detail.callEvidenceHint': '이 엣지가 왜 생겼는지다. 파일·줄을 눌러 실제 코드를 확인할 수 있다.',

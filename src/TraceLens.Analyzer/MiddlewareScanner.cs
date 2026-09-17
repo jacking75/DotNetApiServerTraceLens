@@ -122,7 +122,10 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
         var enclosingCondition = condition ?? GetEnclosingCondition(invocation);
 
         // UseWhen/MapWhen은 그 자체가 단계가 아니라 "조건"이다. 안쪽에서 등록하는 것들을 조건부 단계로 편다.
-        if (name is "UseWhen" or "MapWhen" && invocation.ArgumentList.Arguments.Count >= 2)
+        // UseWhen/MapWhen과 IApplicationBuilder.Map(path, branch)은 그 자체가 단계가 아니라 "분기"다.
+        if ((name is "UseWhen" or "MapWhen" ||
+             (name == "Map" && invocation.ArgumentList.Arguments is [_, { Expression: AnonymousFunctionExpressionSyntax }, ..])) &&
+            invocation.ArgumentList.Arguments.Count >= 2)
         {
             var predicate = invocation.ArgumentList.Arguments[0].Expression.ToString();
             var branch = invocation.ArgumentList.Arguments[1].Expression;
@@ -160,18 +163,34 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
             return;
         }
 
-        var isTerminal = name.StartsWith("Map", StringComparison.Ordinal) || name == "UseEndpoints";
+        // Map*는 엔드포인트 "등록"이지 미들웨어가 아니다. 실행은 파이프라인 맨 끝에서 일어나므로 그 뒤 미들웨어도 실행된다.
+        var isRegistration = name.StartsWith("Map", StringComparison.Ordinal);
+        var isTerminal = name == "UseEndpoints" ||
+                         (name == "Run" && invocation.ArgumentList.Arguments.Count > 0);
+        var kind = isTerminal
+            ? MiddlewareStepKind.Terminal
+            : isRegistration
+                ? MiddlewareStepKind.EndpointRegistration
+                : MiddlewareStepKind.Middleware;
         var known = Known.TryGetValue(name, out var description) ? description : default;
-        var pre = known.Pre ?? (isTerminal
-            ? "라우트가 맞으면 엔드포인트(필터 → 액션)를 실행하고 요청을 끝낸다"
-            : "프레임워크 미들웨어다. 본문은 어셈블리 안에 있어 열어 볼 수 없다");
+        var pre = known.Pre ?? kind switch
+        {
+            MiddlewareStepKind.EndpointRegistration =>
+                "엔드포인트를 등록한다. 실제 실행은 파이프라인 맨 끝에서 일어나므로 이 줄 뒤에 등록한 미들웨어도 실행된다",
+            MiddlewareStepKind.Terminal => "라우트가 맞으면 엔드포인트(필터 → 액션)를 실행하고 요청을 끝낸다",
+            _ => "프레임워크 미들웨어다. 본문은 어셈블리 안에 있어 열어 볼 수 없다"
+        };
         steps.Add(new MiddlewareStepInfo(
             id, order, FormatCall(name, invocation), MiddlewareType.Framework, programFile, line,
             null, null, 0,
             pre, known.Post,
             known.Status is null ? null : new MiddlewareShortCircuit(known.Status, known.Condition ?? string.Empty, line),
-            [], [], isTerminal ? ReadFilters(invocation) : [], isTerminal, false, enclosingCondition,
-            null));
+            [], [], kind == MiddlewareStepKind.Middleware ? [] : ReadFilters(invocation), isTerminal, false,
+            enclosingCondition,
+            null)
+        {
+            Kind = kind
+        });
     }
 
     private async Task<MiddlewareStepInfo> BuildCustomStepAsync(
@@ -493,9 +512,13 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
 
     /* ------------------------------------------------------------------ 순서 규칙 */
 
+    /// <summary>
+    /// 요청을 끝내는 종단(<c>UseEndpoints</c>·<c>app.Run(delegate)</c>) 뒤에 등록한 미들웨어만 "실행되지 않는다"로 본다.
+    /// <c>MapControllers()</c> 같은 엔드포인트 등록은 종단이 아니다 — 엔드포인트 실행은 파이프라인 맨 끝이다.
+    /// </summary>
     private static void MarkDeadSteps(List<MiddlewareStepInfo> steps)
     {
-        var terminal = steps.FindIndex(step => step.IsTerminal);
+        var terminal = steps.FindIndex(step => step.Kind == MiddlewareStepKind.Terminal);
         if (terminal < 0)
         {
             return;
@@ -503,7 +526,7 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
 
         for (var index = terminal + 1; index < steps.Count; index++)
         {
-            if (!steps[index].IsTerminal)
+            if (steps[index].Kind == MiddlewareStepKind.Middleware)
             {
                 steps[index] = steps[index] with { IsDead = true };
             }
@@ -568,11 +591,11 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
         {
             findings.Add(new Finding(
                 $"MW-012:{step.Id}", "MW-012", FindingSeverity.Warning, FindingConfidence.Certain,
-                $"{step.Name}이(가) 엔드포인트 실행 뒤에 등록되어 실행되지 않는다",
-                "앞에서 요청이 끝나므로 이 미들웨어에는 요청이 오지 않는다.",
-                "엔드포인트 매핑 앞으로 옮기거나, 필요 없으면 등록을 지운다.",
+                $"{step.Name}이(가) UseEndpoints/app.Run(delegate) 뒤에 등록되어 실행되지 않는다",
+                "앞 단계에서 요청이 끝나므로 이 미들웨어에는 요청이 오지 않는다.",
+                "종단(UseEndpoints·app.Run) 앞으로 옮기거나, 필요 없으면 등록을 지운다.",
                 step.Name, programFile, step.RegistrationLine, null, null, step.Id, null,
-                [new FindingEvidence("bad", "등록 위치", $"{step.Order}번째 · 터미널 뒤", $"{programFile}:{step.RegistrationLine}")]));
+                [new FindingEvidence("bad", "등록 위치", $"{step.Order}번째 · 종단 뒤", $"{programFile}:{step.RegistrationLine}")]));
         }
     }
 
@@ -811,6 +834,6 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
         new("MW-011", "구성", "UseWhen 조건과 실제 라우트가 어긋남", FindingSeverity.Warning, FindingConfidence.Estimated,
             "조건 경로에 해당하는 엔드포인트가 없다.", false, false),
         new("MW-012", "순서", "등록됐지만 실행되지 않는 미들웨어", FindingSeverity.Warning, FindingConfidence.Certain,
-            "터미널(엔드포인트 실행) 뒤에 등록되어 절대 실행되지 않는다.", false, true)
+            "종단(UseEndpoints·app.Run(delegate)) 뒤에 등록되어 실행 순서에 들어가지 않는다. MapControllers 같은 엔드포인트 등록은 종단이 아니므로 그 뒤 미들웨어는 정상 실행된다.", false, true)
     ];
 }

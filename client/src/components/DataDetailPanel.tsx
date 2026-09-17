@@ -119,6 +119,11 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: Data
                 {access.methodDisplayName}
               </button>
               <span className="note">{access.file}:{access.line}</span>
+              {access.confidence === 'Estimated' && <span className="chip small warn">추정</span>}
+              {access.transactionWrapper.length > 0 && (
+                <span className="chip small">트랜잭션 래퍼 {access.transactionWrapper}</span>
+              )}
+              {access.note.length > 0 && <div className="note">{access.note}</div>}
             </div>
           ))}
         </Section>

@@ -223,8 +223,9 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
             : target.Length > 0 && site.Kind != SiteKind.Plain
                 ? $"{target} {DescribeOperation(operation)}"
                 : site.Name;
+        // 래퍼 호출은 이 줄에 직접 SQL이 없다. 어느 메서드를 경유해 저장소에 닿는지를 그대로 적는다.
         var detail = site.Kind == SiteKind.Plain
-            ? $"{site.ReceiverText}.{site.Name} · {(dataSource.Length > 0 ? dataSource : "저장소")}{(target.Length > 0 ? $" · {target}" : string.Empty)}"
+            ? $"{site.ReceiverText}.{site.Name} 경유 · {(dataSource.Length > 0 ? dataSource : "저장소")}{(target.Length > 0 ? $" · {target}" : string.Empty)}"
             : $"{site.Statement}";
 
         var (compensation, note) = Classify(site, facts, config, storage, operation, target, dataSource);
@@ -261,7 +262,9 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
 
         if (site.InTransaction)
         {
-            return (CompensationKind.Transaction, "트랜잭션 안이라 실패하면 함께 롤백된다.");
+            return site.TransactionWrapper is { Length: > 0 } wrapper
+                ? (CompensationKind.Transaction, $"트랜잭션 래퍼 {wrapper} 안이라 실패하면 함께 롤백된다.")
+                : (CompensationKind.Transaction, "트랜잭션 안이라 실패하면 함께 롤백된다.");
         }
 
         if (PatternMatch.MatchesAny(site.CalleeSymbol, compensation.Idempotent))

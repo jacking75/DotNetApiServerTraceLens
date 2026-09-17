@@ -57,7 +57,34 @@ public sealed record DataAccess(
     string File,
     int Line,
     bool InTransaction,
-    bool InLoop);
+    bool InLoop)
+{
+    /// <summary>
+    /// 이 접근을 얼마나 확실하게 짚었는지. SQL 리터럴이나 상수 테이블 이름이면 확실이고,
+    /// 빌더 체인의 테이블이 변수여서 <c>?</c>로 남겼거나 래퍼를 경유한 접근이면 추정이다.
+    /// v7 이전 문서에는 없고, 없으면 확실로 읽는다.
+    /// </summary>
+    public FindingConfidence Confidence { get; init; } = FindingConfidence.Certain;
+
+    /// <summary>추정일 때 그렇게 본 근거 한 줄. 확실이면 빈 문자열이다.</summary>
+    public string Note { get; init; } = string.Empty;
+
+    /// <summary>트랜잭션 래퍼 안이면 그 래퍼 이름. 아니면 빈 문자열이다.</summary>
+    public string TransactionWrapper { get; init; } = string.Empty;
+}
+
+/// <summary>트랜잭션 경계를 무엇으로 잡았는지.</summary>
+public enum TransactionScopeKind
+{
+    /// <summary><c>BeginTransaction</c>/<c>Commit</c>을 이 메서드가 직접 부른다.</summary>
+    Explicit,
+
+    /// <summary>
+    /// 람다를 받아 그 안에서 트랜잭션을 여닫는 래퍼 메서드에 넘겼다(<c>TransactionAsync(async (db, tx) =&gt; …)</c>).
+    /// 경계는 래퍼 안에 있으므로 이 메서드에는 Begin/Commit이 보이지 않는다.
+    /// </summary>
+    Wrapper
+}
 
 /// <param name="DataSources">이 트랜잭션 경계 안에서 열린 커넥션의 데이터소스 이름.</param>
 /// <param name="ExternalCalls">경계 안에서 부른 외부 호출(HTTP 등) 표시 이름.</param>
@@ -72,7 +99,14 @@ public sealed record TransactionScopeInfo(
     IReadOnlyList<string> DataSources,
     IReadOnlyList<string> AccessIds,
     IReadOnlyList<string> ExternalCalls,
-    IReadOnlyList<string> CacheCalls);
+    IReadOnlyList<string> CacheCalls)
+{
+    /// <summary>경계를 무엇으로 잡았는지. v7 이전 문서에는 없고, 없으면 <see cref="TransactionScopeKind.Explicit"/>로 읽는다.</summary>
+    public TransactionScopeKind Kind { get; init; } = TransactionScopeKind.Explicit;
+
+    /// <summary><see cref="TransactionScopeKind.Wrapper"/>일 때 그 래퍼 메서드의 표시 이름.</summary>
+    public string WrapperName { get; init; } = string.Empty;
+}
 
 /// <param name="Detail">호출 대상 표시 이름과 데이터소스. 화면 둘째 줄에 쓴다.</param>
 /// <param name="CompensationNote">그렇게 판정한 이유 한 줄.</param>
