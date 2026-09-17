@@ -45,6 +45,7 @@ tracelens/
 ├── TraceLens.sln
 ├── docs/
 │   ├── data-contract.md          # graph.json 스키마(v7), API·MCP 계약, 이행 규칙
+│   ├── next-tasks_kr.md          # 목표 대비 점검 결과와 다음 태스크(체크리스트). 다음 세션은 여기서 시작한다
 │   ├── manual.html / manual_kr.html
 │   └── mcp-setup.md / mcp-setup_kr.md
 ├── samples/                      # 배포물에 함께 넣는 예제(분석 대상). 도구 코드가 아니다
@@ -197,6 +198,8 @@ npm run build      # Server의 wwwroot로 산출물 복사
 단계별 구현 체크리스트 문서(task.md·task2.md·task3.md)는 6단계 완료 후 삭제했다.
 [`docs/adoption-and-vibe-coding-roadmap_kr.md`](docs/adoption-and-vibe-coding-roadmap_kr.md)의 A~I는 구현을 마쳤고,
 그 결과는 [`CHANGELOG.md`](CHANGELOG.md)에 정리돼 있다. 현재 저장소 상태와 남은 작업은 `git log`와 코드를 직접 확인해서 판단한다.
+2026-09-17에 README·CLAUDE.md의 목표와 실제 코드·실제 프로젝트 분석 결과를 대조한 점검 문서
+[`docs/next-tasks_kr.md`](docs/next-tasks_kr.md)가 있다. 상단 태스크 목록(T1~T19)을 하나 끝낼 때마다 즉시 체크한다.
 
 로드맵에서 **아직 하지 않은 것**은 사람이 해야 하는 일이다: 소규모 사용자 관찰(§16.1), 공개 게시와 홍보(§16.2),
 macOS·Linux 검증. 이것들을 코드로 대신하지 않는다.
