@@ -71,6 +71,7 @@ public static class ServerHost
         api.MapAnalyzeEndpoints();
         api.MapAnalysisJobEndpoints();
         api.MapBrowseEndpoints();
+        api.MapSampleEndpoints();
         api.MapGraphEndpoints();
         api.MapSourceEndpoints();
         api.MapFreshnessEndpoints();

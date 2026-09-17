@@ -361,3 +361,21 @@ export interface AnalysisJobEvent {
   count: number | null
   result: unknown
 }
+
+/** 배포 패키지에 함께 들어가는 예제 하나. `available`이 false면 소스 폴더를 찾지 못한 것이다. */
+export interface SampleView {
+  id: string
+  title: string
+  description: string
+  relativeTargetPath: string
+  expected: string[]
+  learningSteps: string[]
+  available: boolean
+}
+
+/** `copied`가 false면 이미 복사돼 있던 것을 그대로 쓴다. */
+export interface PrepareSampleResponse {
+  id: string
+  targetPath: string
+  copied: boolean
+}

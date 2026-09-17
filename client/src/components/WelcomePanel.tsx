@@ -1,15 +1,19 @@
 import { useState } from 'react'
 import { recipes, type Recipe } from '../content/recipes'
 import { useI18n } from '../i18n/I18nProvider'
-import type { DiagnosticItem, DiagnosticsReport } from '../types/context'
+import type { DiagnosticItem, DiagnosticsReport, SampleView } from '../types/context'
 import type { TranslationKey } from '../i18n/ko'
 
 interface WelcomePanelProps {
-  /** 예제 프로젝트 경로를 알고 있으면 바로 분석할 수 있게 한다. */
-  samplePath: string | null
+  /** 이 빌드에 들어 있는 예제 목록. 비어 있으면 예제 버튼 대신 사유를 보여 준다. */
+  samples: SampleView[]
+  /** 예제를 복사하는 중인지. 복사 → 분석이 이어지므로 버튼을 잠근다. */
+  preparingSample: boolean
+  /** 직전에 준비한 예제의 안내 문구(복사 위치). 없으면 null이다. */
+  sampleNotice: string | null
   busy: boolean
   diagnostics: DiagnosticsReport | null
-  onAnalyzeSample: () => void
+  onAnalyzeSample: (sample: SampleView) => void
   onPickTarget: () => void
   onRunDiagnostics: () => void
   onStartRecipe: (recipe: Recipe) => void
@@ -20,7 +24,9 @@ interface WelcomePanelProps {
  * README와 같은 이야기 순서(무엇을 하는 도구인지 → 예제 → 내 프로젝트 → 지원 범위)를 따른다.
  */
 export function WelcomePanel({
-  samplePath,
+  samples,
+  preparingSample,
+  sampleNotice,
   busy,
   diagnostics,
   onAnalyzeSample,
@@ -30,6 +36,7 @@ export function WelcomePanel({
 }: WelcomePanelProps) {
   const { t, lang } = useI18n()
   const [showDiagnostics, setShowDiagnostics] = useState(false)
+  const available = samples.filter((sample) => sample.available)
 
   /** 점검 문장은 코드로 번역하고, 경로·포트 같은 값은 서버가 준 그대로 보여 준다. */
   const translateByCode = (prefix: string, code: string, fallback: string) => {
@@ -49,9 +56,31 @@ export function WelcomePanel({
         <section className="welcome-card">
           <h3>{t('welcome.exampleTitle')}</h3>
           <p>{t('welcome.exampleBody')}</p>
-          <button type="button" className="primary" onClick={onAnalyzeSample} disabled={busy || !samplePath}>
-            {t('welcome.exampleCta')}
-          </button>
+          {available.length === 0 ? (
+            <small className="bad">{t('welcome.sample.unavailable')}</small>
+          ) : (
+            <>
+              {available.map((sample, index) => (
+                <button
+                  key={sample.id}
+                  type="button"
+                  className={index === 0 ? 'primary' : 'link-button'}
+                  onClick={() => onAnalyzeSample(sample)}
+                  disabled={busy || preparingSample}
+                >
+                  {index === 0 ? t('welcome.exampleCta') : sample.title}
+                </button>
+              ))}
+              {preparingSample && <small aria-live="polite">{t('welcome.sample.preparing')}</small>}
+              {sampleNotice && <small aria-live="polite">{sampleNotice}</small>}
+              <details>
+                <summary>{t('welcome.sample.expected')}</summary>
+                <ul className="welcome-list">
+                  {available[0].expected.map((line) => <li key={line}>{line}</li>)}
+                </ul>
+              </details>
+            </>
+          )}
           <small>{t('welcome.exampleHint')}</small>
         </section>
 

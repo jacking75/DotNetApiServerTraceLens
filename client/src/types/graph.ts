@@ -379,6 +379,10 @@ export interface AskRequest {
   intent?: string
   budget?: string
   expectedSnapshotId?: string
+  /** 소스 본문을 함께 넘길지. 미리보기의 같은 옵션과 같은 뜻이다. */
+  includeSource?: boolean
+  /** 문맥에서 뺄 파일의 상대 경로. 미리보기에서 체크를 끈 파일이다. */
+  excludeFiles?: string[]
 }
 
 export interface AskEvent {

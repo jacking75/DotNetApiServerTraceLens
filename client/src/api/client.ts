@@ -1,12 +1,13 @@
 import type {
   AnalysisJob,
   AnalysisJobEvent,
-  AnalysisStatus,
   ContextDocument,
   ContextRequestBody,
   DiagnosticsReport,
   ImpactResult,
   McpSetupPreview,
+  PrepareSampleResponse,
+  SampleView,
   SaveSnapshotResponse,
   ShareReport,
   SnapshotDiff,
@@ -21,7 +22,6 @@ import type {
   EntryPoint,
   FreshnessResponse,
   GraphClass,
-  GraphClassSummary,
   GraphDocument,
   GraphNamespaceSummary,
   GraphNode,
@@ -97,10 +97,6 @@ export function browsePath(path?: string): Promise<BrowseResponse> {
 
 export function getEntryPoints(): Promise<EntryPoint[]> {
   return request('/api/graph/entrypoints')
-}
-
-export function getClasses(): Promise<GraphClassSummary[]> {
-  return request('/api/graph/classes')
 }
 
 export function getNamespaces(): Promise<GraphNamespaceSummary[]> {
@@ -192,12 +188,18 @@ export function normalizeGraph(graph: GraphDocument): GraphDocument {
   }
 }
 
-export function getFreshness(): Promise<FreshnessResponse> {
-  return request('/api/freshness')
+/** 배포 패키지에 들어 있는 예제 목록. 소스 빌드에서 samples 폴더가 없으면 빈 목록이다. */
+export function getSamples(): Promise<SampleView[]> {
+  return request('/api/samples')
 }
 
-export function getAnalysisStatus(): Promise<AnalysisStatus> {
-  return request('/api/analysis-status')
+/** 예제를 사용자 영역으로 복사하고 분석할 대상 경로를 받는다. 이미 있으면 다시 복사하지 않는다. */
+export function prepareSample(id: string, overwrite = false): Promise<PrepareSampleResponse> {
+  return postJson(`/api/samples/${encodeURIComponent(id)}/prepare`, { overwrite })
+}
+
+export function getFreshness(): Promise<FreshnessResponse> {
+  return request('/api/freshness')
 }
 
 export function getDiagnostics(target?: string): Promise<DiagnosticsReport> {

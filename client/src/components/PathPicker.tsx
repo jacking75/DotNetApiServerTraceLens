@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { browsePath } from '../api/client'
+import { useI18n } from '../i18n/I18nProvider'
 import type { BrowseEntry, BrowseResponse } from '../types/graph'
 
-/** 파일 종류를 한눈에 구분하기 위한 배지 문구. */
+/** 파일 종류를 한눈에 구분하기 위한 배지 문구. 코드 표기라 번역하지 않는다. */
 const kindBadge: Record<BrowseEntry['kind'], string> = {
   Directory: '',
   Solution: 'SLN',
@@ -12,19 +13,28 @@ const kindBadge: Record<BrowseEntry['kind'], string> = {
 interface PathPickerProps {
   /** 대화상자를 열 때 처음 보여줄 경로. 비어 있으면 드라이브 목록부터 시작한다. */
   initialPath: string
+  /**
+   * 무엇을 고르는지. `target`은 .sln/.csproj 파일, `directory`는 지금 열어 둔 폴더 자체다.
+   * 가져온 분석의 원본 루트를 연결할 때 `directory`를 쓴다.
+   */
+  mode?: 'target' | 'directory'
   onSelect: (path: string) => void
   onClose: () => void
 }
 
 /**
- * 분석 대상(.sln / .csproj)을 고르는 대화상자.
+ * 분석 대상(.sln / .csproj)이나 폴더를 고르는 대화상자.
  * 브라우저 파일 대화상자는 절대 경로를 알려주지 않으므로 서버의 `/api/browse`로 디렉터리를 탐색한다.
+ * 열리면 닫기 버튼에 포커스를 두고, Escape로 닫고, 닫힐 때 이전 포커스를 되돌린다.
  */
-export function PathPicker({ initialPath, onSelect, onClose }: PathPickerProps) {
+export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: PathPickerProps) {
+  const { t } = useI18n()
   const [listing, setListing] = useState<BrowseResponse | null>(null)
   const [selected, setSelected] = useState<BrowseEntry | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const previouslyFocused = useRef<Element | null>(null)
 
   const load = useCallback(async (path?: string) => {
     setBusy(true)
@@ -34,15 +44,23 @@ export function PathPicker({ initialPath, onSelect, onClose }: PathPickerProps) 
       setListing(next)
       setSelected(null)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '폴더를 열지 못했다.')
+      setError(reason instanceof Error ? reason.message : t('picker.openFailed'))
     } finally {
       setBusy(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     void load(initialPath.trim() || undefined)
   }, [initialPath, load])
+
+  useEffect(() => {
+    previouslyFocused.current = document.activeElement
+    closeRef.current?.focus()
+    return () => {
+      if (previouslyFocused.current instanceof HTMLElement) previouslyFocused.current.focus()
+    }
+  }, [])
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -63,6 +81,9 @@ export function PathPicker({ initialPath, onSelect, onClose }: PathPickerProps) 
   }
 
   const entries = listing?.entries ?? []
+  const pickDirectory = mode === 'directory'
+  const chosen = pickDirectory ? listing?.path ?? null : selected?.path ?? null
+  const title = pickDirectory ? t('picker.titleDirectory') : t('picker.title')
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -70,12 +91,20 @@ export function PathPicker({ initialPath, onSelect, onClose }: PathPickerProps) 
         className="path-picker"
         role="dialog"
         aria-modal="true"
-        aria-label="분석 대상 선택"
+        aria-label={title}
         onClick={(event) => event.stopPropagation()}
       >
         <header>
-          <span>분석 대상 선택</span>
-          <button type="button" className="picker-close" onClick={onClose} aria-label="닫기">✕</button>
+          <span>{title}</span>
+          <button
+            type="button"
+            className="picker-close"
+            ref={closeRef}
+            onClick={onClose}
+            aria-label={t('picker.close')}
+          >
+            ✕
+          </button>
         </header>
 
         <div className="picker-path">
@@ -83,19 +112,19 @@ export function PathPicker({ initialPath, onSelect, onClose }: PathPickerProps) 
             type="button"
             onClick={() => void load(listing?.parentPath ?? undefined)}
             disabled={busy || !listing?.path}
-            title="상위 폴더로"
+            title={t('picker.up')}
           >
-            ↑ 상위
+            ↑ {t('picker.up')}
           </button>
-          <span title={listing?.path ?? ''}>{listing?.path ?? '드라이브'}</span>
+          <span title={listing?.path ?? ''}>{listing?.path ?? t('picker.drives')}</span>
         </div>
 
         {error && <div className="panel-message error">{error}</div>}
 
         <div className="picker-list">
-          {busy && <div className="panel-message">폴더를 읽는 중이다.</div>}
+          {busy && <div className="panel-message">{t('picker.loading')}</div>}
           {!busy && entries.length === 0 && !error && (
-            <div className="panel-message">이 폴더에는 하위 폴더나 .sln / .csproj 파일이 없다.</div>
+            <div className="panel-message">{t('picker.empty')}</div>
           )}
           {!busy && entries.map((entry) => (
             <button
@@ -114,17 +143,17 @@ export function PathPicker({ initialPath, onSelect, onClose }: PathPickerProps) 
         </div>
 
         <footer>
-          <span className="picker-selection" title={selected?.path ?? ''}>
-            {selected?.path ?? '.sln 또는 .csproj 파일을 고른다. 폴더는 눌러서 들어간다.'}
+          <span className="picker-selection" title={chosen ?? ''}>
+            {chosen ?? (pickDirectory ? t('picker.hintDirectory') : t('picker.hint'))}
           </span>
-          <button type="button" onClick={onClose}>취소</button>
+          <button type="button" onClick={onClose}>{t('picker.cancel')}</button>
           <button
             type="button"
             className="primary"
-            disabled={!selected}
-            onClick={() => selected && onSelect(selected.path)}
+            disabled={!chosen}
+            onClick={() => chosen && onSelect(chosen)}
           >
-            선택
+            {t('picker.select')}
           </button>
         </footer>
       </section>

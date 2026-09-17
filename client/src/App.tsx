@@ -7,8 +7,11 @@ import {
   getEntryPoints,
   getGraph,
   getNamespaces,
+  adoptImportedGraph,
   importGraph,
   loadSavedGraph,
+  getSamples,
+  prepareSample,
   startAnalysisJob,
   watchAnalysisJob,
 } from './api/client'
@@ -55,7 +58,7 @@ import {
   type MiddlewareViewState,
   type PersistedState,
 } from './state/viewState'
-import type { DiagnosticsReport, SelectionKind } from './types/context'
+import type { DiagnosticsReport, SampleView, SelectionKind } from './types/context'
 import type {
   AnalyzeSummary,
   EntryPoint,
@@ -118,6 +121,14 @@ export default function App() {
   const [guideOpen, setGuideOpen] = useState(false)
   const [walkthroughDone, setWalkthroughDone] = useState<Set<WalkthroughStepId>>(new Set())
   const [diagnostics, setDiagnostics] = useState<DiagnosticsReport | null>(null)
+  const [samples, setSamples] = useState<SampleView[]>([])
+  const [preparingSample, setPreparingSample] = useState(false)
+  /** 예제로 분석했다면 그 예제. 안내에 "이 예제에서 보이는 것"을 함께 띄운다. */
+  const [activeSample, setActiveSample] = useState<SampleView | null>(null)
+  /** 가져온 분석의 원본 루트를 고르는 대화상자. */
+  const [rootPickerOpen, setRootPickerOpen] = useState(false)
+  const [adoptMessage, setAdoptMessage] = useState<string | null>(null)
+  const [sampleNotice, setSampleNotice] = useState<string | null>(null)
   const [diffOpen, setDiffOpen] = useState(false)
   const [activeRecipe, setActiveRecipe] = useState<Recipe | null>(null)
 
@@ -408,6 +419,59 @@ export default function App() {
       setBusy(false)
     }
   }
+
+  /**
+   * 가져온 분석에 원본 소스 루트를 연결한다.
+   * 입력 지문이 일치할 때만 소스 보기가 열린다(409면 무엇이 다른지 보여 준다).
+   */
+  const adoptRoot = async (rootDirectory: string) => {
+    setRootPickerOpen(false)
+    setAdoptMessage(null)
+    try {
+      await adoptImportedGraph(rootDirectory)
+      const nextGraph = await loadGraphData()
+      applyAnalyzedGraph(nextGraph, await summarizeFrom(nextGraph))
+      setAdoptMessage(t('adopt.done'))
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.code === 'INPUT_MISMATCH') {
+        const changed = (reason.details as { changedFiles?: string[] } | undefined)?.changedFiles ?? []
+        setAdoptMessage(`${t('adopt.mismatch')} ${changed.slice(0, 5).join(', ')}`)
+        return
+      }
+
+      setAdoptMessage(describeError(reason, t('app.importFailed')))
+    }
+  }
+
+  // 첫 화면의 "예제 분석" 버튼이 쓰는 목록. 실패하면 빈 목록으로 두고 버튼 대신 사유를 보여 준다.
+  useEffect(() => {
+    void (async () => {
+      try {
+        setSamples(await getSamples())
+      } catch {
+        setSamples([])
+      }
+    })()
+  }, [])
+
+  /** 예제를 사용자 영역으로 복사한 뒤 그 경로를 분석 대상으로 삼아 바로 분석한다. */
+  const analyzeSample = useCallback(async (sample: SampleView) => {
+    setPreparingSample(true)
+    setSampleNotice(null)
+    try {
+      const prepared = await prepareSample(sample.id)
+      setSolutionPath(prepared.targetPath)
+      setSampleNotice(t(prepared.copied ? 'welcome.sample.copiedTo' : 'welcome.sample.reused', {
+        path: prepared.targetPath,
+      }))
+      setActiveSample(sample)
+      await analyze(prepared.targetPath)
+    } catch (reason) {
+      setError(describeError(reason, t('app.analyzeFailed')))
+    } finally {
+      setPreparingSample(false)
+    }
+  }, [analyze, describeError, t])
 
   const runDiagnostics = async () => {
     try {
@@ -903,6 +967,25 @@ export default function App() {
         />
       )}
 
+      {rootPickerOpen && (
+        <PathPicker
+          initialPath={solutionPath}
+          mode="directory"
+          onSelect={(path) => void adoptRoot(path)}
+          onClose={() => setRootPickerOpen(false)}
+        />
+      )}
+
+      {summary?.origin === 'offlineSnapshot' && (
+        <div className="notice-banner" role="status">
+          <span>{t('adopt.banner')}</span>
+          <button type="button" className="link-button" onClick={() => setRootPickerOpen(true)}>
+            {t('adopt.cta')}
+          </button>
+          {adoptMessage && <span className="hint">{adoptMessage}</span>}
+        </div>
+      )}
+
       <ViewToolbar
         viewMode={viewMode}
         onChangeMode={changeMode}
@@ -979,10 +1062,12 @@ export default function App() {
 
       {!graph ? (
         <WelcomePanel
-          samplePath={null}
+          samples={samples}
+          preparingSample={preparingSample}
+          sampleNotice={sampleNotice}
           busy={busy}
           diagnostics={diagnostics}
-          onAnalyzeSample={() => setPickerOpen(true)}
+          onAnalyzeSample={(sample) => void analyzeSample(sample)}
           onPickTarget={() => setPickerOpen(true)}
           onRunDiagnostics={() => void runDiagnostics()}
           onStartRecipe={startRecipe}
@@ -1200,7 +1285,13 @@ export default function App() {
         />
 
         <div className="right-column">
-          {guideOpen && <GuidedWalkthrough completed={walkthroughDone} onClose={() => setGuideOpen(false)} />}
+          {guideOpen && (
+            <GuidedWalkthrough
+              completed={walkthroughDone}
+              expected={activeSample?.expected}
+              onClose={() => setGuideOpen(false)}
+            />
+          )}
           {diffOpen && (
             <SnapshotDiffPanel
               snapshotId={graph?.snapshotId ?? ''}

@@ -23,6 +23,8 @@ const steps: readonly WalkthroughStep[] = [
 interface GuidedWalkthroughProps {
   /** 이미 끝낸 단계. 사용자의 실제 선택·복사 완료로만 채워진다. */
   completed: ReadonlySet<WalkthroughStepId>
+  /** 예제로 시작했다면 그 예제가 무엇을 보여 주는지. 결과를 스스로 확인할 수 있게 첫 단계에 함께 보여 준다. */
+  expected?: readonly string[]
   onClose: () => void
 }
 
@@ -30,7 +32,7 @@ interface GuidedWalkthroughProps {
  * 첫 성공 경로 안내다. 언제든 닫고 다시 열 수 있고, 진행은 실제 완료 이벤트로만 올라간다.
  * 화면 좌표에 의존하지 않으므로 창 크기가 바뀌어도 어긋나지 않는다.
  */
-export function GuidedWalkthrough({ completed, onClose }: GuidedWalkthroughProps) {
+export function GuidedWalkthrough({ completed, expected = [], onClose }: GuidedWalkthroughProps) {
   const { t } = useI18n()
   const current = steps.find((step) => !completed.has(step.id)) ?? steps[steps.length - 1]
 
@@ -47,6 +49,12 @@ export function GuidedWalkthrough({ completed, onClose }: GuidedWalkthroughProps
         <small>{t('guide.progress', { done: completed.size, total: steps.length })}</small>
         <button type="button" className="link-button" onClick={onClose}>{t('guide.close')}</button>
       </header>
+      {expected.length > 0 && (
+        <div className="walkthrough-expected">
+          <b>{t('welcome.sample.expected')}</b>
+          <ul>{expected.map((line) => <li key={line}>{line}</li>)}</ul>
+        </div>
+      )}
       <ol>
         {steps.map((step) => {
           const done = completed.has(step.id)

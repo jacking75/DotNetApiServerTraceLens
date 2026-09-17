@@ -116,7 +116,10 @@ public static class AskEndpoints
                     ParseEnum(request.Budget, ContextBudget.Balanced))
                 {
                     Question = request.Question.Trim(),
-                    ExpectedSnapshotId = request.ExpectedSnapshotId
+                    ExpectedSnapshotId = request.ExpectedSnapshotId,
+                    // 미리보기(/api/context)와 실제로 에이전트에 넘기는 문맥이 달라지면 안 된다.
+                    IncludeSource = request.IncludeSource ?? true,
+                    ExcludeFiles = request.ExcludeFiles ?? []
                 },
                 cancellationToken);
         }
@@ -272,6 +275,12 @@ public sealed record AskRequest(string? NodeId, string? Question, string Mode)
     public string? Budget { get; init; }
 
     public string? ExpectedSnapshotId { get; init; }
+
+    /// <summary>소스 본문을 함께 넘길지. 미리보기의 같은 이름 옵션과 같은 뜻이다.</summary>
+    public bool? IncludeSource { get; init; }
+
+    /// <summary>문맥에서 뺄 파일의 상대 경로. 미리보기에서 체크를 끈 파일이 그대로 들어온다.</summary>
+    public IReadOnlyList<string>? ExcludeFiles { get; init; }
 }
 
 public sealed record AskEvent(string Type, string? Text);

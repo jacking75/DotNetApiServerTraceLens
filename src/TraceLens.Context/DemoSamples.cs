@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace TraceLens.Cli;
+namespace TraceLens.Context;
 
 /// <param name="RelativeTargetPath">복사한 폴더 기준으로 분석할 대상(.sln 또는 .csproj)의 상대 경로.</param>
 /// <param name="Expected">이 예제를 분석하면 무엇이 보이는지. 사용자가 결과를 스스로 확인할 수 있게 적어 둔다.</param>
@@ -12,6 +12,10 @@ public sealed record DemoSample(
     string RelativeTargetPath,
     IReadOnlyList<string> Expected,
     IReadOnlyList<string> LearningSteps);
+
+/// <param name="TargetPath">복사한 뒤 분석할 대상의 전체 경로.</param>
+/// <param name="Copied">이번 호출에서 실제로 복사했는지. false면 이미 있던 것을 그대로 쓴다.</param>
+public sealed record SamplePreparation(string TargetPath, bool Copied);
 
 /// <summary>
 /// 배포 패키지에 함께 들어가는 예제를 찾아 사용자가 고른 폴더로 복사한다.
@@ -56,6 +60,31 @@ public static class DemoSamples
         return [];
     }
 
+    /// <summary>
+    /// 예제 하나를 사용자 영역으로 복사하고 분석 대상 경로를 돌려준다.
+    /// 도구 설치 폴더 안에서 직접 분석하지 않는 이유는 쓰기가 막혀 있을 수 있고 <c>.tracelens</c> 산출물이 생기기 때문이다.
+    /// 이미 복사돼 있으면 다시 복사하지 않는다(<paramref name="overwrite"/>가 true일 때만 덮어쓴다).
+    /// </summary>
+    public static Task<SamplePreparation> PrepareAsync(DemoSample sample, string destination, bool overwrite)
+    {
+        var targetPath = Path.GetFullPath(Path.Combine(destination, sample.RelativeTargetPath));
+        if (!overwrite && File.Exists(targetPath))
+        {
+            return Task.FromResult(new SamplePreparation(targetPath, false));
+        }
+
+        Directory.CreateDirectory(destination);
+        CopyDirectory(sample.SourceDirectory, Path.Combine(destination, Path.GetFileName(sample.SourceDirectory)));
+        return Task.FromResult(new SamplePreparation(targetPath, true));
+    }
+
+    /// <summary>예제를 복사할 기본 위치. 사용자 영역이라 쓰기 권한 문제가 없다.</summary>
+    public static string DefaultDestination(string sampleId) => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "TraceLens",
+        "samples",
+        sampleId);
+
     public static Task<string> CopyAsync(IReadOnlyList<DemoSample> samples, string destination)
     {
         Directory.CreateDirectory(destination);
@@ -67,11 +96,35 @@ public static class DemoSamples
         return Task.FromResult(Path.GetFullPath(destination));
     }
 
+    /// <summary>
+    /// 예제 폴더를 찾아볼 위치. 배포물은 실행 파일 옆에 <c>samples</c>가 있고,
+    /// 소스 빌드(<c>run.ps1</c>)는 <c>src/TraceLens.Server/bin/…</c>에서 도니 저장소 루트까지 거슬러 올라가며 찾는다.
+    /// </summary>
     private static IEnumerable<string> CandidateRoots()
     {
-        yield return Path.Combine(AppContext.BaseDirectory, "samples");
-        yield return Path.Combine(Directory.GetCurrentDirectory(), "samples");
-        yield return Path.Combine(AppContext.BaseDirectory, "..", "..", "samples");
+        foreach (var start in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
+        {
+            var current = SafeDirectory(start);
+            for (var level = 0; current is not null && level <= MaxAncestorLevels; level++, current = current.Parent)
+            {
+                yield return Path.Combine(current.FullName, "samples");
+            }
+        }
+    }
+
+    /// <summary>저장소 루트까지는 보통 6~7단계면 닿는다. 드라이브 루트까지 훑지 않도록 상한을 둔다.</summary>
+    private const int MaxAncestorLevels = 7;
+
+    private static DirectoryInfo? SafeDirectory(string path)
+    {
+        try
+        {
+            return new DirectoryInfo(path);
+        }
+        catch (Exception exception) when (exception is ArgumentException or PathTooLongException or NotSupportedException)
+        {
+            return null;
+        }
     }
 
     private static void CopyDirectory(string source, string destination)

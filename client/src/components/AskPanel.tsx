@@ -5,6 +5,7 @@ import type { TranslationKey } from '../i18n/ko'
 import type { ContextBudget, ContextDocument, ContextIntent, McpSetupPreview, SelectionKind } from '../types/context'
 import type { AskMode } from '../types/graph'
 import { ContextPreview } from './ContextPreview'
+import { ShareReportDialog } from './ShareReportDialog'
 
 /** 질문 패널이 다루는 선택. 실행 가능한 노드가 없어도 문맥은 만들 수 있다. */
 export interface AskContext {
@@ -58,6 +59,9 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [setup, setSetup] = useState<McpSetupPreview | null>(null)
+  /** 미리보기에서 체크를 끈 파일. 문맥 생성과 에이전트 실행 양쪽에 그대로 넘긴다. */
+  const [excludedFiles, setExcludedFiles] = useState<string[]>([])
+  const [shareOpen, setShareOpen] = useState(false)
   const abortController = useRef<AbortController | null>(null)
   const contextKey = context ? `${context.kind}:${context.id}` : null
 
@@ -71,6 +75,8 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
     setMessage(null)
     setPreview(null)
     setBusy(false)
+    setExcludedFiles([])
+    setShareOpen(false)
   }, [contextKey])
 
   useEffect(() => () => abortController.current?.abort(), [])
@@ -89,6 +95,7 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
             budget,
             question: question.trim(),
             includeSource,
+            excludeFiles: excludedFiles,
             expectedSnapshotId: snapshotId || undefined,
           })
           if (active) {
@@ -107,7 +114,7 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
       active = false
       window.clearTimeout(timer)
     }
-  }, [context, contextKey, intent, budget, question, includeSource, snapshotId, describe])
+  }, [context, contextKey, intent, budget, question, includeSource, excludedFiles, snapshotId, describe])
 
   const copy = async () => {
     if (!preview) return
@@ -139,6 +146,8 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
           mode: 'mcp',
           intent,
           budget,
+          includeSource,
+          excludeFiles: excludedFiles,
           expectedSnapshotId: snapshotId || undefined,
         },
         (event) => {
@@ -259,7 +268,14 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
           </>
         )}
 
-        {mode !== 'editor' && preview && <ContextPreview context={preview} />}
+        {mode !== 'editor' && preview && (
+          <ContextPreview
+            context={preview}
+            excludedFiles={excludedFiles}
+            onToggleFile={(file, include) => setExcludedFiles((current) =>
+              include ? current.filter((item) => item !== file) : [...current, file])}
+          />
+        )}
 
         {mode === 'mcp' && (question.trim() || answer) && (
           <div className="ask-response" aria-live="polite">
@@ -288,6 +304,14 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
           <button type="button" className="link-button" onClick={() => void showSetup()}>
             {t('ask.mcpSetup')}
           </button>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => setShareOpen(true)}
+            disabled={!context}
+          >
+            {t('share.open')}
+          </button>
           {message && <div className="copy-message">{message}</div>}
         </div>
 
@@ -309,6 +333,10 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
           </div>
         )}
       </div>
+
+      {shareOpen && context && (
+        <ShareReportDialog kind={context.kind} id={context.id} onClose={() => setShareOpen(false)} />
+      )}
     </section>
   )
 }

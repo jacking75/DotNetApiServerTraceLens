@@ -79,6 +79,60 @@ public sealed class AskEndpointsTests
         Assert.Equal(["--goto", "C:\\Fixture\\Controller.cs:3"], runner.Request.Arguments);
     }
 
+    [Fact]
+    public async Task HandleAsync_HonoursIncludeSourceAndExcludeFiles()
+    {
+        // 미리보기(/api/context)와 실제로 에이전트에 넘기는 문맥이 같아야 한다.
+        var root = Path.Combine(Path.GetTempPath(), "tracelens-ask-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            const string marker = "MARKER_SOURCE_LINE";
+            await File.WriteAllTextAsync(
+                Path.Combine(root, "Controller.cs"),
+                $"class Controller\n{{\n    void Entry() {{ /* {marker} */ }}\n}}\n");
+            var graph = CreateGraph() with { SolutionPath = Path.Combine(root, "Fixture.sln") };
+            var store = new GraphStore();
+            store.Set(graph);
+
+            var withSource = await RunAskAsync(store, graph, includeSource: true, excludeFiles: null);
+            Assert.Contains(marker, withSource, StringComparison.Ordinal);
+
+            var withoutSource = await RunAskAsync(store, graph, includeSource: false, excludeFiles: null);
+            Assert.DoesNotContain(marker, withoutSource, StringComparison.Ordinal);
+
+            var excluded = await RunAskAsync(store, graph, includeSource: true, excludeFiles: ["Controller.cs"]);
+            Assert.DoesNotContain(marker, excluded, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>에이전트에 넘긴 프롬프트(인자)를 그대로 돌려준다.</summary>
+    private static async Task<string> RunAskAsync(
+        GraphStore store, GraphDocument graph, bool includeSource, IReadOnlyList<string>? excludeFiles)
+    {
+        var runner = new StubProcessRunner();
+        var context = CreateHttpContext();
+        await AskEndpoints.HandleAsync(
+            new AskRequest(graph.Nodes[0].Id, "무슨 코드인가?", "mcp")
+            {
+                IncludeSource = includeSource,
+                ExcludeFiles = excludeFiles
+            },
+            context,
+            store,
+            runner,
+            new ClaudeCodeAgentRunner(runner),
+            new StubMcpConfigWriter("C:\\Fixture\\.tracelens\\mcp.json"),
+            new ContextBuilder(new GraphFreshnessEvaluator()),
+            CancellationToken.None);
+        Assert.NotNull(runner.StreamingRequest);
+        return string.Join("\n", runner.StreamingRequest!.Arguments);
+    }
+
     private static DefaultHttpContext CreateHttpContext()
     {
         var services = new ServiceCollection().AddLogging().BuildServiceProvider();

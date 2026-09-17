@@ -4,6 +4,9 @@ import type { ContextDocument } from '../types/context'
 
 interface ContextPreviewProps {
   context: ContextDocument
+  /** 문맥에서 뺀 파일. 체크를 끄면 그 파일의 소스가 문맥에 들어가지 않는다. */
+  excludedFiles?: readonly string[]
+  onToggleFile?: (file: string, include: boolean) => void
 }
 
 /**
@@ -11,7 +14,7 @@ interface ContextPreviewProps {
  * 포함한 파일, 소스 포함 여부, 길이, 제외 항목을 먼저 보여 준다 —
  * 외부 AI로 보내면 그 내용이 전송되므로 사용자가 미리 확인할 수 있어야 한다.
  */
-export function ContextPreview({ context }: ContextPreviewProps) {
+export function ContextPreview({ context, excludedFiles = [], onToggleFile }: ContextPreviewProps) {
   const { t, formatPercent } = useI18n()
   const [showMarkdown, setShowMarkdown] = useState(false)
 
@@ -47,8 +50,26 @@ export function ContextPreview({ context }: ContextPreviewProps) {
 
       {context.files.length > 0 && (
         <ul className="context-files">
-          {context.files.map((file) => <li key={file}><code>{file}</code></li>)}
+          {context.files.map((file) => (
+            <li key={file}>
+              {onToggleFile ? (
+                <label className="checkbox" title={t('context.excludeFile')}>
+                  <input
+                    type="checkbox"
+                    checked={!excludedFiles.includes(file)}
+                    onChange={(event) => onToggleFile(file, event.target.checked)}
+                  />
+                  <code>{file}</code>
+                </label>
+              ) : (
+                <code>{file}</code>
+              )}
+            </li>
+          ))}
         </ul>
+      )}
+      {excludedFiles.length > 0 && (
+        <div className="hint">{t('context.excludedCount', { count: excludedFiles.length })}</div>
       )}
 
       {context.paths.length > 0 && (
