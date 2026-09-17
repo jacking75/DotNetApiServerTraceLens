@@ -257,6 +257,43 @@ public static class CommandRouter
                 Console.WriteLine($"  - {limitation}");
             }
         }
+
+        PrintGitIgnoreTip(targetPath);
+    }
+
+    /// <summary>
+    /// <c>.tracelens/</c>가 분석 대상 저장소 아래에 생긴다. 무시 목록에 없으면 커밋에 섞인다.
+    /// 이미 적혀 있으면 아무 말도 하지 않는다.
+    /// </summary>
+    private static void PrintGitIgnoreTip(string targetPath)
+    {
+        try
+        {
+            var directory = Directory.Exists(targetPath)
+                ? new DirectoryInfo(targetPath)
+                : new FileInfo(targetPath).Directory;
+            for (var level = 0; directory is not null && level <= 6; level++, directory = directory.Parent)
+            {
+                if (!Directory.Exists(Path.Combine(directory.FullName, ".git")))
+                {
+                    continue;
+                }
+
+                var ignorePath = Path.Combine(directory.FullName, ".gitignore");
+                var alreadyIgnored = File.Exists(ignorePath) &&
+                    File.ReadAllLines(ignorePath).Any(line => line.Trim().TrimStart('/').StartsWith(".tracelens", StringComparison.OrdinalIgnoreCase));
+                if (!alreadyIgnored)
+                {
+                    Console.WriteLine("  팁: .gitignore에 .tracelens/ 를 추가하면 저장소가 깨끗하다.");
+                }
+
+                return;
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            // 팁 하나를 못 띄우는 것으로 분석 결과를 가릴 이유는 없다.
+        }
     }
 
     private static async Task<int> McpAsync(string[] args)
@@ -323,8 +360,9 @@ public static class CommandRouter
 
     private static async Task<int> DemoAsync(string[] args)
     {
-        var destination = GetOption(args, "--dir")
-            ?? Path.Combine(Directory.GetCurrentDirectory(), "tracelens-demo");
+        // 설치 폴더(C:\Program Files\...)에서 실행해도 쓰기 권한 문제가 없도록 사용자 영역을 기본값으로 쓴다.
+        // UI가 쓰는 위치와 같다. --dir을 주면 그대로 존중한다.
+        var destination = GetOption(args, "--dir") ?? DemoSamples.DefaultDestination("demo");
         var samples = DemoSamples.Find();
         if (samples.Count == 0)
         {
@@ -333,19 +371,35 @@ public static class CommandRouter
         }
 
         Console.WriteLine("TraceLens 예제");
+        // 같은 소스 폴더를 쓰는 항목은 "같은 프로젝트의 학습 경로"다. 프로젝트가 여러 개인 것처럼 보이지 않게 들여쓴다.
+        var seenSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var sample in samples)
         {
-            Console.WriteLine($"  - {sample.Id}: {sample.Title}");
+            var isNewProject = seenSources.Add(sample.SourceDirectory);
+            var indent = isNewProject ? "  - " : "      · ";
+            Console.WriteLine($"{indent}{sample.Id}: {sample.Title}");
             Console.WriteLine($"      {sample.Description}");
+            foreach (var line in sample.Expected)
+            {
+                Console.WriteLine($"        보이는 것: {line}");
+            }
+
+            for (var step = 0; step < sample.LearningSteps.Count; step++)
+            {
+                Console.WriteLine($"        {step + 1}) {sample.LearningSteps[step]}");
+            }
         }
 
         Console.WriteLine();
-        var copied = await DemoSamples.CopyAsync(samples, destination);
-        Console.WriteLine($"예제를 복사했다: {copied}");
+        var copyResult = await DemoSamples.CopyAsync(samples, destination);
+        var target = Path.Combine(copyResult.Destination, samples[0].RelativeTargetPath);
+        Console.WriteLine($"예제를 복사했다: {copyResult.Destination} (프로젝트 {copyResult.CopiedDirectories.Count}개)");
         Console.WriteLine("다음 순서로 해 보면 된다:");
-        Console.WriteLine($"  1. tracelens analyze \"{Path.Combine(copied, samples[0].RelativeTargetPath)}\"");
-        Console.WriteLine($"  2. tracelens serve --target \"{Path.Combine(copied, samples[0].RelativeTargetPath)}\"");
+        Console.WriteLine($"  0. tracelens doctor --target \"{target}\"");
+        Console.WriteLine($"  1. tracelens analyze \"{target}\"");
+        Console.WriteLine($"  2. tracelens serve --target \"{target}\"");
         Console.WriteLine("  3. 진입점을 고르고 → 소스 근거를 확인하고 → AI 문맥을 복사한다.");
+        Console.WriteLine("  4. AI 에이전트 연결: UI의 \"MCP 연동 설정 보기\" 또는 docs/mcp-setup_kr.md");
         return 0;
     }
 

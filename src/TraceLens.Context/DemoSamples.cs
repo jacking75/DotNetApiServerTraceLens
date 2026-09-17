@@ -13,6 +13,10 @@ public sealed record DemoSample(
     IReadOnlyList<string> Expected,
     IReadOnlyList<string> LearningSteps);
 
+/// <param name="Destination">복사한 폴더의 전체 경로.</param>
+/// <param name="CopiedDirectories">실제로 복사한 소스 폴더. 같은 폴더를 가리키는 예제가 여럿이면 한 번만 들어간다.</param>
+public sealed record SampleCopyResult(string Destination, IReadOnlyList<string> CopiedDirectories);
+
 /// <param name="TargetPath">복사한 뒤 분석할 대상의 전체 경로.</param>
 /// <param name="Copied">이번 호출에서 실제로 복사했는지. false면 이미 있던 것을 그대로 쓴다.</param>
 public sealed record SamplePreparation(string TargetPath, bool Copied);
@@ -85,15 +89,27 @@ public static class DemoSamples
         "samples",
         sampleId);
 
-    public static Task<string> CopyAsync(IReadOnlyList<DemoSample> samples, string destination)
+    /// <summary>
+    /// 예제 목록을 한 폴더로 복사한다.
+    /// 여러 예제가 같은 소스 폴더를 가리키면(학습 경로가 둘인 한 프로젝트) 한 번만 복사한다.
+    /// </summary>
+    public static Task<SampleCopyResult> CopyAsync(IReadOnlyList<DemoSample> samples, string destination)
     {
         Directory.CreateDirectory(destination);
+        var copied = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var sample in samples)
         {
+            if (!seen.Add(sample.SourceDirectory))
+            {
+                continue;
+            }
+
             CopyDirectory(sample.SourceDirectory, Path.Combine(destination, Path.GetFileName(sample.SourceDirectory)));
+            copied.Add(sample.SourceDirectory);
         }
 
-        return Task.FromResult(Path.GetFullPath(destination));
+        return Task.FromResult(new SampleCopyResult(Path.GetFullPath(destination), copied));
     }
 
     /// <summary>

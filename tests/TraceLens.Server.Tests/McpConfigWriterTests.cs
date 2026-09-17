@@ -106,6 +106,63 @@ public sealed class McpConfigWriterTests
         }
     }
 
+    /// <summary>
+    /// 원라이너가 경로를 따옴표로 감싸지 않으면 `C:\Program Files\...`에서 그대로 깨진다.
+    /// 문서와 대화상자가 같은 값을 쓰므로 여기서 한 번 막으면 둘 다 막힌다.
+    /// </summary>
+    [Fact]
+    public async Task BuildPreview_QuotesPathsInOneLiners()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "tracelens config tests", Guid.NewGuid().ToString("N"));
+        var traceLensDirectory = Path.Combine(directory, ".tracelens");
+        Directory.CreateDirectory(traceLensDirectory);
+        await File.WriteAllTextAsync(Path.Combine(traceLensDirectory, "graph.json"), "{}");
+
+        try
+        {
+            var preview = new McpConfigWriter().BuildPreview(CreateGraph(directory), null);
+
+            Assert.NotEmpty(preview.OneLiners);
+            foreach (var oneLiner in preview.OneLiners)
+            {
+                Assert.Contains($"\"{preview.GraphPath}\"", oneLiner.Command, StringComparison.Ordinal);
+                Assert.Contains($"\"{preview.Command}\"", oneLiner.Command, StringComparison.Ordinal);
+            }
+
+            Assert.Contains(preview.OneLiners, item => item.Host == "Claude Code" && item.Command.StartsWith("claude mcp add", StringComparison.Ordinal));
+            Assert.NotEmpty(preview.VerifyPrompt);
+            Assert.Contains("get_analysis_status", preview.AgentGuide, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    /// <summary>Cursor는 Claude Code와 같은 형식을 쓴다. 두 스니펫이 갈라지면 한쪽이 조용히 틀린다.</summary>
+    [Fact]
+    public async Task BuildPreview_CursorSnippetMatchesClaudeCode()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "tracelens-config-tests", Guid.NewGuid().ToString("N"));
+        var traceLensDirectory = Path.Combine(directory, ".tracelens");
+        Directory.CreateDirectory(traceLensDirectory);
+        await File.WriteAllTextAsync(Path.Combine(traceLensDirectory, "graph.json"), "{}");
+
+        try
+        {
+            var preview = new McpConfigWriter().BuildPreview(CreateGraph(directory), null);
+            var claude = preview.Hosts.Single(item => item.Host == "Claude Code");
+            var cursor = preview.Hosts.Single(item => item.Host == "Cursor");
+
+            Assert.Equal(claude.Content, cursor.Content);
+            Assert.EndsWith(Path.Combine(".cursor", "mcp.json"), cursor.File, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
     private static GraphDocument CreateGraph(string directory) => new(
         1,
         Path.Combine(directory, "Fixture.sln"),

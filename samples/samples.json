@@ -2,12 +2,12 @@
   {
     "id": "order-api",
     "title": "주문 API — 컨트롤러와 Minimal API가 섞인 흐름",
-    "description": "컨트롤러 3개 라우트와 Minimal API 4개 라우트가 같은 서비스·저장소를 부른다. 처음 보는 API의 경로를 따라가 보는 예제다.",
+    "description": "컨트롤러 4개 라우트와 Minimal API 4개 라우트가 같은 서비스·저장소를 부른다. 처음 보는 API의 경로를 따라가 보는 예제다.",
     "sourceDirectory": "OrderApi",
     "relativeTargetPath": "OrderApi/OrderApi.csproj",
     "expected": [
       "진입점 8개가 잡힌다: 컨트롤러 4개(같은 메서드에 라우트 2개인 ship/dispatch 포함), Minimal API 4개.",
-      "Minimal API 라우트는 MapGroup 접두사까지 합쳐 /api/v1/health, /api/v1/orders, /api/v1/reports/{customerId}로 보인다.",
+      "Minimal API 라우트는 MapGroup 접두사까지 합쳐 /api/v1/health, /api/v1/orders, /api/v1/reports/{customerId}, /api/v1/reports/{customerId}/short로 보인다.",
       "확장 메서드(MapReportEndpoints) 안에 숨은 등록도 접두사를 채워 보여 준다. 이 부분은 추정으로 표시된다.",
       "람다·메서드 그룹·로컬 함수 핸들러가 각각 다른 실행 단위로 잡힌다.",
       "미들웨어는 RequestLog → ApiKey 순서이고 ApiKey에 401 단락 지점이 있다."

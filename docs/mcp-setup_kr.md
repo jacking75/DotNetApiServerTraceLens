@@ -55,12 +55,15 @@ args:    ["C:\\repos\\tracelens\\src\\TraceLens.Mcp\\bin\\Debug\\net8.0\\TraceLe
 ## Claude Code
 
 ```powershell
-claude mcp add --scope local tracelens -- C:\tools\tracelens\tracelens.exe mcp --graph "C:\repos\MyApp\.tracelens\graph.json"
+claude mcp add --scope local tracelens -- "C:\Program Files\tracelens\tracelens.exe" mcp --graph "C:\repos\My App\.tracelens\graph.json"
 claude mcp get tracelens
 ```
 
-파일로 관리하려면 분석 대상 루트에 `.mcp.json`을 둔다. 이미 파일이 있으면 `mcpServers` 아래에
-`tracelens` 항목만 더한다.
+파일로 관리하려면 `.mcp.json`을 둔다. **Claude Code는 실행하는 작업 폴더 기준으로 이 파일을 읽는다** —
+분석 대상 루트와 작업 폴더가 다르면 작업 폴더 쪽에 두어야 한다.
+이미 파일이 있으면 `mcpServers` 아래에 `tracelens` 항목만 더한다.
+
+경로에 공백이 있으면(`C:\Program Files\...`) 원라이너에서 반드시 따옴표로 감싼다.
 
 ```json
 {
@@ -81,7 +84,7 @@ TraceLens UI의 **"Claude Code로 실행"**은 별도 등록 없이 동작한다
 ## Codex CLI
 
 ```powershell
-codex mcp add tracelens -- C:\tools\tracelens\tracelens.exe mcp --graph "C:\repos\MyApp\.tracelens\graph.json"
+codex mcp add tracelens -- "C:\Program Files\tracelens\tracelens.exe" mcp --graph "C:\repos\My App\.tracelens\graph.json"
 codex mcp list
 ```
 
@@ -108,6 +111,43 @@ VS Code는 로컬 MCP 서버와 그 도구를 지원한다. 작업 폴더의 `.v
     }
   }
 }
+```
+
+## Cursor
+
+Cursor는 Claude Code와 같은 형식을 쓴다. 작업 폴더의 `.cursor/mcp.json`에 적고,
+이미 파일이 있으면 `mcpServers` 아래에 `tracelens` 항목만 더한다.
+
+```json
+{
+  "mcpServers": {
+    "tracelens": {
+      "type": "stdio",
+      "command": "C:\\Program Files\\tracelens\\tracelens.exe",
+      "args": ["mcp", "--graph", "C:\\repos\\My App\\.tracelens\\graph.json"]
+    }
+  }
+}
+```
+
+## 에이전트가 TraceLens를 먼저 쓰게 하기
+
+등록만으로는 부족하다. 대상 저장소의 `CLAUDE.md` 또는 `AGENTS.md`에 아래 문단을 붙인다.
+붙이지 않으면 에이전트는 평소처럼 grep으로 헤맨다.
+같은 내용을 UI의 **"MCP 연동 설정 보기" → "에이전트 안내문"** 탭에서 복사할 수 있다.
+
+```markdown
+## TraceLens MCP 사용 규칙
+
+이 저장소의 호출 관계·DB 접근·미들웨어를 물을 때는 grep보다 tracelens MCP를 먼저 쓴다.
+
+1. 무엇을 묻든 `get_analysis_status`를 먼저 부른다. 신선도가 `stale`이면 답에 그 사실을 적는다.
+2. "이 API가 뭘 하나" → `get_entrypoints` → `get_entrypoint_flow` → `get_context(intent=explain)`.
+3. "고치면 뭐가 깨지나" → `search_symbol`로 nodeId를 찾고 → `get_impact`.
+4. "쓰기 경로가 안전한가" → `get_findings(ruleId=COMP-*)` → `get_context(intent=investigateData)`.
+5. 호출자 목록이 비어 있다고 "호출 없음"으로 읽지 않는다. `boundaries`(확정하지 못한 호출)를 함께 본다.
+6. 분석 결과가 오래됐어도 도구가 재분석하지 않는다. 사용자에게 `tracelens analyze <대상>` 실행을 요청한다.
+7. 도구가 준 파일·줄을 근거로 인용하고, 확정하지 못한 것은 추정이라고 적는다.
 ```
 
 ## 제공 도구

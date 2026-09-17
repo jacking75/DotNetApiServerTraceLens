@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, askWithMcp, buildContext, cancelAskRun, getDiagnostics, getMcpSetup, openInEditor } from '../api/client'
+import { recipes } from '../content/recipes'
 import { translateError, useI18n } from '../i18n/I18nProvider'
 import type { TranslationKey } from '../i18n/ko'
 import type { ContextBudget, ContextDocument, ContextIntent, McpSetupPreview, SelectionKind } from '../types/context'
 import type { AskMode } from '../types/graph'
 import { ContextPreview } from './ContextPreview'
 import { HelpLink, type GlossaryTerm } from './HelpDialog'
+import { McpSetupDialog } from './McpSetupDialog'
 import { ShareReportDialog } from './ShareReportDialog'
 
 /** 질문 패널이 다루는 선택. 실행 가능한 노드가 없어도 문맥은 만들 수 있다. */
@@ -34,25 +36,35 @@ const modeKeys: Record<AskMode, TranslationKey> = {
   editor: 'ask.modeEditor',
 }
 
-const intents: ReadonlyArray<{ value: ContextIntent; key: TranslationKey }> = [
-  { value: 'Explain', key: 'ask.intent.explain' },
-  { value: 'PlanChange', key: 'ask.intent.planChange' },
-  { value: 'ReviewChange', key: 'ask.intent.reviewChange' },
-  { value: 'InvestigateData', key: 'ask.intent.investigateData' },
+const intents: ReadonlyArray<{ value: ContextIntent; key: TranslationKey; hintKey: TranslationKey }> = [
+  { value: 'Explain', key: 'ask.intent.explain', hintKey: 'ask.intentHint.explain' },
+  { value: 'PlanChange', key: 'ask.intent.planChange', hintKey: 'ask.intentHint.planChange' },
+  { value: 'ReviewChange', key: 'ask.intent.reviewChange', hintKey: 'ask.intentHint.reviewChange' },
+  { value: 'InvestigateData', key: 'ask.intent.investigateData', hintKey: 'ask.intentHint.investigateData' },
 ]
 
-const budgets: ReadonlyArray<{ value: ContextBudget; key: TranslationKey }> = [
-  { value: 'Short', key: 'ask.budget.short' },
-  { value: 'Balanced', key: 'ask.budget.balanced' },
-  { value: 'Detailed', key: 'ask.budget.detailed' },
+const budgets: ReadonlyArray<{ value: ContextBudget; key: TranslationKey; hintKey: TranslationKey }> = [
+  { value: 'Short', key: 'ask.budget.short', hintKey: 'ask.budgetHint.short' },
+  { value: 'Balanced', key: 'ask.budget.balanced', hintKey: 'ask.budgetHint.balanced' },
+  { value: 'Detailed', key: 'ask.budget.detailed', hintKey: 'ask.budgetHint.detailed' },
 ]
+
+/** 보관하는 최근 답변 개수. 소스 본문이 섞일 수 있어 localStorage에는 쓰지 않는다(새로고침하면 사라진다). */
+const maxRecentAnswers = 5
+
+interface RecentAnswer {
+  selectionLabel: string
+  question: string
+  answer: string
+  at: string
+}
 
 /**
  * 선택한 위치를 "작업 문맥"으로 바꿔 AI에 전달한다.
  * 문맥은 서버의 `POST /api/context` 하나에서 나오므로 클립보드·인앱 실행·MCP가 같은 내용을 쓴다.
  */
 export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied, onExplain }: AskPanelProps) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [mode, setMode] = useState<AskMode>('context')
   const [intent, setIntent] = useState<ContextIntent>('Explain')
   const [budget, setBudget] = useState<ContextBudget>('Balanced')
@@ -76,13 +88,41 @@ export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied,
   const [agentMissing, setAgentMissing] = useState<boolean | null>(null)
   /** 에디터 열기가 실패했을 때의 폴백. 자동 이동 대신 사용자가 고른다. */
   const [editorFallback, setEditorFallback] = useState<{ uri: string; location: string } | null>(null)
+  /**
+   * 최근 답변. 선택이 바뀌면 지금 답은 비워지지만 이 목록은 남는다.
+   * 답을 읽다 다른 노드를 눌렀다고 답이 사라지면 안 된다.
+   */
+  const [recentAnswers, setRecentAnswers] = useState<RecentAnswer[]>([])
   /** 서버가 알려 준 실행 ID. 중단하면 SSE만 끊는 것이 아니라 프로세스도 끝낸다. */
   const runIdRef = useRef<string | null>(null)
   const abortController = useRef<AbortController | null>(null)
   const contextKey = context ? `${context.kind}:${context.id}` : null
+  /** 지금 고른 목적에 맞는 레시피의 프리셋 질문. 없으면 칩을 그리지 않는다. */
+  const presets = recipes.find((recipe) => recipe.intent === intent)
+    ? (lang === 'ko'
+      ? recipes.find((recipe) => recipe.intent === intent)!.presetQuestionsKo
+      : recipes.find((recipe) => recipe.intent === intent)!.presetQuestionsEn)
+    : []
 
   const describe = useCallback((reason: unknown, fallbackKey: TranslationKey) =>
     reason instanceof ApiError ? translateError(t, reason.code, reason.message) : t(fallbackKey), [t])
+
+  // 선택이 바뀌기 직전의 답을 최근 목록으로 옮긴다. ref로 읽어야 정리 시점의 값을 본다.
+  const answerRef = useRef({ answer: '', question: '', label: '' })
+  answerRef.current = {
+    answer,
+    question,
+    label: context ? `${context.kind} · ${context.id}` : '',
+  }
+
+  useEffect(() => () => {
+    const current = answerRef.current
+    if (!current.answer.trim()) return
+    setRecentAnswers((list) => [
+      { selectionLabel: current.label, question: current.question, answer: current.answer, at: new Date().toISOString() },
+      ...list,
+    ].slice(0, maxRecentAnswers))
+  }, [contextKey])
 
   useEffect(() => {
     abortController.current?.abort()
@@ -354,6 +394,27 @@ export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied,
                 {t('context.excludeSource')}
               </label>
             </div>
+            <div className="hint">
+              {t(intents.find((item) => item.value === intent)?.hintKey ?? 'ask.intentHint.explain')}
+              {' · '}
+              {t(budgets.find((item) => item.value === budget)?.hintKey ?? 'ask.budgetHint.balanced')}
+            </div>
+            {presets.length > 0 && (
+              <div className="ask-presets">
+                <span className="hint">{t('ask.presets')}</span>
+                {presets.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    className="chipbtn"
+                    title={preset}
+                    onClick={() => setQuestion(preset)}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+            )}
             <textarea
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
@@ -377,6 +438,16 @@ export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied,
           <div className="ask-response" aria-live="polite">
             {question.trim() && <div className="chat-bubble user">{question.trim()}</div>}
             {(answer || busy) && <div className="chat-bubble assistant">{answer || t('ask.working')}</div>}
+            {answer && (
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => void navigator.clipboard.writeText(answer)
+                  .then(() => setMessage(t('ask.answerCopied')), () => setMessage(t('ask.copyFailed')))}
+              >
+                {t('ask.copyAnswer')}
+              </button>
+            )}
             {logs.length > 0 && (
               <details>
                 <summary>{t('ask.logs', { count: logs.length })}</summary>
@@ -384,6 +455,21 @@ export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied,
               </details>
             )}
           </div>
+        )}
+
+        {recentAnswers.length > 0 && (
+          <details className="recent-answers">
+            <summary>{t('ask.recentAnswers', { count: recentAnswers.length })}</summary>
+            <ul>
+              {recentAnswers.map((item) => (
+                <li key={`${item.at}${item.selectionLabel}`}>
+                  <div className="hint"><code>{item.selectionLabel}</code></div>
+                  {item.question && <div className="hint">{item.question}</div>}
+                  <pre>{item.answer}</pre>
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
 
         <div className="ask-actions">
@@ -421,23 +507,7 @@ export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied,
           )}
         </div>
 
-        {setup && (
-          <div className="mcp-setup">
-            <header>
-              <span>{t('ask.mcpSetupTitle')}</span>
-              <button type="button" className="link-button" onClick={() => setSetup(null)}>{t('ask.close')}</button>
-            </header>
-            <div className="hint">{t('ask.mcpSetupNote')}</div>
-            {setup.warning && <div className="hint warn">{setup.warning}</div>}
-            {setup.hosts.map((host) => (
-              <details key={host.host}>
-                <summary>{host.host} · <code>{host.file}</code></summary>
-                <div className="hint">{host.note}</div>
-                <pre>{host.content}</pre>
-              </details>
-            ))}
-          </div>
-        )}
+        {setup && <McpSetupDialog setup={setup} onClose={() => setSetup(null)} />}
       </div>
 
       {shareOpen && context && (

@@ -56,12 +56,15 @@ args:    ["C:\\repos\\tracelens\\src\\TraceLens.Mcp\\bin\\Debug\\net8.0\\TraceLe
 ## Claude Code
 
 ```powershell
-claude mcp add --scope local tracelens -- C:\tools\tracelens\tracelens.exe mcp --graph "C:\repos\MyApp\.tracelens\graph.json"
+claude mcp add --scope local tracelens -- "C:\Program Files\tracelens\tracelens.exe" mcp --graph "C:\repos\My App\.tracelens\graph.json"
 claude mcp get tracelens
 ```
 
-To keep it in a file, put `.mcp.json` at the analysis target's root. If the file already exists, add
-only the `tracelens` entry under `mcpServers`.
+To keep it in a file, use `.mcp.json`. **Claude Code reads this file relative to the folder you run it
+from** - if that differs from the analysis root, put it next to where you run Claude Code.
+If the file already exists, add only the `tracelens` entry under `mcpServers`.
+
+When a path contains spaces (`C:\Program Files\...`), always quote it in the one-liner.
 
 ```json
 {
@@ -82,7 +85,7 @@ The UI's **"Run with Claude Code"** works without any of this: `POST /api/ask` w
 ## Codex CLI
 
 ```powershell
-codex mcp add tracelens -- C:\tools\tracelens\tracelens.exe mcp --graph "C:\repos\MyApp\.tracelens\graph.json"
+codex mcp add tracelens -- "C:\Program Files\tracelens\tracelens.exe" mcp --graph "C:\repos\My App\.tracelens\graph.json"
 codex mcp list
 ```
 
@@ -109,6 +112,44 @@ workspace; if the file exists, add only the `tracelens` entry under `servers`.
     }
   }
 }
+```
+
+## Cursor
+
+Cursor uses the same format as Claude Code. Put it in `.cursor/mcp.json` in your working folder;
+if the file already exists, add only the `tracelens` entry under `mcpServers`.
+
+```json
+{
+  "mcpServers": {
+    "tracelens": {
+      "type": "stdio",
+      "command": "C:\\Program Files\\tracelens\\tracelens.exe",
+      "args": ["mcp", "--graph", "C:\\repos\\My App\\.tracelens\\graph.json"]
+    }
+  }
+}
+```
+
+## Making the agent reach for TraceLens first
+
+Registering is not enough. Paste the section below into the target repository's `CLAUDE.md` or
+`AGENTS.md`. Without it the agent will grep around as usual.
+You can copy the same text from the UI under **"Show MCP setup" -> "Agent guide"**.
+
+```markdown
+## TraceLens MCP rules
+
+When asked about call relationships, database access or middleware in this repository,
+reach for the tracelens MCP server before grep.
+
+1. Call `get_analysis_status` first, whatever the question. If freshness is `stale`, say so in the answer.
+2. "What does this API do?" -> `get_entrypoints` -> `get_entrypoint_flow` -> `get_context(intent=explain)`.
+3. "What breaks if I change this?" -> `search_symbol` for the nodeId -> `get_impact`.
+4. "Is this write path safe?" -> `get_findings(ruleId=COMP-*)` -> `get_context(intent=investigateData)`.
+5. An empty caller list is not proof of "no callers". Read `boundaries` (unresolved calls) as well.
+6. The tools never re-analyze. Ask the user to run `tracelens analyze <target>` when the analysis is stale.
+7. Cite the file and line the tools returned, and mark anything unconfirmed as estimated.
 ```
 
 ## The tools

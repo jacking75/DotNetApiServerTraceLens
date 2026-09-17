@@ -331,12 +331,24 @@ export interface McpHostSnippet {
   note: string
 }
 
+/** 복사해서 그대로 실행할 수 있는 한 줄. 경로는 항상 따옴표로 감싼다. */
+export interface McpOneLiner {
+  host: string
+  command: string
+}
+
 export interface McpSetupPreview {
   graphPath: string
   command: string
   args: string[]
   hosts: McpHostSnippet[]
   warning: string | null
+  /** 호스트별 등록 원라이너. */
+  oneLiners: McpOneLiner[]
+  /** 연결을 확인하는 질문. */
+  verifyPrompt: string
+  /** 대상 저장소의 CLAUDE.md·AGENTS.md에 붙이는 안내문. */
+  agentGuide: string
 }
 
 export interface ShareReport {

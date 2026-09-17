@@ -8,12 +8,25 @@ namespace TraceLens.Server;
 /// <param name="Note">기존 설정을 덮어쓰지 않고 어떻게 합쳐야 하는지 설명한다.</param>
 public sealed record McpHostSnippet(string Host, string File, string Format, string Content, string Note);
 
+/// <param name="Command">복사해서 그대로 실행할 수 있는 한 줄. 경로는 항상 따옴표로 감싼다.</param>
+public sealed record McpOneLiner(string Host, string Command);
+
 public sealed record McpSetupPreview(
     string GraphPath,
     string Command,
     IReadOnlyList<string> Args,
     IReadOnlyList<McpHostSnippet> Hosts,
-    string? Warning);
+    string? Warning)
+{
+    /// <summary>호스트별 등록 원라이너. 붙여넣기 한 번으로 끝나게 한다.</summary>
+    public IReadOnlyList<McpOneLiner> OneLiners { get; init; } = [];
+
+    /// <summary>연결을 확인하는 질문.</summary>
+    public string VerifyPrompt { get; init; } = string.Empty;
+
+    /// <summary>대상 저장소의 CLAUDE.md·AGENTS.md에 붙이는 안내문.</summary>
+    public string AgentGuide { get; init; } = string.Empty;
+}
 
 public interface IMcpConfigWriter
 {
@@ -30,6 +43,29 @@ public sealed class McpConfigWriter : IMcpConfigWriter
     {
         WriteIndented = true
     };
+
+    /// <summary>
+    /// 대상 저장소의 CLAUDE.md·AGENTS.md에 붙이는 안내문이다.
+    /// 이게 없으면 에이전트는 평소처럼 grep으로 헤맨다. 문서와 대화상자가 같은 내용을 쓴다.
+    /// </summary>
+    public const string AgentGuide = """
+        ## TraceLens MCP 사용 규칙
+
+        이 저장소의 호출 관계·DB 접근·미들웨어를 물을 때는 grep보다 tracelens MCP를 먼저 쓴다.
+
+        1. 무엇을 묻든 `get_analysis_status`를 먼저 부른다. 신선도가 `stale`이면 답에 그 사실을 적는다.
+        2. "이 API가 뭘 하나" → `get_entrypoints` → `get_entrypoint_flow` → `get_context(intent=explain)`.
+        3. "고치면 뭐가 깨지나" → `search_symbol`로 nodeId를 찾고 → `get_impact`.
+        4. "쓰기 경로가 안전한가" → `get_findings(ruleId=COMP-*)` → `get_context(intent=investigateData)`.
+        5. 호출자 목록이 비어 있다고 "호출 없음"으로 읽지 않는다. `boundaries`(확정하지 못한 호출)를 함께 본다.
+        6. 분석 결과가 오래됐어도 도구가 재분석하지 않는다. 사용자에게 `tracelens analyze <대상>` 실행을 요청한다.
+        7. 도구가 준 파일·줄을 근거로 인용하고, 확정하지 못한 것은 추정이라고 적는다.
+        """;
+
+    /// <summary>연결이 실제로 됐는지 확인하는 질문. 파일·줄을 인용하면 연결된 것이다.</summary>
+    public const string VerifyPrompt =
+        "tracelens MCP로 이 저장소의 HTTP 진입점 목록을 가져오고, 그중 하나의 호출 흐름을 파일·줄과 함께 보여 줘.";
+
 
     /// <summary>
     /// MCP 호스트 실행 파일 후보다.
@@ -195,10 +231,38 @@ public sealed class McpConfigWriter : IMcpConfigWriter
                     Path.Combine(graph.RootDirectory, ".vscode", "mcp.json"),
                     "json",
                     vsCode,
-                    "이미 파일이 있으면 servers 아래에 tracelens 항목만 더한다.")
+                    "이미 파일이 있으면 servers 아래에 tracelens 항목만 더한다."),
+                new McpHostSnippet(
+                    "Cursor",
+                    Path.Combine(graph.RootDirectory, ".cursor", "mcp.json"),
+                    "json",
+                    claudeCode,
+                    "Claude Code와 같은 형식이다. 이미 파일이 있으면 mcpServers 아래에 tracelens 항목만 더한다.")
             ],
-            File.Exists(graphPath) ? null : $"아직 그래프 파일이 없다: {graphPath}. 먼저 분석해야 한다.");
+            File.Exists(graphPath) ? null : $"아직 그래프 파일이 없다: {graphPath}. 먼저 분석해야 한다.")
+        {
+            OneLiners = BuildOneLiners(launch),
+            VerifyPrompt = VerifyPrompt,
+            AgentGuide = AgentGuide
+        };
     }
+
+    /// <summary>
+    /// 호스트별 등록 원라이너. 실행 파일 경로와 그래프 경로에 공백이 있어도 깨지지 않게 항상 따옴표로 감싼다.
+    /// (`C:\Program Files\...`가 대표 사례다.)
+    /// </summary>
+    private static IReadOnlyList<McpOneLiner> BuildOneLiners((string Command, string[] Args) launch)
+    {
+        var quoted = string.Join(' ', new[] { launch.Command }.Concat(launch.Args).Select(Quote));
+        return
+        [
+            new McpOneLiner("Claude Code", $"claude mcp add --scope local tracelens -- {quoted}"),
+            new McpOneLiner("Codex CLI", $"codex mcp add tracelens -- {quoted}")
+        ];
+    }
+
+    /// <summary>공백이 없어도 항상 감싼다. "이 예시는 공백에서 깨진다"를 사용자가 판단하게 두지 않는다.</summary>
+    private static string Quote(string value) => $"\"{value}\"";
 
     /// <summary>배포 레이아웃에 맞게 실행 명령을 고른다.</summary>
     private static (string Command, string[] Args) ResolveLaunch(string graphPath)

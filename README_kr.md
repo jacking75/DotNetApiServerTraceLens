@@ -220,7 +220,9 @@ SQL 리터럴과 캐시 호출에서 저장소 접근을 읽어, 진입점별 �
 ### MCP — 이미 쓰고 있는 AI 도구에 연결하기
 
 로컬 stdio MCP 서버가 도구 열두 개를 제공한다. 질문 패널의 "MCP 연동 설정 보기"를 누르면 Claude
-Code·Codex CLI·VS Code용으로 실제 경로가 채워진 설정 조각이 나오고, **기존 설정을 덮어쓰지 않는다.**
+Code·Codex CLI·VS Code·Cursor용으로 실제 경로가 채워진 설정 조각과 **복사해서 그대로 실행하는 원라이너**가
+나오고, **기존 설정을 덮어쓰지 않는다.** 같은 대화상자의 "에이전트 안내문" 탭에는 대상 저장소의
+`CLAUDE.md`/`AGENTS.md`에 붙일 문단이 있다 — 이게 없으면 에이전트는 평소처럼 grep으로 헤맨다.
 
 | 도구 | 무엇을 돌려주나 |
 |---|---|
@@ -301,6 +303,7 @@ tracelens demo    [--dir <복사할 위치>]         예제를 복사하고 무�
 `.csproj`를 주면 **그 프로젝트와 참조 프로젝트를 모두 담는 공통 상위 폴더** 아래에 만든다 —
 프로젝트 폴더가 아니다. 실제 위치는 `analyze` 결과의 `outputPath`에 찍히고, `serve`는 대상에서
 위로 8단계까지 올라가며 그 파일을 찾는다.
+분석 대상이 git 저장소라면 `.gitignore`에 `.tracelens/`를 넣는 편이 좋다(`analyze`도 같은 팁을 띄운다).
 
 `doctor`는 `SDK_NOT_FOUND`·`SDK_MISMATCH`·`TARGET_NOT_FOUND`·`UNSUPPORTED_TARGET_FORMAT`·
 `OUTPUT_NOT_WRITABLE`·`PORT_IN_USE`·`MCP_HOST_MISSING` 같은 코드와 다음에 할 일을 함께 알려 준다 —

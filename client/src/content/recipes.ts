@@ -19,6 +19,9 @@ export interface Recipe {
   stepsEn: string[]
   /** 매뉴얼에서 이 절차를 설명하는 앵커. 앱의 "설명서에서 보기"가 이 위치로 연다. */
   manualAnchor: string
+  /** 질문 패널이 칩으로 보여 주는 프리셋 질문. 누르면 입력칸을 채우고 그대로 고칠 수 있다. */
+  presetQuestionsKo: string[]
+  presetQuestionsEn: string[]
   /** AI에 그대로 붙여 쓸 수 있는 요청 예시. */
   promptKo: string
   promptEn: string
@@ -49,6 +52,14 @@ export const recipes: readonly Recipe[] = [
       '이 API의 입력부터 저장까지를 근거 ID와 함께 설명한다. 정적으로 확인할 수 없는 처리도 명시한다.',
     promptEn:
       'Explain this API from input to storage, citing the evidence ids. Also state what cannot be confirmed statically.',
+    presetQuestionsKo: [
+      '이 엔드포인트가 입력부터 저장까지 무엇을 하는지 근거 ID와 함께 설명해 줘.',
+      '이 경로에서 정적으로 확인할 수 없는 처리는 무엇인지 알려 줘.',
+    ],
+    presetQuestionsEn: [
+      'Explain what this endpoint does from input to storage, citing the evidence ids.',
+      'Tell me which steps on this path cannot be confirmed statically.',
+    ],
     verifyKo: '설명의 사실 주장이 소스와 대응하는지 확인한다.',
     verifyEn: 'Check that each factual claim maps to the source.',
   },
@@ -74,6 +85,14 @@ export const recipes: readonly Recipe[] = [
       '기존 책임 분리를 유지하면서 변경 위치, 영향 API, 필요한 테스트를 제안한다.',
     promptEn:
       'Propose where to change, which APIs are affected, and which tests are needed, keeping the current separation of concerns.',
+    presetQuestionsKo: [
+      '이 메서드를 바꾸면 어떤 API가 영향을 받고 어떤 테스트가 필요한가?',
+      '기존 책임 분리를 지키면서 이 기능을 어디에 넣어야 하는지 제안해 줘.',
+    ],
+    presetQuestionsEn: [
+      'If I change this method, which APIs are affected and which tests are needed?',
+      'Suggest where this feature should go while keeping the current separation of concerns.',
+    ],
     verifyKo: '변경 위치와 테스트 후보의 근거를 확인한다.',
     verifyEn: 'Check the evidence behind the suggested locations and test candidates.',
   },
@@ -99,6 +118,14 @@ export const recipes: readonly Recipe[] = [
       '중간 실패로 남는 갱신을 확인하고, 추정을 구분하여 개선안을 제시한다.',
     promptEn:
       'Identify updates left behind by a mid-way failure, separate the estimated parts, and propose a fix.',
+    presetQuestionsKo: [
+      '이 쓰기 경로에서 2단계가 실패하면 DB·캐시에 무엇이 남는가?',
+      '이 경로의 보상 처리 판정 근거와 확실도를 정리해 줘.',
+    ],
+    presetQuestionsEn: [
+      'If step 2 of this write path fails, what is left in the database and cache?',
+      'Summarize the compensation verdict for this path with its evidence and confidence.',
+    ],
     verifyKo: '실제 코드와 실패 경로를 확인한다.',
     verifyEn: 'Check the real code and the failure path.',
   },
@@ -124,6 +151,14 @@ export const recipes: readonly Recipe[] = [
       '이 차이에서 의도하지 않은 경로 변화, 남은 점검, 검증 부족을 확인한다.',
     promptEn:
       'From this diff, point out unintended path changes, remaining checks, and gaps in verification.',
+    presetQuestionsKo: [
+      '이 수정에서 의도하지 않은 호출 경로 변화가 있는가?',
+      '이 차이에서 남은 점검과 검증이 부족한 부분을 짚어 줘.',
+    ],
+    presetQuestionsEn: [
+      'Does this change introduce any unintended call path changes?',
+      'Point out the remaining checks and the gaps in verification in this diff.',
+    ],
     verifyKo: '분석 차이와 로컬 테스트 결과를 따로 확인한다. 차이 없음은 안전을 뜻하지 않는다.',
     verifyEn: 'Check the analysis diff and your local test results separately. "No diff" is not "safe".',
   },

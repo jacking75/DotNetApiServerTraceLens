@@ -231,8 +231,10 @@ line numbers and calling it "the code as analyzed" would be a lie.
 ### MCP — connect it to the AI tool you already use
 
 A local stdio MCP server exposes twelve tools. "Show MCP setup" in the ask panel prints a snippet
-with your real paths filled in for Claude Code, Codex CLI or VS Code — and never overwrites your
-existing config.
+with your real paths filled in for Claude Code, Codex CLI, VS Code or Cursor, plus a **one-liner you
+can paste straight into a terminal** — and never overwrites your existing config. The same dialog has
+an "Agent guide" tab with a section to paste into the target repository's `CLAUDE.md`/`AGENTS.md`;
+without it the agent will grep around as usual.
 
 | Tool | What it returns |
 |---|---|
@@ -316,6 +318,7 @@ per-stage times and the peak working set alongside the summary.
 For a `.csproj` it goes under the **common parent folder that holds the project and everything it
 references** — not the project folder. The actual path is printed as `outputPath` by `analyze`, and
 `serve` walks up to 8 levels from the target to find it.
+If the target is a git repository, add `.tracelens/` to its `.gitignore` (`analyze` prints the same tip).
 
 `doctor` reports codes like `SDK_NOT_FOUND`, `SDK_MISMATCH`, `TARGET_NOT_FOUND`,
 `UNSUPPORTED_TARGET_FORMAT`, `OUTPUT_NOT_WRITABLE`, `PORT_IN_USE`, `MCP_HOST_MISSING` with a
@@ -493,7 +496,7 @@ policy.
 ## Documentation
 
 - [docs/manual.html](docs/manual.html) — the manual: screen layout, all six views, AI integration, real usage walkthroughs
-- [docs/mcp-setup.md](docs/mcp-setup.md) — registering the MCP server with Claude Code, Codex CLI and VS Code
+- [docs/mcp-setup.md](docs/mcp-setup.md) — registering the MCP server with Claude Code, Codex CLI, VS Code and Cursor
 - [docs/data-contract.md](docs/data-contract.md) — the `graph.json` schema (v7), the API and MCP contracts, error codes, migration rules
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to report a missed call, and what contributions are in scope
 - [CHANGELOG.md](CHANGELOG.md) — release notes (updated by hand) and known limitations

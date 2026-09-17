@@ -63,9 +63,17 @@ internal static class EndpointIdentity
     /// <summary>
     /// Minimal API의 <c>MapGroup</c> 접두사와 라우트를 잇는다.
     /// 그룹 안의 <c>MapGet("/health")</c>는 절대 경로가 아니라 접두사에 이어 붙는 경로이므로 항상 이어 붙인다.
+    /// 여기서는 정규화하지 않는다 — 화면에 보여 줄 라우트는 컨트롤러와 마찬가지로 소스에 쓴 그대로여야 한다
+    /// (<c>{customerId}</c>가 <c>{customerid}</c>로 바뀌면 사용자가 소스와 대조할 수 없다).
+    /// ID와 비교에 쓰는 값은 호출 측이 <see cref="NormalizeRoute"/>로 따로 만든다.
     /// </summary>
-    public static string Append(string? prefix, string? route) =>
-        NormalizeRoute($"{(prefix ?? string.Empty).Trim()}/{(route ?? string.Empty).Trim()}");
+    public static string Append(string? prefix, string? route)
+    {
+        var left = (prefix ?? string.Empty).Trim().Trim('/');
+        var right = (route ?? string.Empty).Trim().Trim('/');
+        var parts = new[] { left, right }.Where(part => part.Length > 0);
+        return "/" + string.Join('/', parts);
+    }
 
     public static string Create(string projectKey, string httpMethod, string normalizedRoute, string registrationIdentity) =>
         $"{projectKey}|{httpMethod.ToUpperInvariant()}|{normalizedRoute}|{registrationIdentity}";

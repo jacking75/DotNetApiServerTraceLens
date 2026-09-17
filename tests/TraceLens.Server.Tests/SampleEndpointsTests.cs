@@ -67,6 +67,40 @@ public sealed class SampleEndpointsTests
         }
     }
 
+/// <summary>
+    /// 같은 소스 폴더를 가리키는 학습 경로가 둘이어도 복사는 한 번만 한다.
+    /// 두 번 복사하면 방금 복사한 파일을 곧바로 덮어쓰고, CLI 목록도 프로젝트가 둘인 것처럼 보인다.
+    /// </summary>
+    [Fact]
+    public async Task CopyAsync_CopiesTheSameSourceDirectoryOnce()
+    {
+        var source = Path.Combine(Path.GetTempPath(), "tracelens-sample-src-" + Guid.NewGuid().ToString("N"));
+        var destination = Path.Combine(Path.GetTempPath(), "tracelens-sample-dst-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(source, "OrderApi"));
+        await File.WriteAllTextAsync(Path.Combine(source, "OrderApi", "OrderApi.csproj"), "<Project />");
+        try
+        {
+            var sourceDirectory = Path.Combine(source, "OrderApi");
+            var relative = Path.Combine("OrderApi", "OrderApi.csproj");
+            var samples = new[]
+            {
+                new DemoSample("order-api", "제목1", "설명", sourceDirectory, relative, [], []),
+                new DemoSample("order-api-compensation", "제목2", "설명", sourceDirectory, relative, [], []),
+            };
+
+            var result = await DemoSamples.CopyAsync(samples, destination);
+
+            Assert.Single(result.CopiedDirectories);
+            Assert.Equal(sourceDirectory, result.CopiedDirectories[0]);
+            Assert.True(File.Exists(Path.Combine(result.Destination, "OrderApi", "OrderApi.csproj")));
+        }
+        finally
+        {
+            Directory.Delete(source, recursive: true);
+            Directory.Delete(destination, recursive: true);
+        }
+    }
+
     [Fact]
     public void DefaultDestination_IsUnderUserLocalAppData()
     {
