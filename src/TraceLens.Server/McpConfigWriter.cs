@@ -65,21 +65,81 @@ public sealed class McpConfigWriter : IMcpConfigWriter
 
         var launch = ResolveLaunch(graphPath);
         var configPath = Path.Combine(traceLensDirectory, "mcp.json");
-        var config = new
+        var entry = new Dictionary<string, object?>
         {
-            mcpServers = new Dictionary<string, object>
-            {
-                ["tracelens"] = new
-                {
-                    type = "stdio",
-                    command = launch.Command,
-                    args = launch.Args
-                }
-            }
+            ["type"] = "stdio",
+            ["command"] = launch.Command,
+            ["args"] = launch.Args
         };
-        await using var stream = File.Create(configPath);
-        await JsonSerializer.SerializeAsync(stream, config, JsonOptions, cancellationToken);
+
+        // 기존 파일이 있으면 tracelens 항목만 갈아 끼우고 나머지 키(다른 MCP 서버·사용자 설정)는 그대로 둔다.
+        var document = await ReadExistingAsync(configPath, cancellationToken);
+        var servers = document.TryGetValue("mcpServers", out var existingServers) &&
+            existingServers is Dictionary<string, object?> map
+                ? map
+                : new Dictionary<string, object?>(StringComparer.Ordinal);
+        servers["tracelens"] = entry;
+        document["mcpServers"] = servers;
+
+        var json = JsonSerializer.Serialize(document, JsonOptions);
+        await File.WriteAllTextAsync(configPath, json, cancellationToken);
         return configPath;
+    }
+
+    /// <summary>
+    /// 기존 <c>mcp.json</c>을 읽어 사전으로 돌려준다.
+    /// 파일이 없으면 빈 사전이고, 깨져서 읽지 못하면 <c>.bak</c>으로 옮긴 뒤 빈 사전으로 시작한다.
+    /// </summary>
+    private static async Task<Dictionary<string, object?>> ReadExistingAsync(
+        string configPath, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(configPath))
+        {
+            return new Dictionary<string, object?>(StringComparer.Ordinal);
+        }
+
+        try
+        {
+            var text = await File.ReadAllTextAsync(configPath, cancellationToken);
+            var parsed = JsonSerializer.Deserialize<Dictionary<string, object?>>(text, JsonOptions);
+            return Normalize(parsed) ?? new Dictionary<string, object?>(StringComparer.Ordinal);
+        }
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+        {
+            TryBackup(configPath);
+            return new Dictionary<string, object?>(StringComparer.Ordinal);
+        }
+    }
+
+    /// <summary><c>JsonElement</c>로 읽힌 값을 다시 직렬화할 수 있는 형태로 바꾼다.</summary>
+    private static Dictionary<string, object?>? Normalize(Dictionary<string, object?>? source)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var (key, value) in source)
+        {
+            result[key] = value is JsonElement { ValueKind: JsonValueKind.Object } element
+                ? Normalize(element.Deserialize<Dictionary<string, object?>>(JsonOptions))
+                : value;
+        }
+
+        return result;
+    }
+
+    private static void TryBackup(string configPath)
+    {
+        try
+        {
+            File.Copy(configPath, configPath + ".bak", overwrite: true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // 백업을 못 만들어도 새 설정은 쓴다. 사용자가 잃는 것은 이미 읽지 못하는 파일뿐이다.
+        }
     }
 
     public McpSetupPreview BuildPreview(GraphDocument graph, string? offlineGraphPath)

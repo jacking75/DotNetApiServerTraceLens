@@ -386,7 +386,8 @@ export interface AskRequest {
 }
 
 export interface AskEvent {
-  type: 'delta' | 'log' | 'error' | 'done'
+  /** `run`은 실행 ID를 알려 주는 첫 이벤트다. 이 ID로 DELETE /api/ask/{runId}를 부르면 끊긴다. */
+  type: 'run' | 'delta' | 'log' | 'error' | 'done'
   text: string | null
 }
 

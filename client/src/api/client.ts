@@ -48,8 +48,18 @@ async function readError(response: Response): Promise<ApiError> {
   )
 }
 
+/** 네트워크 자체가 끊긴 경우도 ApiError로 통일한다. 화면은 code로 번역하므로 브라우저 원문이 새지 않는다. */
+export async function fetchOrThrow(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init)
+  } catch (reason) {
+    if (reason instanceof DOMException && reason.name === 'AbortError') throw reason
+    throw new ApiError(reason instanceof Error ? reason.message : String(reason), 'NETWORK', 0)
+  }
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init)
+  const response = await fetchOrThrow(url, init)
   if (!response.ok) throw await readError(response)
   return response.json() as Promise<T>
 }
@@ -267,7 +277,7 @@ export async function watchAnalysisJob(
   onEvent: (event: AnalysisJobEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`/api/analysis-jobs/${encodeURIComponent(jobId)}/events`, { signal })
+  const response = await fetchOrThrow(`/api/analysis-jobs/${encodeURIComponent(jobId)}/events`, { signal })
   if (!response.ok) throw await readError(response)
   await readServerSentEvents(response, onEvent)
 }
@@ -283,7 +293,7 @@ export async function askWithMcp(
   onEvent: (event: AskEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch('/api/ask', {
+  const response = await fetchOrThrow('/api/ask', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -293,29 +303,51 @@ export async function askWithMcp(
   await readServerSentEvents(response, onEvent)
 }
 
+/** 실행 중인 에이전트를 서버에서 끊는다. SSE 연결만 닫으면 프로세스가 남을 수 있다. */
+export function cancelAskRun(runId: string): Promise<{ canceled: string }> {
+  return request(`/api/ask/${encodeURIComponent(runId)}`, { method: 'DELETE' })
+}
+
 export function openInEditor(nodeId: string): Promise<EditorResponse> {
   return postJson('/api/ask', { nodeId, question: null, mode: 'editor' } satisfies AskRequest)
 }
 
+/**
+ * SSE 버퍼에서 완결된 블록을 꺼낸다. 아직 끝나지 않은 마지막 조각은 `rest`로 남긴다.
+ * 순수 함수라 단위 테스트가 가능하다.
+ */
+export function parseServerSentEvents(buffer: string): { data: string[]; rest: string } {
+  const blocks = buffer.replaceAll('\r\n', '\n').split('\n\n')
+  const rest = blocks.pop() ?? ''
+  const data = blocks
+    .map((block) => block.split('\n')
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n'))
+    .filter((item) => item.length > 0)
+  return { data, rest }
+}
+
 /** SSE 응답을 한 줄씩 읽어 이벤트로 넘긴다. `/api/ask`와 분석 작업이 같은 형식을 쓴다. */
 async function readServerSentEvents<T>(response: Response, onEvent: (event: T) => void): Promise<void> {
-  if (!response.body) throw new Error('응답 스트림을 열 수 없다.')
+  if (!response.body) throw new ApiError('응답 스트림을 열 수 없다.', 'NETWORK', 0)
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   while (true) {
     const { value, done } = await reader.read()
-    buffer += decoder.decode(value, { stream: !done }).replaceAll('\r\n', '\n')
-    const blocks = buffer.split('\n\n')
-    buffer = blocks.pop() ?? ''
-    for (const block of blocks) {
-      const data = block.split('\n')
-        .filter((line) => line.startsWith('data:'))
-        .map((line) => line.slice(5).trimStart())
-        .join('\n')
-      if (data) onEvent(JSON.parse(data) as T)
+    buffer += decoder.decode(value, { stream: !done })
+    const { data, rest } = parseServerSentEvents(buffer)
+    buffer = rest
+    for (const item of data) {
+      try {
+        onEvent(JSON.parse(item) as T)
+      } catch {
+        // 깨진 줄 하나 때문에 스트림 전체를 죽이지 않는다. 그 줄만 버린다.
+      }
     }
+
     if (done) break
   }
 }

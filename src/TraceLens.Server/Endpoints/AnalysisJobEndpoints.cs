@@ -15,6 +15,7 @@ public static class AnalysisJobEndpoints
     public static RouteGroupBuilder MapAnalysisJobEndpoints(this RouteGroupBuilder group)
     {
         group.MapPost("/analysis-jobs", Start);
+        group.MapGet("/analysis-jobs", List);
         group.MapGet("/analysis-jobs/{id}", Get);
         group.MapGet("/analysis-jobs/{id}/events", StreamAsync);
         group.MapDelete("/analysis-jobs/{id}", Cancel);
@@ -29,9 +30,22 @@ public static class AnalysisJobEndpoints
             return ApiResults.Error(StatusCodes.Status400BadRequest, ApiResults.InvalidRequest, "solutionPath가 필요하다.");
         }
 
-        var job = jobs.Start(request.SolutionPath.Trim());
-        return Results.Accepted($"/api/analysis-jobs/{job.Id}", job);
+        var started = jobs.Start(request.SolutionPath.Trim());
+        if (started.AlreadyRunning)
+        {
+            return ApiResults.Error(
+                StatusCodes.Status409Conflict,
+                JobAlreadyRunning,
+                "같은 대상을 분석하는 작업이 이미 돌고 있다. 그 작업의 진행 상태를 보거나 취소한 뒤 다시 시작해야 한다.",
+                new { jobId = started.Job.Id, startedAt = started.Job.StartedAt });
+        }
+
+        return Results.Accepted($"/api/analysis-jobs/{started.Job.Id}", started.Job);
     }
+
+    public const string JobAlreadyRunning = "JOB_ALREADY_RUNNING";
+
+    internal static IResult List(IAnalysisJobService jobs) => Results.Ok(jobs.List());
 
     internal static IResult Get(string id, IAnalysisJobService jobs) =>
         jobs.Get(id) is { } job

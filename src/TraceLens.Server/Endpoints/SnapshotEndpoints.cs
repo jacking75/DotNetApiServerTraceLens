@@ -38,12 +38,22 @@ public static class SnapshotEndpoints
         {
             var entry = await snapshots.SaveAsync(graph, request.Label ?? string.Empty, cancellationToken);
             var all = await snapshots.ListAsync(graph, cancellationToken);
+            // 상한에 닿아도 저장을 거절하지 않는다. 대신 지울 후보를 알려 주고 삭제는 사용자가 한다.
+            var pruneCandidates = all.Count < SnapshotStore.SoftLimit
+                ? []
+                : all.OrderBy(item => item.SavedAt)
+                    .Take(all.Count - SnapshotStore.SoftLimit + 1)
+                    .Select(item => item.SnapshotId)
+                    .ToArray();
             return Results.Ok(new SaveSnapshotResponse(
                 entry,
                 all.Count,
                 all.Count >= SnapshotStore.SoftLimit
                     ? $"보관한 기준이 {all.Count}개다. 쓰지 않는 기준은 정리하는 편이 좋다."
-                    : null));
+                    : null)
+            {
+                PruneCandidates = pruneCandidates
+            });
         }
         catch (Exception exception) when (exception is InvalidOperationException or IOException or UnauthorizedAccessException)
         {
@@ -142,7 +152,13 @@ public static class SnapshotEndpoints
 
 public sealed record SaveSnapshotRequest(string? Label);
 
-public sealed record SaveSnapshotResponse(SnapshotEntry Entry, int TotalCount, string? Notice);
+public sealed record SaveSnapshotResponse(SnapshotEntry Entry, int TotalCount, string? Notice)
+{
+    /// <summary>
+    /// 상한에 닿았을 때 "지워도 될 후보"(가장 오래된 것부터). 자동으로 지우지 않는다 — UI의 정리 버튼이 이 목록을 쓴다.
+    /// </summary>
+    public IReadOnlyList<string> PruneCandidates { get; init; } = [];
+}
 
 public sealed record ListSnapshotsResponse(
     string CurrentSnapshotId,

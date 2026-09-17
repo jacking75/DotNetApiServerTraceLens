@@ -225,9 +225,11 @@ public sealed class TraceLensTools(GraphFileStore store)
     public async Task<SnapshotDiff> CompareSnapshotsAsync(
         [Description("기준 스냅샷 ID(.tracelens/history 아래에 보관한 것)")] string baselineId,
         [Description("비교 대상 스냅샷 ID. 비우면 지금 그래프와 비교한다.")] string? currentId,
+        [Description("기대하는 분석 스냅샷 ID. 다르면 오류로 알려준다.")] string? expectedSnapshotId,
         CancellationToken cancellationToken)
     {
         var session = await store.GetSessionAsync(cancellationToken);
+        session.EnsureSnapshot(expectedSnapshotId);
         var graph = session.Index.Graph;
         var snapshots = new SnapshotStore();
         var baseline = await snapshots.LoadAsync(graph, baselineId, cancellationToken);
@@ -260,7 +262,11 @@ public sealed class TraceLensTools(GraphFileStore store)
         var result = await session.Source.ReadAsync(node.File, node.StartLine, node.EndLine, cancellationToken);
         if (result.Slice is null)
         {
-            throw new InvalidOperationException(result.Access.Message);
+            // 거부는 예외 문자열이 아니라 code가 있는 구조로 돌려준다. 에이전트가 무엇 때문에 막혔는지 구분할 수 있어야 한다.
+            return new NodeResult(node, null, session.SnapshotId)
+            {
+                Denied = ToDenial(result.Access)
+            };
         }
 
         return new NodeResult(node, ToSourceResult(result.Slice), session.SnapshotId);
@@ -282,14 +288,19 @@ public sealed class TraceLensTools(GraphFileStore store)
         var result = await session.Source.ReadAsync(file, startLine, endLine, cancellationToken);
         if (result.Slice is null)
         {
-            throw new InvalidOperationException(result.Access.Message);
+            return new SourceResult(file, startLine, endLine, string.Empty, "unknown", false)
+            {
+                Denied = ToDenial(result.Access)
+            };
         }
 
         return ToSourceResult(result.Slice);
     }
 
     [McpServerTool(Name = "get_callers")]
-    [Description("지정한 노드를 직접 호출하는 인접 노드와 그 호출 근거를 조회한다.")]
+    [Description(
+        "지정한 노드를 직접 호출하는 인접 노드와 그 호출 근거를 조회한다. " +
+        "빈 목록은 호출자가 없다는 증명이 아니다 — 확정하지 못한 호출은 경계 목록(boundaries)에 남는다.")]
     public async Task<NeighborResult> GetCallersAsync(
         [Description("TraceLens 그래프 노드 ID")] string nodeId,
         [Description("한 번에 돌려줄 최대 개수(기본 50, 최대 500)")] int? limit,
@@ -311,7 +322,9 @@ public sealed class TraceLensTools(GraphFileStore store)
     }
 
     [McpServerTool(Name = "get_callees")]
-    [Description("지정한 노드가 직접 호출하는 인접 노드와 그 호출 근거를 조회한다.")]
+    [Description(
+        "지정한 노드가 직접 호출하는 인접 노드와 그 호출 근거를 조회한다. " +
+        "빈 목록은 호출이 없다는 증명이 아니다 — 확정하지 못한 호출은 경계 목록(boundaries)에 남는다.")]
     public async Task<NeighborResult> GetCalleesAsync(
         [Description("TraceLens 그래프 노드 ID")] string nodeId,
         [Description("한 번에 돌려줄 최대 개수(기본 50, 최대 500)")] int? limit,
@@ -388,6 +401,10 @@ public sealed class TraceLensTools(GraphFileStore store)
         index.FindNode(nodeId) ?? index.FindNodeByStableKey(nodeId)
         ?? throw new KeyNotFoundException($"노드를 찾을 수 없다: {nodeId}");
 
+    /// <summary>접근 거부를 예외가 아니라 code가 있는 구조로 바꾼다.</summary>
+    private static SourceDenial ToDenial(SourceAccessResult access) =>
+        new("SOURCE_DENIED", access.Denial.ToString(), access.Message);
+
     private static SourceResult ToSourceResult(SourceSlice slice) =>
         new(slice.File, slice.StartLine, slice.EndLine, slice.Content, slice.SourceVersion, slice.Truncated);
 
@@ -404,6 +421,9 @@ public sealed class TraceLensTools(GraphFileStore store)
         Enum.TryParse<TEnum>(value, ignoreCase: true, out var parsed) ? parsed : fallback;
 }
 
+/// <param name="Code">SOURCE_DENIED 등. 왜 막혔는지 구분할 수 있게 사유도 함께 준다.</param>
+public sealed record SourceDenial(string Code, string Reason, string Message);
+
 /// <param name="SourceVersion">snapshot이면 분석 당시와 같은 내용이고, current면 그 뒤로 바뀐 현재 소스다.</param>
 public sealed record SourceResult(
     string File,
@@ -411,9 +431,17 @@ public sealed record SourceResult(
     int EndLine,
     string Content,
     string SourceVersion,
-    bool Truncated);
+    bool Truncated)
+{
+    /// <summary>소스를 읽지 못했을 때의 사유. 읽었으면 null이다(예외 대신 구조로 돌려준다).</summary>
+    public SourceDenial? Denied { get; init; }
+}
 
-public sealed record NodeResult(GraphNode Node, SourceResult Source, string SnapshotId);
+public sealed record NodeResult(GraphNode Node, SourceResult? Source, string SnapshotId)
+{
+    /// <summary>소스를 읽지 못했을 때의 사유. 노드 메타데이터는 그대로 돌려준다.</summary>
+    public SourceDenial? Denied { get; init; }
+}
 
 public sealed record Neighbor(GraphNode Node, IReadOnlyList<CallSite> CallSites);
 

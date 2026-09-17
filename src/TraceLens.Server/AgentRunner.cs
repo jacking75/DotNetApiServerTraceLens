@@ -57,10 +57,10 @@ public sealed class ClaudeCodeAgentRunner(IProcessRunner processRunner) : IAgent
                 continue;
             }
 
-            var text = ClaudeStreamParser.TryGetText(output.Text);
-            if (!string.IsNullOrEmpty(text))
+            var parsed = ClaudeStreamParser.Parse(output.Text);
+            if (parsed is not null && !string.IsNullOrEmpty(parsed.Text))
             {
-                yield return new AgentOutput("delta", text);
+                yield return new AgentOutput(parsed.Kind, parsed.Text);
             }
         }
     }

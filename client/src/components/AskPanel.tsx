@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ApiError, askWithMcp, buildContext, getMcpSetup, openInEditor } from '../api/client'
+import { ApiError, askWithMcp, buildContext, cancelAskRun, getMcpSetup, openInEditor } from '../api/client'
 import { translateError, useI18n } from '../i18n/I18nProvider'
 import type { TranslationKey } from '../i18n/ko'
 import type { ContextBudget, ContextDocument, ContextIntent, McpSetupPreview, SelectionKind } from '../types/context'
@@ -62,6 +62,8 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
   /** 미리보기에서 체크를 끈 파일. 문맥 생성과 에이전트 실행 양쪽에 그대로 넘긴다. */
   const [excludedFiles, setExcludedFiles] = useState<string[]>([])
   const [shareOpen, setShareOpen] = useState(false)
+  /** 서버가 알려 준 실행 ID. 중단하면 SSE만 끊는 것이 아니라 프로세스도 끝낸다. */
+  const runIdRef = useRef<string | null>(null)
   const abortController = useRef<AbortController | null>(null)
   const contextKey = context ? `${context.kind}:${context.id}` : null
 
@@ -151,6 +153,7 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
           expectedSnapshotId: snapshotId || undefined,
         },
         (event) => {
+          if (event.type === 'run') runIdRef.current = event.text
           if (event.type === 'delta' && event.text) setAnswer((current) => current + event.text)
           if (event.type === 'log' && event.text) {
             const logText = event.text
@@ -164,6 +167,21 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
       if (!controller.signal.aborted) setMessage(describe(reason, 'ask.agentFailed'))
     } finally {
       if (!controller.signal.aborted) setBusy(false)
+      runIdRef.current = null
+    }
+  }
+
+  /** 실행을 중단한다. 연결만 닫으면 CLI 프로세스가 남을 수 있어 서버에도 알린다. */
+  const stop = async () => {
+    const runId = runIdRef.current
+    abortController.current?.abort()
+    setBusy(false)
+    if (runId) {
+      try {
+        await cancelAskRun(runId)
+      } catch {
+        // 이미 끝난 실행이면 404다. 사용자에게 알릴 것이 없다.
+      }
     }
   }
 
@@ -301,6 +319,9 @@ export function AskPanel({ context, snapshotId, onContextCopied }: AskPanelProps
               ? t('app.analyzing')
               : mode === 'context' ? t('ask.copy') : mode === 'mcp' ? t('ask.send') : t('ask.openEditor')}
           </button>
+          {mode === 'mcp' && busy && (
+            <button type="button" onClick={() => void stop()}>{t('ask.cancel')}</button>
+          )}
           <button type="button" className="link-button" onClick={() => void showSetup()}>
             {t('ask.mcpSetup')}
           </button>

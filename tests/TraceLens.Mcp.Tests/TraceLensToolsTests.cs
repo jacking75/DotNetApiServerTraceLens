@@ -21,7 +21,8 @@ public sealed class TraceLensToolsTests
         var search = await tools.SearchSymbolAsync("service", null, null, null, CancellationToken.None);
 
         Assert.Equal("Controller.Entry", node.Node.DisplayName);
-        Assert.Contains("Entry", node.Source.Content, StringComparison.Ordinal);
+        Assert.Null(node.Denied);
+        Assert.Contains("Entry", Assert.IsType<SourceResult>(node.Source).Content, StringComparison.Ordinal);
         Assert.Equal(2, source.EndLine);
         Assert.Single(callers.Items);
         Assert.Single(callees.Items);

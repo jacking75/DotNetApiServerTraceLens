@@ -102,8 +102,12 @@ public sealed class TraceLensToolsContextTests
         await using var fixture = await ContextFixture.CreateAsync();
         var tools = new TraceLensTools(new GraphFileStore(fixture.GraphPath));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => tools.GetSourceAsync("Src/Secret.cs", 1, 2, null, CancellationToken.None));
+        // 거부는 예외가 아니라 code가 있는 구조로 돌려준다. 에이전트가 사유를 구분할 수 있어야 한다.
+        var result = await tools.GetSourceAsync("Src/Secret.cs", 1, 2, null, CancellationToken.None);
+
+        Assert.NotNull(result.Denied);
+        Assert.Equal("SOURCE_DENIED", result.Denied!.Code);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]

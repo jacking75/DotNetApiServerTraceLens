@@ -665,6 +665,24 @@ export const ko = {
   'detail.noMembers': '멤버가 없다.',
   'detail.noExecutableNode': '실행 가능한 노드가 없는 멤버다.',
   'detail.none': '없음',
+
+  /* 서버 오류 코드 */
+  'error.NETWORK': '서버에 연결하지 못했다. TraceLens 서버가 떠 있는지 확인해야 한다.',
+  'error.JOB_ALREADY_RUNNING': '같은 대상을 분석하는 작업이 이미 돌고 있다. 끝나기를 기다리거나 취소한 뒤 다시 시작해야 한다.',
+  'error.GRAPH_TOO_LARGE': '가져올 분석 결과가 너무 크다.',
+  'error.GRAPH_INVALID': '올바른 분석 결과 파일이 아니다.',
+  'error.AGENT_NOT_FOUND': 'AI CLI를 찾을 수 없다. 설치한 뒤 PATH에 있어야 한다.',
+  'error.AGENT_TIMEOUT': '에이전트가 제한 시간 안에 끝나지 않아 중단했다.',
+  'error.INPUT_MISMATCH': '고른 폴더의 소스가 이 분석과 다르다.',
+  'error.SNAPSHOT_SAVE_FAILED': '기준을 저장하지 못했다.',
+  'error.SAMPLE_NOT_FOUND': '예제를 찾을 수 없다.',
+  'error.SAMPLE_COPY_FAILED': '예제를 복사하지 못했다.',
+  'error.FORBIDDEN_ORIGIN': '다른 페이지에서 온 요청은 받지 않는다.',
+  'ask.cancel': '중단',
+
+  /* 기준 정리 */
+  'diff.prune': '오래된 기준 {count}개 정리',
+  'diff.pruned': '기준 {count}개를 지웠다.',
 } as const
 
 export type TranslationKey = keyof typeof ko

@@ -72,9 +72,16 @@ public static class CommandRouter
 
     private static async Task<int> ServeAsync(string[] args)
     {
+        var port = TryGetInt(args, "--port") ?? ServerHost.DefaultPort;
+        if (port is < 1 or > 65535)
+        {
+            Console.Error.WriteLine($"--port는 1~65535 사이여야 한다: {port}");
+            return 2;
+        }
+
         var options = new ServerOptions
         {
-            Port = TryGetInt(args, "--port") ?? ServerHost.DefaultPort,
+            Port = port,
             InitialTargetPath = GetOption(args, "--target")
         };
         var url = $"http://127.0.0.1:{options.Port}";
@@ -84,7 +91,32 @@ public static class CommandRouter
             TryOpenBrowser(url);
         }
 
-        return await ServerHost.RunAsync(args, options);
+        try
+        {
+            return await ServerHost.RunAsync(args, options);
+        }
+        catch (IOException exception) when (IsAddressInUse(exception))
+        {
+            // 포트가 이미 쓰이고 있을 때 스택 트레이스를 던지지 않고 doctor와 같은 문구로 안내한다.
+            Console.Error.WriteLine($"포트 {options.Port}을(를) 이미 다른 프로세스가 쓰고 있다.");
+            Console.Error.WriteLine("다른 TraceLens가 떠 있는지 확인하거나 --port로 다른 번호를 준다.");
+            return 1;
+        }
+    }
+
+    /// <summary>Kestrel이 바인딩에 실패하면 내부 예외에 주소 사용 중(SocketError 10048/98)이 들어온다.</summary>
+    private static bool IsAddressInUse(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is System.Net.Sockets.SocketException socket &&
+                socket.SocketErrorCode == System.Net.Sockets.SocketError.AddressAlreadyInUse)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static async Task<int> AnalyzeAsync(string[] args)

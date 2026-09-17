@@ -101,8 +101,15 @@ public static class AnalyzeEndpoints
         IGraphStore graphStore,
         CancellationToken cancellationToken)
     {
-        using var reader = new StreamReader(context.Request.Body);
-        var json = await reader.ReadToEndAsync(cancellationToken);
+        var json = await ReadBoundedAsync(context.Request.Body, MaxImportBytes, cancellationToken);
+        if (json is null)
+        {
+            return ApiResults.Error(
+                StatusCodes.Status413PayloadTooLarge,
+                GraphTooLarge,
+                $"가져올 분석 결과가 너무 크다({MaxImportBytes / (1024 * 1024)} MB까지 받는다).");
+        }
+
         var loaded = GraphJsonStore.Parse(json);
         if (!loaded.Ok || loaded.Graph is null)
         {
@@ -113,8 +120,8 @@ public static class AnalyzeEndpoints
         }
 
         // 가져온 파일은 이 기계 안의 보관 위치에만 쓴다. 활성 graph.json은 건드리지 않는다.
-        var offlinePath = Path.Combine(
-            Path.GetTempPath(), "tracelens-imported", $"{DateTime.UtcNow:yyyyMMddHHmmss}", "graph.json");
+        PruneImportedDirectory();
+        var offlinePath = Path.Combine(ImportedRoot, $"{DateTime.UtcNow:yyyyMMddHHmmss}", "graph.json");
         await GraphJsonStore.WriteAtomicallyAsync(offlinePath, loaded.Graph, cancellationToken);
 
         graphStore.Set(loaded.Graph, GraphOrigin.OfflineSnapshot, offlinePath);
@@ -123,6 +130,63 @@ public static class AnalyzeEndpoints
             Origin = "offlineSnapshot",
             Notice = "가져온 분석 결과다. 원본 루트를 연결하기 전에는 소스 보기와 MCP 소스 조회를 쓸 수 없다."
         });
+    }
+
+    public const string GraphTooLarge = "GRAPH_TOO_LARGE";
+
+    /// <summary>가져오기로 받을 수 있는 최대 크기. 3 MB짜리 그래프가 흔하므로 넉넉히 두되 무제한은 아니다.</summary>
+    private const long MaxImportBytes = 64L * 1024 * 1024;
+
+    /// <summary>가져온 그래프를 두는 임시 폴더. 활성 결과와 섞이지 않게 별도 위치에 둔다.</summary>
+    private static string ImportedRoot => Path.Combine(Path.GetTempPath(), "tracelens-imported");
+
+    /// <summary>상한까지만 읽고, 넘으면 null을 돌려준다. 본문 전체를 메모리에 올리기 전에 끊는다.</summary>
+    private static async Task<string?> ReadBoundedAsync(Stream body, long limit, CancellationToken cancellationToken)
+    {
+        var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        while (true)
+        {
+            var read = await body.ReadAsync(chunk, cancellationToken);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (buffer.Length + read > limit)
+            {
+                return null;
+            }
+
+            buffer.Write(chunk, 0, read);
+        }
+
+        return System.Text.Encoding.UTF8.GetString(buffer.ToArray());
+    }
+
+    /// <summary>가져오기 임시 폴더에서 7일이 지난 것을 지운다. 지우지 못해도 가져오기는 계속한다.</summary>
+    private static void PruneImportedDirectory()
+    {
+        try
+        {
+            if (!Directory.Exists(ImportedRoot))
+            {
+                return;
+            }
+
+            var cutoff = DateTime.UtcNow - TimeSpan.FromDays(7);
+            foreach (var directory in Directory.EnumerateDirectories(ImportedRoot))
+            {
+                if (Directory.GetLastWriteTimeUtc(directory) < cutoff)
+                {
+                    Directory.Delete(directory, recursive: true);
+                }
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // 정리를 못 해도 가져오기 자체에는 영향이 없다.
+        }
     }
 
     /// <summary>

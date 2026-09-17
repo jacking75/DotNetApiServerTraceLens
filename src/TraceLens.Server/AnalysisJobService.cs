@@ -31,13 +31,20 @@ public sealed record AnalysisJob(
     public DateTimeOffset? FinishedAt { get; set; }
 }
 
+/// <param name="AlreadyRunning">같은 대상의 작업이 이미 돌고 있어 새로 시작하지 않았다면 true다(<paramref name="Job"/>은 그 작업).</param>
+public sealed record StartJobResult(AnalysisJob Job, bool AlreadyRunning);
+
 public interface IAnalysisJobService
 {
-    AnalysisJob Start(string targetPath);
+    /// <summary>같은 대상의 작업이 이미 돌고 있으면 새로 시작하지 않고 그 작업을 돌려준다.</summary>
+    StartJobResult Start(string targetPath);
 
     AnalysisJob? Get(string jobId);
 
     bool Cancel(string jobId);
+
+    /// <summary>지금 들고 있는 작업 목록(최근 것부터). 상한을 넘은 옛 작업은 이미 지워졌다.</summary>
+    IReadOnlyList<AnalysisJob> List();
 
     IAsyncEnumerable<AnalysisJobEvent> WatchAsync(string jobId, CancellationToken cancellationToken);
 }
@@ -64,10 +71,26 @@ public sealed class AnalysisJobService(
         public required object Gate { get; init; }
     }
 
+    /// <summary>끝난 작업을 이 개수만 남긴다. 그 외에는 아래 보관 시간이 지나면 지운다.</summary>
+    private const int MaxFinishedJobs = 20;
+
+    /// <summary>끝난 작업을 이 시간까지만 들고 있는다. 진행 상태를 늦게 보러 오는 탭을 위해 바로 지우지는 않는다.</summary>
+    private static readonly TimeSpan FinishedJobRetention = TimeSpan.FromMinutes(10);
+
     private readonly ConcurrentDictionary<string, JobContext> jobs = new(StringComparer.Ordinal);
 
-    public AnalysisJob Start(string targetPath)
+    public StartJobResult Start(string targetPath)
     {
+        // 같은 대상을 두 번 분석하면 둘 다 돌고 나중 것이 이긴다. 그럴 바에는 거절하고 진행 중인 작업을 알려 준다.
+        var running = jobs.Values.FirstOrDefault(item =>
+            item.Job.State == AnalysisJobState.Running &&
+            string.Equals(item.Job.TargetPath, targetPath, StringComparison.OrdinalIgnoreCase));
+        if (running is not null)
+        {
+            return new StartJobResult(running.Job, true);
+        }
+
+        PruneFinishedJobs();
         var job = new AnalysisJob(Guid.NewGuid().ToString("N")[..12], targetPath, DateTimeOffset.Now);
         var context = new JobContext
         {
@@ -79,10 +102,39 @@ public sealed class AnalysisJobService(
         };
         jobs[job.Id] = context;
         _ = Task.Run(() => RunAsync(context));
-        return job;
+        return new StartJobResult(job, false);
     }
 
     public AnalysisJob? Get(string jobId) => jobs.TryGetValue(jobId, out var context) ? context.Job : null;
+
+    public IReadOnlyList<AnalysisJob> List() => jobs.Values
+        .Select(item => item.Job)
+        .OrderByDescending(item => item.StartedAt)
+        .ToArray();
+
+    /// <summary>끝난 작업이 계속 쌓이지 않게 정리한다. 보관 시간이 지났거나 최근 20개 밖이면 지운다.</summary>
+    private void PruneFinishedJobs()
+    {
+        var finished = jobs.Values
+            .Where(item => item.Job.State != AnalysisJobState.Running)
+            .OrderByDescending(item => item.Job.FinishedAt ?? item.Job.StartedAt)
+            .ToArray();
+        var now = DateTimeOffset.Now;
+        for (var index = 0; index < finished.Length; index++)
+        {
+            var job = finished[index].Job;
+            var expired = job.FinishedAt is { } at && now - at > FinishedJobRetention;
+            if (index < MaxFinishedJobs && !expired)
+            {
+                continue;
+            }
+
+            if (jobs.TryRemove(job.Id, out var removed))
+            {
+                removed.Cancellation.Dispose();
+            }
+        }
+    }
 
     public bool Cancel(string jobId)
     {
@@ -167,6 +219,7 @@ public sealed class AnalysisJobService(
         finally
         {
             Complete(context);
+            context.Cancellation.Dispose();
         }
     }
 

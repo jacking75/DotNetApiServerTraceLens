@@ -10,7 +10,10 @@ public enum SourceAccessDenial
     NotInSnapshot,
     NotFound,
     TooLarge,
-    InvalidRange
+    InvalidRange,
+
+    /// <summary>경로는 허용됐지만 파일을 읽지 못했다(잠김·권한).</summary>
+    Unreadable
 }
 
 public sealed record SourceAccessResult(

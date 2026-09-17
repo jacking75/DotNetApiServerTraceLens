@@ -348,7 +348,14 @@ export default function App() {
       const nextGraph = await loadGraphData()
       applyAnalyzedGraph(nextGraph, await summarizeFrom(nextGraph))
     } catch (reason) {
-      // 작업 API를 쓸 수 없는 환경(구버전 서버 등)에서는 호환 경로로 한 번 더 시도한다.
+      // 작업 API 자체가 없는 환경(구버전 서버)에서만 호환 경로로 다시 시도한다.
+      // 그 밖의 실패(같은 대상이 이미 돌고 있음·잘못된 경로 등)에 전체 분석을 한 번 더 돌리면 안 된다.
+      const missingJobApi = reason instanceof ApiError && (reason.status === 404 || reason.status === 405)
+      if (!missingJobApi) {
+        setError(describeError(reason, reason instanceof Error ? reason.message : t('app.analyzeFailed')))
+        return
+      }
+
       try {
         const nextSummary = await analyzeTarget(target)
         const nextGraph = await loadGraphData()

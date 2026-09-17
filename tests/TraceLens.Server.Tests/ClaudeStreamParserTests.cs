@@ -30,4 +30,26 @@ public sealed class ClaudeStreamParserTests
 
         Assert.Null(result);
     }
+
+    /// <summary>JSON이 아닌 stdout 줄은 답변 본문이 아니라 로그로 보낸다.</summary>
+    [Fact]
+    public void Parse_TreatsNonJsonLineAsLog()
+    {
+        var parsed = ClaudeStreamParser.Parse("Loading MCP server tracelens...");
+
+        Assert.NotNull(parsed);
+        Assert.Equal("log", parsed!.Kind);
+        Assert.Equal("Loading MCP server tracelens...", parsed.Text);
+    }
+
+    [Fact]
+    public void Parse_TreatsTextDeltaAsAnswer()
+    {
+        var parsed = ClaudeStreamParser.Parse(
+            "{\"type\":\"stream_event\",\"event\":{\"delta\":{\"type\":\"text_delta\",\"text\":\"답\"}}}");
+
+        Assert.NotNull(parsed);
+        Assert.Equal("delta", parsed!.Kind);
+        Assert.Equal("답", parsed.Text);
+    }
 }

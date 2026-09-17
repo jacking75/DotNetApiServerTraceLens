@@ -32,6 +32,8 @@ export function SnapshotDiffPanel({ snapshotId, analyzing, onReanalyze, onClose 
   const [diff, setDiff] = useState<SnapshotDiff | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  /** 서버가 알려 준 "지워도 될 기준" 목록. 비어 있으면 정리 버튼을 띄우지 않는다. */
+  const [pruneCandidates, setPruneCandidates] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const describe = useCallback((reason: unknown, fallbackKey: TranslationKey) =>
@@ -56,6 +58,7 @@ export function SnapshotDiffPanel({ snapshotId, analyzing, onReanalyze, onClose 
       const response = await saveSnapshot(t('diff.baseline'))
       setBaselineId(response.entry.snapshotId)
       setMessage(t('diff.saved', { id: response.entry.snapshotId }) + (response.notice ? ` ${response.notice}` : ''))
+      setPruneCandidates(response.pruneCandidates ?? [])
       await refresh()
     } catch (reason) {
       setError(describe(reason, 'diff.failed'))
@@ -72,6 +75,25 @@ export function SnapshotDiffPanel({ snapshotId, analyzing, onReanalyze, onClose 
     try {
       await onReanalyze()
       setDiff(await compareSnapshots(baselineId))
+    } catch (reason) {
+      setError(describe(reason, 'diff.failed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 서버가 알려 준 "지워도 될 후보"를 한 번에 지운다. 자동 삭제는 하지 않고 이 버튼으로만 지운다. */
+  const prune = async () => {
+    setBusy(true)
+    try {
+      for (const id of pruneCandidates) {
+        await deleteSnapshot(id)
+        if (baselineId === id) setBaselineId('')
+      }
+
+      setMessage(t('diff.pruned', { count: pruneCandidates.length }))
+      setPruneCandidates([])
+      await refresh()
     } catch (reason) {
       setError(describe(reason, 'diff.failed'))
     } finally {
@@ -126,6 +148,11 @@ export function SnapshotDiffPanel({ snapshotId, analyzing, onReanalyze, onClose 
 
       {entries.length === 0 && <div className="panel-message tight">{t('diff.none')}</div>}
       {message && <div className="hint">{message}</div>}
+      {pruneCandidates.length > 0 && (
+        <button type="button" className="link-button" onClick={() => void prune()} disabled={busy}>
+          {t('diff.prune', { count: pruneCandidates.length })}
+        </button>
+      )}
       {error && <div className="panel-message tight">{error}</div>}
 
       {diff && (

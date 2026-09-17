@@ -36,6 +36,7 @@ public static class AskEndpoints
     public static RouteGroupBuilder MapAskEndpoints(this RouteGroupBuilder group)
     {
         group.MapPost("/ask", HandleAsync);
+        group.MapDelete("/ask/{runId}", CancelRun);
         group.MapGet("/mcp-setup", GetSetup);
         return group;
     }
@@ -129,8 +130,31 @@ public static class AskEndpoints
             return;
         }
 
-        await StreamAgentResponseAsync(document, graph, context, agentRunner, mcpConfigWriter, cancellationToken);
+        await StreamAgentResponseAsync(
+            document, graph, context, agentRunner, mcpConfigWriter, request.TimeoutSeconds, cancellationToken);
     }
+
+    /// <summary>실행 중인 에이전트를 끊는다. SSE 연결을 닫는 것 말고도 명시적인 취소 수단이 필요하다.</summary>
+    internal static IResult CancelRun(string runId) =>
+        RunningAgents.TryRemove(runId, out var cancellation)
+            ? Cancel(cancellation, runId)
+            : ApiResults.Error(StatusCodes.Status404NotFound, "RUN_NOT_FOUND", $"실행 중인 요청을 찾을 수 없다: {runId}");
+
+    private static IResult Cancel(CancellationTokenSource cancellation, string runId)
+    {
+        cancellation.Cancel();
+        return Results.Ok(new { canceled = runId });
+    }
+
+    /// <summary>실행 중인 에이전트 호출. DELETE /api/ask/{runId}가 이 토큰을 취소한다.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource>
+        RunningAgents = new(StringComparer.Ordinal);
+
+    public const string AgentTimeout = "AGENT_TIMEOUT";
+    public const string AgentNotFound = "AGENT_NOT_FOUND";
+
+    /// <summary>에이전트 실행이 이 시간을 넘으면 프로세스 트리를 끝낸다. 기본 10분.</summary>
+    private const int DefaultTimeoutSeconds = 600;
 
     private static ContextSelection ResolveSelection(AskRequest request)
     {
@@ -149,6 +173,7 @@ public static class AskEndpoints
         HttpContext context,
         IAgentRunner agentRunner,
         IMcpConfigWriter mcpConfigWriter,
+        int? timeoutSeconds,
         CancellationToken cancellationToken)
     {
         context.Response.StatusCode = StatusCodes.Status200OK;
@@ -156,16 +181,22 @@ public static class AskEndpoints
         context.Response.Headers.CacheControl = "no-cache";
         context.Response.Headers.Connection = "keep-alive";
 
+        var seconds = timeoutSeconds is > 0 and <= 3600 ? timeoutSeconds.Value : DefaultTimeoutSeconds;
+        var runId = Guid.NewGuid().ToString("N")[..12];
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(seconds));
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+        RunningAgents[runId] = linked;
         try
         {
-            var configPath = await mcpConfigWriter.WriteAsync(graph, cancellationToken);
+            await WriteEventAsync(context.Response, new AskEvent("run", runId), cancellationToken);
+            var configPath = await mcpConfigWriter.WriteAsync(graph, linked.Token);
             var request = new AgentRequest(
                 FormatPrompt(document),
                 graph.RootDirectory,
                 configPath,
                 AllowedMcpTools);
 
-            await foreach (var output in agentRunner.RunAsync(request, cancellationToken))
+            await foreach (var output in agentRunner.RunAsync(request, linked.Token))
             {
                 await WriteEventAsync(
                     context.Response,
@@ -175,15 +206,37 @@ public static class AskEndpoints
 
             await WriteEventAsync(context.Response, new AskEvent("done", null), cancellationToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
         {
-            // The browser closed the request; there is no client left to notify.
+            await WriteEventAsync(
+                context.Response,
+                new AskEvent("error", $"{AgentTimeout}: 에이전트가 {seconds}초 안에 끝나지 않아 프로세스를 끝냈다."),
+                CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            // 브라우저가 연결을 닫았거나 사용자가 취소했다. 알릴 대상이 없다.
+        }
+        catch (Win32Exception exception)
+        {
+            // 실행 파일 자체가 없을 때 OS 메시지를 그대로 보여 주면 무엇을 해야 할지 알 수 없다.
+            await WriteEventAsync(
+                context.Response,
+                new AskEvent(
+                    "error",
+                    $"{AgentNotFound}: {agentRunner.DisplayName} CLI를 찾을 수 없다({exception.Message}). " +
+                    "설치한 뒤 PATH에 있어야 한다. https://docs.claude.com/en/docs/claude-code 를 참고한다."),
+                CancellationToken.None);
         }
         catch (Exception exception) when (
             exception is IOException or InvalidOperationException or ProcessExecutionException or
-            UnauthorizedAccessException or Win32Exception)
+            UnauthorizedAccessException)
         {
             await WriteEventAsync(context.Response, new AskEvent("error", exception.Message), CancellationToken.None);
+        }
+        finally
+        {
+            RunningAgents.TryRemove(runId, out _);
         }
     }
 
@@ -281,6 +334,10 @@ public sealed record AskRequest(string? NodeId, string? Question, string Mode)
 
     /// <summary>문맥에서 뺄 파일의 상대 경로. 미리보기에서 체크를 끈 파일이 그대로 들어온다.</summary>
     public IReadOnlyList<string>? ExcludeFiles { get; init; }
+
+    /// <summary>이 시간을 넘으면 에이전트 프로세스를 끝낸다. 비우면 600초, 1~3600초까지 받는다.</summary>
+    public int? TimeoutSeconds { get; init; }
+
 }
 
 public sealed record AskEvent(string Type, string? Text);

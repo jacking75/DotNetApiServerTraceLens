@@ -267,6 +267,8 @@ export interface SaveSnapshotResponse {
   entry: SnapshotEntry
   totalCount: number
   notice: string | null
+  /** 상한에 닿았을 때 "지워도 될 후보"(가장 오래된 것부터). 서버는 자동으로 지우지 않는다. */
+  pruneCandidates: string[]
 }
 
 /* ------------------------------------------------------------------ 환경 점검 · 분석 상태 */

@@ -44,7 +44,23 @@ public sealed class SourceReader(GraphDocument graph, SourceAccessPolicy policy)
             return new SourceReadResult(null, access);
         }
 
-        var lines = await File.ReadAllLinesAsync(access.FullPath, cancellationToken);
+        string[] lines;
+        try
+        {
+            lines = await File.ReadAllLinesAsync(access.FullPath, cancellationToken);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // 편집기가 잡고 있거나 권한이 없는 파일이다. 500으로 새지 않도록 거부로 바꾼다.
+            return new SourceReadResult(
+                null,
+                access with
+                {
+                    Allowed = false,
+                    Denial = SourceAccessDenial.Unreadable,
+                    Message = $"소스를 읽지 못했다: {exception.Message}"
+                });
+        }
         if (startLine > lines.Length)
         {
             return new SourceReadResult(

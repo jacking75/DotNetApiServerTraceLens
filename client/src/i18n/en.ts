@@ -668,4 +668,22 @@ export const en: Dictionary = {
   'detail.noMembers': 'No members.',
   'detail.noExecutableNode': 'This member has no executable node.',
   'detail.none': 'None',
+
+  /* 서버 오류 코드 */
+  'error.NETWORK': 'Could not reach the server. Check that the TraceLens server is running.',
+  'error.JOB_ALREADY_RUNNING': 'A job is already analyzing this target. Wait for it or cancel it before starting again.',
+  'error.GRAPH_TOO_LARGE': 'The analysis file to import is too large.',
+  'error.GRAPH_INVALID': 'That is not a valid analysis file.',
+  'error.AGENT_NOT_FOUND': 'The AI CLI was not found. Install it and make sure it is on PATH.',
+  'error.AGENT_TIMEOUT': 'The agent did not finish within the time limit and was stopped.',
+  'error.INPUT_MISMATCH': 'The source in that folder differs from this analysis.',
+  'error.SNAPSHOT_SAVE_FAILED': 'Could not save the baseline.',
+  'error.SAMPLE_NOT_FOUND': 'That example could not be found.',
+  'error.SAMPLE_COPY_FAILED': 'Could not copy the example.',
+  'error.FORBIDDEN_ORIGIN': 'Requests from another page are not accepted.',
+  'ask.cancel': 'Stop',
+
+  /* 기준 정리 */
+  'diff.prune': 'Clean up {count} old baseline(s)',
+  'diff.pruned': 'Deleted {count} baseline(s).',
 }
