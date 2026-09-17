@@ -14,7 +14,8 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
         IReadOnlyList<WritePathAnalysis> writePaths,
         IReadOnlyDictionary<string, MethodEffect> effects,
         StartupFlowDocument? startupFlow,
-        TraceLensConfig config)
+        TraceLensConfig config,
+        CancellationToken cancellationToken = default)
     {
         var options = config.Db;
         var sharding = options.ShardingEnabled;
@@ -44,6 +45,7 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
 
         foreach (var facts in scan.Methods)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var connectionKey = facts.Sites.FirstOrDefault(site => site.Kind == SiteKind.ConnectionOpen)?.ShardKeyIdentifier;
             foreach (var site in facts.Sites)
             {

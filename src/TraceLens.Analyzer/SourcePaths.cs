@@ -10,7 +10,17 @@ internal static class SourcePaths
             return null;
         }
 
-        var relativePath = Path.GetRelativePath(solutionDirectory, Path.GetFullPath(filePath));
+        string relativePath;
+        try
+        {
+            // source generator가 만든 문서는 파일 경로가 아니라 이름일 수 있다(잘못된 문자 포함).
+            relativePath = Path.GetRelativePath(solutionDirectory, Path.GetFullPath(filePath));
+        }
+        catch (Exception exception) when (exception is ArgumentException or PathTooLongException or NotSupportedException)
+        {
+            return null;
+        }
+
         if (relativePath == ".." || relativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
         {
             return null;

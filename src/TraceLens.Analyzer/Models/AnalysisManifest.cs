@@ -33,4 +33,12 @@ public sealed record AnalysisManifest(
     IReadOnlyList<string> Limitations)
 {
     public static AnalysisManifest Empty { get; } = new([], [], [], [], []);
+
+    /// <summary>
+    /// 소스 루트 아래에 있지만 어떤 프로젝트의 Documents에도 없는 <c>.cs</c>.
+    /// <c>&lt;Compile Remove&gt;</c>나 조건부 컴파일로 빠진 파일이다.
+    /// 신선도 검사는 이 파일을 "새로 생긴 파일"로 보지 않는다 — 그러면 영원히 stale이 된다.
+    /// v7 이전 문서에는 없고, 없으면 빈 목록으로 읽는다.
+    /// </summary>
+    public IReadOnlyList<string> IgnoredSources { get; init; } = [];
 }

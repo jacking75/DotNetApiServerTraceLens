@@ -97,12 +97,26 @@ public sealed class AnalysisManifestBuilder
             limitations.Add($"MSBuild 워크스페이스 경고가 {loaded.WorkspaceFailures.Count}건 있다. 일부 프로젝트가 불완전하게 로드됐을 수 있다.");
         }
 
-        var manifest = new AnalysisManifest(
+        var draft = new AnalysisManifest(
             inputs.Values.OrderBy(item => item.Path, StringComparer.Ordinal).ToArray(),
             sourceRoots.ToArray(),
             ExcludedDirectories,
             linked.ToArray(),
             limitations);
+
+        // 소스 루트 아래에 있지만 어떤 프로젝트도 컴파일하지 않는 .cs를 기록한다(<Compile Remove> 등).
+        // 이 목록이 없으면 신선도 검사가 그 파일을 "새로 생긴 파일"로 보고 영원히 stale이 된다.
+        var ignored = EnumerateSourceFiles(rootDirectory, draft)
+            .Where(file => !sources.Contains(file))
+            .ToArray();
+        if (ignored.Length > 0)
+        {
+            limitations.Add(
+                $"소스 루트 아래에 있지만 어떤 프로젝트도 컴파일하지 않는 .cs가 {ignored.Length}개 있다" +
+                "(<Compile Remove>·조건부 컴파일). 이 파일은 분석에도 신선도 검사에도 들어가지 않는다.");
+        }
+
+        var manifest = draft with { IgnoredSources = ignored };
         return new AnalysisManifestResult(manifest, sources.ToArray());
     }
 

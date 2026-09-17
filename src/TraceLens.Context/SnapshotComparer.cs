@@ -139,8 +139,13 @@ public sealed class SnapshotComparer
 
     private static IReadOnlyList<DiffEntry> CompareEndpoints(GraphDocument baseline, GraphDocument current)
     {
-        var baselineMap = baseline.EntryPoints.ToDictionary(GraphIndex.EndpointKey, item => item, StringComparer.Ordinal);
-        var currentMap = current.EntryPoints.ToDictionary(GraphIndex.EndpointKey, item => item, StringComparer.Ordinal);
+        // 가져온 파일에 같은 엔드포인트 키가 두 번 있을 수 있다. ToDictionary는 그럴 때 예외를 던진다.
+        var baselineMap = baseline.EntryPoints
+            .GroupBy(GraphIndex.EndpointKey, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var currentMap = current.EntryPoints
+            .GroupBy(GraphIndex.EndpointKey, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         var result = new List<DiffEntry>();
 
         foreach (var (key, item) in currentMap)

@@ -59,31 +59,31 @@ public sealed class EntryPointScanner(
                         }
 
                         // 같은 메서드에 [HttpGet("a")] [HttpGet("b")]가 붙으면 라우트마다 엔드포인트가 하나씩 나온다.
+                        // 클래스 [Route]도 여러 개일 수 있고 기반 클래스에 있을 수도 있다. 그 곱만큼 라우트가 나온다.
                         var methodRoute = ReadRoute(attribute);
-                        var classRoute = method.ContainingType.GetAttributes()
-                            .Where(item => TrimAttributeSuffix(item.AttributeClass?.Name) == "Route")
-                            .Select(ReadRoute)
-                            .FirstOrDefault(route => route is not null);
-                        var route = CombineRoute(classRoute, methodRoute, method);
-                        var normalized = EndpointIdentity.NormalizeRoute(route);
                         var httpMethod = ToHttpMethod(attributeName);
-                        var endpointId = EndpointIdentity.Disambiguate(
-                            EndpointIdentity.Create(projectKey, httpMethod, normalized, callable.StableKey),
-                            usedIds);
-                        result.Add(new ScannedEntryPoint(
-                            callable,
-                            new EntryPoint(callable.NodeId, httpMethod, route)
-                            {
-                                EndpointId = endpointId,
-                                NormalizedRoute = normalized,
-                                Source = EndpointSource.Controller,
-                                HandlerKind = HandlerKind.Method,
-                                Confidence = CallConfidence.Certain,
-                                RegistrationFile = relativePath,
-                                RegistrationLine = line,
-                                HandlerDisplayName = callable.DisplayName,
-                                ProjectKey = projectKey
-                            }));
+                        foreach (var classRoute in GetClassRoutes(method.ContainingType))
+                        {
+                            var route = CombineRoute(classRoute, methodRoute, method);
+                            var normalized = EndpointIdentity.NormalizeRoute(route);
+                            var endpointId = EndpointIdentity.Disambiguate(
+                                EndpointIdentity.Create(projectKey, httpMethod, normalized, callable.StableKey),
+                                usedIds);
+                            result.Add(new ScannedEntryPoint(
+                                callable,
+                                new EntryPoint(callable.NodeId, httpMethod, route)
+                                {
+                                    EndpointId = endpointId,
+                                    NormalizedRoute = normalized,
+                                    Source = EndpointSource.Controller,
+                                    HandlerKind = HandlerKind.Method,
+                                    Confidence = CallConfidence.Certain,
+                                    RegistrationFile = relativePath,
+                                    RegistrationLine = line,
+                                    HandlerDisplayName = callable.DisplayName,
+                                    ProjectKey = projectKey
+                                }));
+                        }
                     }
                 }
             }
@@ -118,16 +118,48 @@ public sealed class EntryPointScanner(
     private static string? ReadRoute(AttributeData attribute) =>
         attribute.ConstructorArguments.FirstOrDefault().Value as string;
 
+    /// <summary>
+    /// 클래스 라우트 목록. 기반 클래스까지 올라가며 찾고, <c>[Route]</c>가 여러 개면 모두 돌려준다.
+    /// 하나도 없으면 null 하나(= 접두사 없음)를 돌려준다.
+    /// </summary>
+    private static IReadOnlyList<string?> GetClassRoutes(INamedTypeSymbol type)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            var routes = current.GetAttributes()
+                .Where(item => TrimAttributeSuffix(item.AttributeClass?.Name) == "Route")
+                .Select(ReadRoute)
+                .Where(route => route is not null)
+                .ToArray();
+            if (routes.Length > 0)
+            {
+                return routes;
+            }
+        }
+
+        return [null];
+    }
+
+    /// <summary>
+    /// 클래스 라우트와 메서드 라우트를 잇는다.
+    /// MVC 규칙대로 메서드 라우트가 <c>/</c>로 시작하면 <b>절대 경로</b>라 클래스 접두사를 붙이지 않는다
+    /// (<c>[Route("api/[controller]")]</c> + <c>[HttpGet("/health")]</c>는 <c>/health</c>다).
+    /// </summary>
     private static string CombineRoute(string? classRoute, string? methodRoute, IMethodSymbol method)
     {
-        var left = classRoute?.Trim('/');
-        var right = methodRoute?.Trim('/');
-        var combined = string.Join('/', new[] { left, right }.Where(part => !string.IsNullOrWhiteSpace(part)));
+        var combined = EndpointIdentity.Combine(classRoute, methodRoute).TrimStart('/');
         combined = combined
             .Replace("[controller]", RemoveControllerSuffix(method.ContainingType.Name), StringComparison.OrdinalIgnoreCase)
-            .Replace("[action]", method.Name, StringComparison.OrdinalIgnoreCase);
+            .Replace("[action]", method.Name, StringComparison.OrdinalIgnoreCase)
+            .Replace("[area]", ReadAreaName(method.ContainingType), StringComparison.OrdinalIgnoreCase);
         return "/" + combined;
     }
+
+    /// <summary><c>[Area("Admin")]</c>의 값. 없으면 빈 문자열이다.</summary>
+    private static string ReadAreaName(INamedTypeSymbol type) => type.GetAttributes()
+        .Where(item => TrimAttributeSuffix(item.AttributeClass?.Name) == "Area")
+        .Select(ReadRoute)
+        .FirstOrDefault(value => value is not null) ?? string.Empty;
 
     private static string RemoveControllerSuffix(string name) =>
         name.EndsWith("Controller", StringComparison.Ordinal) ? name[..^"Controller".Length] : name;

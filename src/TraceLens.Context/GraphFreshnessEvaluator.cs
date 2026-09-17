@@ -186,13 +186,22 @@ public class GraphFreshnessEvaluator
         }
 
         // 새로 생긴 소스 파일은 해시 목록에 없으므로 파일 집합 비교로 찾는다.
+        // 분석 당시에도 컴파일되지 않던 파일(<Compile Remove> 등)은 "새 파일"이 아니다.
         var known = graph.FileHashes.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ignored = manifest.IgnoredSources.ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var file in EnumerateSourceFilesCached(rootDirectory, manifest))
         {
-            if (!known.Contains(file))
+            if (!known.Contains(file) && !ignored.Contains(file))
             {
                 changes.Add(new FreshnessChange(file, FreshnessChangeKind.Added));
             }
+        }
+
+        if (ignored.Count > 0)
+        {
+            reasons.Add(
+                $"어떤 프로젝트도 컴파일하지 않는 .cs {ignored.Count}개는 신선도 검사에서 뺀다" +
+                "(<Compile Remove>·조건부 컴파일). 그 파일이 바뀌어도 stale로 보지 않는다.");
         }
 
         if (manifest.LinkedSources.Count > 0)

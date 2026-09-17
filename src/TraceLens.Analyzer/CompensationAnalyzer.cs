@@ -29,7 +29,8 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
 
     public IReadOnlyDictionary<string, MethodEffect> BuildEffects(
         IReadOnlyList<MethodDataFacts> methods,
-        IReadOnlyDictionary<string, string> methodDataSources)
+        IReadOnlyDictionary<string, string> methodDataSources,
+        CancellationToken cancellationToken = default)
     {
         var effects = new Dictionary<string, MethodEffect>(StringComparer.Ordinal);
         foreach (var facts in methods)
@@ -66,6 +67,7 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
         // 서비스는 SQL을 직접 쓰지 않는다. 호출한 메서드의 요약을 위로 끌어올려야 "이 호출이 쓰기"인지 알 수 있다.
         for (var pass = 0; pass < MaxPropagationPasses; pass++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var changed = false;
             foreach (var facts in methods)
             {
@@ -104,11 +106,13 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
         IReadOnlyList<MethodDataFacts> methods,
         IReadOnlyDictionary<string, MethodEffect> effects,
         IReadOnlyDictionary<string, string> methodDataSources,
-        TraceLensConfig config)
+        TraceLensConfig config,
+        CancellationToken cancellationToken = default)
     {
         var result = new List<WritePathAnalysis>();
         foreach (var facts in methods)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var steps = CollectWriteSites(facts, effects);
             if (steps.Count < 2)
             {

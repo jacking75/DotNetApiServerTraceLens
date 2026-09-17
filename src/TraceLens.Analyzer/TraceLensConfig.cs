@@ -79,55 +79,125 @@ public sealed record TraceLensConfig(
         300,
         DataAccessOptions.Default);
 
-    public static async Task<TraceLensConfig> LoadAsync(
+    /// <summary>설정을 읽는다. 문제가 있어도 예외로 분석을 죽이지 않고 기본값으로 대체한 뒤 사유를 함께 돌려준다.</summary>
+    public static async Task<ConfigLoadResult> LoadAsync(
         string solutionDirectory,
         CancellationToken cancellationToken = default)
     {
         var path = Path.Combine(solutionDirectory, "tracelens.config.json");
         if (!File.Exists(path))
         {
-            return Default;
+            return new ConfigLoadResult(Default, []);
         }
 
-        await using var stream = File.OpenRead(path);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        var root = document.RootElement;
+        JsonDocument document;
+        try
+        {
+            await using var stream = File.OpenRead(path);
+            document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        }
+        catch (JsonException exception)
+        {
+            // 설정이 깨졌다고 분석 전체를 죽이지 않는다. 기본 설정으로 진행하고 그 사실을 남긴다.
+            return new ConfigLoadResult(
+                Default,
+                [new ConfigIssue(ConfigIssueSeverity.Error, $"tracelens.config.json을 읽지 못해 기본 설정으로 분석한다: {exception.Message}")]);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return new ConfigLoadResult(
+                Default,
+                [new ConfigIssue(ConfigIssueSeverity.Error, $"tracelens.config.json을 열지 못해 기본 설정으로 분석한다: {exception.Message}")]);
+        }
 
-        return new TraceLensConfig(
+        using (document)
+        {
+            return Read(document.RootElement);
+        }
+    }
+
+    /// <summary>설정 JSON 하나를 읽는다. 타입이 맞지 않으면 기본값으로 대체하고 경고를 남긴다.</summary>
+    public static ConfigLoadResult Read(JsonElement root)
+    {
+        var issues = new List<ConfigIssue>();
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return new ConfigLoadResult(
+                Default,
+                [new ConfigIssue(ConfigIssueSeverity.Error, "tracelens.config.json의 최상위가 객체가 아니다. 기본 설정으로 분석한다.")]);
+        }
+
+        foreach (var property in root.EnumerateObject())
+        {
+            if (!KnownKeys.Contains(property.Name))
+            {
+                issues.Add(new ConfigIssue(
+                    ConfigIssueSeverity.Warning,
+                    $"tracelens.config.json에 모르는 키가 있다: {property.Name}. 이 값은 쓰지 않는다."));
+            }
+        }
+
+        var config = new TraceLensConfig(
             ReadStringArray(root, "entryPointAttributes") ?? Default.EntryPointAttributes,
             ReadKindRules(root) ?? Default.KindRules,
-            root.TryGetProperty("maxCallDepth", out var depth) ? depth.GetInt32() : Default.MaxCallDepth,
+            ReadInt("maxCallDepth", Default.MaxCallDepth),
             ReadStringArray(root, "excludeNamespacePrefixes") ?? Default.ExcludeNamespacePrefixes,
             ReadAnalysisScope(root) ?? Default.AnalysisScope,
-            root.TryGetProperty("includeObjectCreation", out var includeObjectCreation)
-                ? includeObjectCreation.GetBoolean()
-                : Default.IncludeObjectCreation,
-            root.TryGetProperty("includeMembers", out var includeMembers)
-                ? includeMembers.GetBoolean()
-                : Default.IncludeMembers,
-            root.TryGetProperty("includeInterfaces", out var includeInterfaces)
-                ? includeInterfaces.GetBoolean()
-                : Default.IncludeInterfaces,
-            root.TryGetProperty("includeStartupFlow", out var includeStartupFlow)
-                ? includeStartupFlow.GetBoolean()
-                : Default.IncludeStartupFlow,
-            root.TryGetProperty("includeDataAccess", out var includeDataAccess)
-                ? includeDataAccess.GetBoolean()
-                : Default.IncludeDataAccess,
-            root.TryGetProperty("includeMiddleware", out var includeMiddleware)
-                ? includeMiddleware.GetBoolean()
-                : Default.IncludeMiddleware,
-            root.TryGetProperty("includeCallSites", out var includeCallSites)
-                ? includeCallSites.GetBoolean()
-                : Default.IncludeCallSites,
-            root.TryGetProperty("maxCallSitesPerEdge", out var maxCallSitesPerEdge)
-                ? maxCallSitesPerEdge.GetInt32()
-                : Default.MaxCallSitesPerEdge,
-            root.TryGetProperty("maxBoundaryCallSites", out var maxBoundaryCallSites)
-                ? maxBoundaryCallSites.GetInt32()
-                : Default.MaxBoundaryCallSites,
+            ReadBool("includeObjectCreation", Default.IncludeObjectCreation),
+            ReadBool("includeMembers", Default.IncludeMembers),
+            ReadBool("includeInterfaces", Default.IncludeInterfaces),
+            ReadBool("includeStartupFlow", Default.IncludeStartupFlow),
+            ReadBool("includeDataAccess", Default.IncludeDataAccess),
+            ReadBool("includeMiddleware", Default.IncludeMiddleware),
+            ReadBool("includeCallSites", Default.IncludeCallSites),
+            ReadInt("maxCallSitesPerEdge", Default.MaxCallSitesPerEdge),
+            ReadInt("maxBoundaryCallSites", Default.MaxBoundaryCallSites),
             DataAccessOptions.Read(root));
+        return new ConfigLoadResult(config, issues);
+
+        int ReadInt(string name, int fallback)
+        {
+            if (!root.TryGetProperty(name, out var value))
+            {
+                return fallback;
+            }
+
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var parsed))
+            {
+                return parsed;
+            }
+
+            issues.Add(new ConfigIssue(
+                ConfigIssueSeverity.Warning, $"{name}은(는) 숫자여야 한다. 기본값 {fallback}을(를) 쓴다."));
+            return fallback;
+        }
+
+        bool ReadBool(string name, bool fallback)
+        {
+            if (!root.TryGetProperty(name, out var value))
+            {
+                return fallback;
+            }
+
+            if (value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                return value.GetBoolean();
+            }
+
+            issues.Add(new ConfigIssue(
+                ConfigIssueSeverity.Warning, $"{name}은(는) true/false여야 한다. 기본값 {fallback}을(를) 쓴다."));
+            return fallback;
+        }
     }
+
+    /// <summary>알고 있는 최상위 키. 여기에 없는 키는 경고로 알린다(조용히 무시하지 않는다).</summary>
+    private static readonly HashSet<string> KnownKeys = new(StringComparer.Ordinal)
+    {
+        "entryPointAttributes", "kindRules", "maxCallDepth", "excludeNamespacePrefixes", "analysisScope",
+        "includeObjectCreation", "includeMembers", "includeInterfaces", "includeStartupFlow",
+        "includeDataAccess", "includeMiddleware", "includeCallSites",
+        "maxCallSitesPerEdge", "maxBoundaryCallSites", "db"
+    };
 
     private static AnalysisScope? ReadAnalysisScope(JsonElement root) =>
         root.TryGetProperty("analysisScope", out var scope) &&
@@ -137,12 +207,14 @@ public sealed record TraceLensConfig(
 
     private static IReadOnlyList<KindRule>? ReadKindRules(JsonElement root)
     {
-        if (!root.TryGetProperty("kindRules", out var rules))
+        if (!root.TryGetProperty("kindRules", out var rules) || rules.ValueKind != JsonValueKind.Array)
         {
             return null;
         }
 
-        return rules.EnumerateArray().Select(rule => new KindRule(
+        return rules.EnumerateArray()
+            .Where(rule => rule.ValueKind == JsonValueKind.Object && rule.TryGetProperty("kind", out _))
+            .Select(rule => new KindRule(
             rule.GetProperty("kind").GetString() ?? "Method",
             rule.TryGetProperty("matchBaseType", out var baseType) ? baseType.GetString() : null,
             rule.TryGetProperty("matchNameSuffix", out var suffix)
@@ -153,9 +225,25 @@ public sealed record TraceLensConfig(
     }
 
     private static IReadOnlyList<string>? ReadStringArray(JsonElement root, string propertyName) =>
-        root.TryGetProperty(propertyName, out var value)
-            ? value.EnumerateArray().Select(item => item.GetString()!).ToArray()
+        root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.Array
+            ? value.EnumerateArray()
+                .Select(item => item.ValueKind == JsonValueKind.String ? item.GetString() : null)
+                .Where(item => item is not null)
+                .Select(item => item!)
+                .ToArray()
             : null;
 }
 
 public sealed record KindRule(string Kind, string? MatchBaseType, IReadOnlyList<string> MatchNameSuffix);
+
+/// <summary>설정을 읽으며 알아낸 문제 하나. 분석을 멈추지 않고 진단과 화면에 남긴다.</summary>
+public enum ConfigIssueSeverity
+{
+    Warning,
+    Error
+}
+
+public sealed record ConfigIssue(ConfigIssueSeverity Severity, string Message);
+
+/// <param name="Issues">설정을 읽으며 알아낸 문제. 비어 있으면 그대로 읽힌 것이다.</param>
+public sealed record ConfigLoadResult(TraceLensConfig Config, IReadOnlyList<ConfigIssue> Issues);

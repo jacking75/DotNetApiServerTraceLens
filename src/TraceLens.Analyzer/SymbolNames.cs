@@ -17,11 +17,20 @@ internal static class SymbolNames
         genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
         miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes);
 
+    /// <summary>
+    /// 노드 ID. 선언 심볼 기준으로 만든다.
+    /// <c>Repo&lt;Order&gt;.Get</c>처럼 구성된 심볼로 만들면 선언(<c>Repo&lt;T&gt;.Get</c>)과 ID가 달라져
+    /// 엣지 대상 노드를 찾지 못한다. 확장 메서드는 축약 전 정적 메서드를 기준으로 삼는다.
+    /// </summary>
     public static string GetNodeId(IMethodSymbol method)
     {
-        var containingType = GetClassId(method.ContainingType);
-        return $"{containingType}.{method.Name}({string.Join(",", GetParameterTypeNames(method))})";
+        var declaration = Normalize(method);
+        var containingType = GetClassId(declaration.ContainingType);
+        return $"{containingType}.{declaration.Name}({string.Join(",", GetParameterTypeNames(declaration))})";
     }
+
+    /// <summary>구성된 제네릭·축약 확장 메서드를 선언 심볼로 되돌린다.</summary>
+    public static IMethodSymbol Normalize(IMethodSymbol method) => (method.ReducedFrom ?? method).OriginalDefinition;
 
     /// <summary>노드 id에 쓰는 것과 같은 규칙(전체 타입 이름)으로 파라미터 타입을 돌려준다.</summary>
     public static IReadOnlyList<string> GetParameterTypeNames(IMethodSymbol method) =>
@@ -36,7 +45,8 @@ internal static class SymbolNames
         _ => $"{method.ContainingType.Name}.{method.Name}"
     };
 
-    public static string GetClassId(INamedTypeSymbol type) => type.ToDisplayString(TypeFormat);
+    /// <summary>클래스 ID. 구성된 제네릭(<c>Repo&lt;Order&gt;</c>)은 선언(<c>Repo&lt;T&gt;</c>)으로 되돌린다.</summary>
+    public static string GetClassId(INamedTypeSymbol type) => type.OriginalDefinition.ToDisplayString(TypeFormat);
 
     public static string GetClassDisplayName(INamedTypeSymbol type)
     {

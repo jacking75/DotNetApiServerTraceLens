@@ -95,7 +95,13 @@ public sealed class TraceLensAnalyzer(
             logger.LogInformation("참조 프로젝트까지 포함하도록 분석 루트를 {Root}로 잡았다.", solutionDirectory);
         }
 
-        var config = await TraceLensConfig.LoadAsync(solutionDirectory, cancellationToken);
+        var configResult = await TraceLensConfig.LoadAsync(solutionDirectory, cancellationToken);
+        var config = configResult.Config;
+        foreach (var issue in configResult.Issues)
+        {
+            // 설정 문제로 분석을 멈추지 않는다. 무엇을 기본값으로 대체했는지 로그와 진단에 남긴다.
+            logger.LogWarning("tracelens.config.json: {Message}", issue.Message);
+        }
         await diResolver.BuildAsync(loaded, cancellationToken);
         progress?.Report(new AnalysisProgress("entrypoints", "HTTP 진입점을 찾는 중이다."));
         var entryPointScan = await entryPointScanner.ScanAsync(loaded, config, solutionDirectory, cancellationToken);
@@ -159,10 +165,12 @@ public sealed class TraceLensAnalyzer(
         if (config.IncludeDataAccess)
         {
             dataScan = await dataAccessScanner.ScanAsync(loaded, config, solutionDirectory, cancellationToken);
-            var effects = compensationAnalyzer.BuildEffects(dataScan.Methods, dataScan.MethodDataSources);
+            var effects = compensationAnalyzer.BuildEffects(
+                dataScan.Methods, dataScan.MethodDataSources, cancellationToken);
             var writePaths = compensationAnalyzer.BuildWritePaths(
-                dataScan.Methods, effects, dataScan.MethodDataSources, config);
-            dataAccess = dataRuleEngine.Build(dataScan, writePaths, effects, startupFlow, config);
+                dataScan.Methods, effects, dataScan.MethodDataSources, config, cancellationToken);
+            dataAccess = dataRuleEngine.Build(
+                dataScan, writePaths, effects, startupFlow, config, cancellationToken);
         }
 
         var middleware = await middlewareScanner.ScanAsync(
@@ -182,7 +190,8 @@ public sealed class TraceLensAnalyzer(
             entryPointScan.Notes,
             depthLimitReached,
             droppedCallSites,
-            changedDuringAnalysis);
+            changedDuringAnalysis,
+            configResult.Issues);
 
         var inputFingerprint = SnapshotHasher.Fold(
             fileHashes.Select(entry => entry.Key + "=" + entry.Value)
@@ -322,9 +331,11 @@ public sealed class TraceLensAnalyzer(
         IReadOnlyList<string> entryPointNotes,
         bool depthLimitReached,
         int droppedCallSites,
-        IReadOnlyList<string> changedDuringAnalysis)
+        IReadOnlyList<string> changedDuringAnalysis,
+        IReadOnlyList<ConfigIssue> configIssues)
     {
         var limitations = new List<string>(manifestResult.Manifest.Limitations);
+        limitations.AddRange(configIssues.Select(issue => $"설정: {issue.Message}"));
         if (droppedCallSites > 0)
         {
             limitations.Add($"호출 근거 {droppedCallSites}건은 상한(엣지당 {config.MaxCallSitesPerEdge}건, 경계 {config.MaxBoundaryCallSites}건) 때문에 목록에서 뺐다.");

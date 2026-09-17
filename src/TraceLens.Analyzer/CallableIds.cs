@@ -15,6 +15,7 @@ internal static class CallableIds
     {
         MethodKind.LocalFunction => ForLocalFunction(method),
         MethodKind.AnonymousFunction => ForLambdaSymbol(method),
+        // GetNodeId가 구성된 제네릭·축약 확장 메서드를 선언 심볼로 되돌린다.
         _ => SymbolNames.GetNodeId(method)
     };
 

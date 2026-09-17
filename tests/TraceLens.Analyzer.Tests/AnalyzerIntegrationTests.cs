@@ -16,12 +16,12 @@ public sealed class AnalyzerIntegrationTests
 
         var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
 
-        Assert.Equal(3, result.Graph.EntryPoints.Count);
+        Assert.Equal(5, result.Graph.EntryPoints.Count);
         Assert.True(
-            result.Graph.Nodes.Count == 17,
-            $"예상 노드 수는 17개지만 {result.Graph.Nodes.Count}개다.{Environment.NewLine}{string.Join(Environment.NewLine, logs)}");
-        Assert.Equal(11, result.Graph.Edges.Count);
-        Assert.Equal(3, result.Graph.Nodes.Count(node => node.Kind == NodeKind.Controller));
+            result.Graph.Nodes.Count == 22,
+            $"예상 노드 수는 22개지만 {result.Graph.Nodes.Count}개다.{Environment.NewLine}{string.Join(Environment.NewLine, logs)}");
+        Assert.Equal(14, result.Graph.Edges.Count);
+        Assert.Equal(5, result.Graph.Nodes.Count(node => node.Kind == NodeKind.Controller));
         Assert.Contains(result.Graph.Nodes, node => node.Kind == NodeKind.Service);
         Assert.Contains(result.Graph.Nodes, node => node.Kind == NodeKind.Repository);
         Assert.All(result.Graph.FileHashes.Values, hash => Assert.StartsWith("sha256:", hash));
@@ -119,8 +119,8 @@ public sealed class AnalyzerIntegrationTests
 
         var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
 
-        // 컨트롤러 3 + 서비스 5 + 리포지토리 + 잡 + DI 등록 확장 클래스 + DTO + 도메인 3 + 계약 record + 인터페이스 4다.
-        Assert.Equal(20, result.Graph.Classes.Count);
+        // 컨트롤러 4(기반 클래스 포함 5) + 서비스 5 + 리포지터리 3 + 잡 + DI 등록 확장 클래스 + DTO + 도메인 3 + 계약 record + 인터페이스 4다.
+        Assert.Equal(25, result.Graph.Classes.Count);
         var job = Assert.Single(result.Graph.Classes, item => item.Name == "CleanupJob");
         Assert.Equal("FixtureApp.Jobs", job.Namespace);
         Assert.Equal("FixtureApp/Jobs/CleanupJob.cs", job.File);
@@ -153,8 +153,8 @@ public sealed class AnalyzerIntegrationTests
             var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
 
             Assert.DoesNotContain(result.Graph.Nodes, node => node.DisplayName == "CleanupJob.RunAsync");
-            Assert.Equal(8, result.Graph.Nodes.Count);
-            Assert.Equal(20, result.Graph.Classes.Count);
+            Assert.Equal(12, result.Graph.Nodes.Count);
+            Assert.Equal(25, result.Graph.Classes.Count);
         }
         finally
         {
@@ -250,7 +250,7 @@ public sealed class AnalyzerIntegrationTests
         {
             var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
 
-            Assert.Equal(20, result.Graph.Classes.Count);
+            Assert.Equal(25, result.Graph.Classes.Count);
             Assert.All(result.Graph.Classes, item => Assert.Empty(item.Members));
             Assert.Equal(0, result.MemberCount);
             // 멤버를 꺼도 상속·구현 정보는 남아 관계도는 그릴 수 있다.
@@ -276,7 +276,7 @@ public sealed class AnalyzerIntegrationTests
         {
             var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSolutionPath());
 
-            Assert.Equal(16, result.Graph.Classes.Count);
+            Assert.Equal(21, result.Graph.Classes.Count);
             Assert.DoesNotContain(result.Graph.Classes, item => item.TypeKind == ClassTypeKind.Interface);
             // 목록에서 빠진 인터페이스는 그릴 대상이 없으므로 구현 관계에서도 빠진다.
             Assert.Empty(Assert.Single(
