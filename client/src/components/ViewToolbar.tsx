@@ -60,7 +60,9 @@ export function ViewToolbar({
             type="button"
             role="tab"
             key={item}
+            id={`tracelens-tab-${item}`}
             aria-selected={viewMode === item}
+            aria-controls="tracelens-view-panel"
             className={viewMode === item ? 'active' : ''}
             onClick={() => onChangeMode(item)}
           >
@@ -69,6 +71,10 @@ export function ViewToolbar({
         ))}
       </div>
       <span className="mode-hint">{hint}</span>
+      {/* 보기를 바꾸면 스크린 리더에도 알린다. 화면에는 보이지 않는다. */}
+      <span className="visually-hidden" aria-live="polite">
+        {t('a11y.viewChanged', { view: t(`view.${viewMode}` as const) })}
+      </span>
       <div className="toolbar-extra">
         {viewMode === 'callflow' && <span>{t('toolbar.level', { n: callFlowLevel })}</span>}
         {viewMode === 'data' && (

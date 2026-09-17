@@ -49,8 +49,16 @@ export function UmlClassBox({
         borderTop: `2px solid ${kindColors[graphClass.kind]}`,
       }}
       onClick={() => onSelectClass(graphClass.id)}
+      onKeyDown={(event) => {
+        // 마우스 없이도 박스를 고를 수 있어야 한다(Enter·Space).
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        onSelectClass(graphClass.id)
+      }}
       role="button"
-      tabIndex={-1}
+      tabIndex={0}
+      aria-label={t('a11y.selectClass', { name: graphClass.name })}
+      aria-pressed={selected}
       title={graphClass.id}
     >
       <div className={`uml-name${caption ? ' with-stereo' : ''}`}>
@@ -90,6 +98,7 @@ interface MemberSectionProps {
 }
 
 function MemberSection({ members, emptyLabel, graphClass, selectedMemberKey, onSelectMember }: MemberSectionProps) {
+  const { t } = useI18n()
   return (
     <div className="uml-sec">
       {members.length === 0 && <div className="uml-row empty">{emptyLabel}</div>}
@@ -100,7 +109,16 @@ function MemberSection({ members, emptyLabel, graphClass, selectedMemberKey, onS
           <div
             key={key}
             className={`uml-row${selectedMemberKey === key ? ' selected' : ''}`}
+            role="button"
+            tabIndex={0}
+            aria-label={t('a11y.selectMember', { name: head })}
             onClick={(event) => { event.stopPropagation(); onSelectMember(graphClass, member) }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              event.preventDefault()
+              event.stopPropagation()
+              onSelectMember(graphClass, member)
+            }}
             title={`${head}${member.type ? ` : ${member.type}` : ''}`}
           >
             <span className="vis">{memberSign(member)}</span>

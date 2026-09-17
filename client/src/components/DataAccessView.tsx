@@ -565,7 +565,14 @@ export function FindingTable({
             <tr
               key={finding.id}
               className={`row${selection?.type === 'finding' && selection.key === finding.id ? ' selected' : ''}`}
+              tabIndex={0}
+              aria-label={t('a11y.selectFinding', { rule: finding.ruleId })}
               onClick={() => onSelect({ type: 'finding', key: finding.id })}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                onSelect({ type: 'finding', key: finding.id })
+              }}
             >
               <td className="rule">{finding.ruleId}</td>
               <td><SeverityBadge severity={finding.severity} /></td>

@@ -696,4 +696,11 @@ export const en: Dictionary = {
   /* 호출 흐름 창 */
   'graph.windowLimit': 'This window draws up to {shown} nodes (+{hidden} more). Click a node to go deeper.',
   'graph.pathHighlight': 'The path to the target you picked in the impact list is highlighted.',
+
+  /* 접근성 라벨 */
+  'a11y.selectClass': 'Select class {name}',
+  'a11y.selectMember': 'Select member {name}',
+  'a11y.selectNode': 'Select {name}',
+  'a11y.selectFinding': 'Select check {rule}',
+  'a11y.viewChanged': 'Switched to the {view} view.',
 }

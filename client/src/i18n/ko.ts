@@ -693,6 +693,13 @@ export const ko = {
   /* 호출 흐름 창 */
   'graph.windowLimit': '이 창은 노드 {shown}개까지만 그린다(+{hidden}개 더 있다). 노드를 눌러 그 아래로 내려가면 된다.',
   'graph.pathHighlight': '영향 목록에서 고른 대상까지의 경로를 강조했다.',
+
+  /* 접근성 라벨 */
+  'a11y.selectClass': '{name} 클래스 선택',
+  'a11y.selectMember': '{name} 멤버 선택',
+  'a11y.selectNode': '{name} 선택',
+  'a11y.selectFinding': '{rule} 점검 항목 선택',
+  'a11y.viewChanged': '{view} 보기로 바꿨다.',
 } as const
 
 export type TranslationKey = keyof typeof ko

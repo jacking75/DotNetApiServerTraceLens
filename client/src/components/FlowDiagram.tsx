@@ -63,8 +63,14 @@ export function FlowDiagram({ view, selection, zoom, shellRef, onSelectClass, on
             className={`dg-node clickable${selectedKey === box.id ? ' selected' : ''}`}
             style={{ left: placed.x, top: placed.y, width: placed.w }}
             onClick={() => onSelectClass(box.id)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              event.preventDefault()
+              onSelectClass(box.id)
+            }}
             role="button"
-            tabIndex={-1}
+            tabIndex={0}
+            aria-label={t('a11y.selectNode', { name: box.title })}
             title={box.id}
           >
             <div className="dg-head">
@@ -78,7 +84,16 @@ export function FlowDiagram({ view, selection, zoom, shellRef, onSelectClass, on
                   <div
                     key={row.key}
                     className={`dg-row${selectedKey === row.key ? ' selected' : ''}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={t('a11y.selectNode', { name: row.label })}
                     onClick={(event) => { event.stopPropagation(); onSelectRow(row.key, row.rowKind) }}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return
+                      event.preventDefault()
+                      event.stopPropagation()
+                      onSelectRow(row.key, row.rowKind)
+                    }}
                     title={row.recursive ? t('flow.recursive', { label: row.label }) : row.label}
                   >
                     {row.httpMethod && (

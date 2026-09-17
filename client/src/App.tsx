@@ -1344,7 +1344,12 @@ export default function App() {
           columns={columns}
         />
 
-        <section className="panel graph-area">
+        <section
+          className="panel graph-area"
+          id="tracelens-view-panel"
+          role="tabpanel"
+          aria-labelledby={`tracelens-tab-${viewMode}`}
+        >
           <header>
             <span>{t(`view.${viewMode}` as const)}</span>
             <small>{graphMeta}</small>
