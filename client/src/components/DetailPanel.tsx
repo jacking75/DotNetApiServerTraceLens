@@ -47,8 +47,9 @@ export function DetailPanel({
   namespacePrefix,
   actions,
 }: DetailPanelProps) {
+  const { t } = useI18n()
   if (!graph || !selection) {
-    return <div className="detail-body"><div className="panel-message">그래프에서 항목을 고르면 여기에 상세가 뜬다.</div></div>
+    return <div className="detail-body"><div className="panel-message">{t('detail.pickSomething')}</div></div>
   }
 
   return (
@@ -83,10 +84,10 @@ export function DetailPanel({
 }
 
 const startupKindLabels: Record<string, string> = {
-  Registration: 'DI 등록',
-  Configuration: '설정 호출',
-  ExtensionCall: '확장 메서드',
-  Middleware: '미들웨어',
+  Registration: 'detail.startup.Registration',
+  Configuration: 'detail.startup.Configuration',
+  ExtensionCall: 'detail.startup.ExtensionCall',
+  Middleware: 'detail.startup.Middleware',
 }
 
 /** 시작 흐름 한 단계의 상세. 등록이면 서비스/구현체 타입으로 바로 이동할 수 있다. */
@@ -99,26 +100,27 @@ function StartupStepDetail({
   stepKey: string
   actions: DetailActions
 }) {
+  const { t } = useI18n()
   const step = findStartupStep(graph, stepKey)
-  if (!step) return <div className="panel-message">이 단계는 마지막 분석 결과에 없다.</div>
+  if (!step) return <div className="panel-message">{t('detail.stepMissing')}</div>
 
   return (
     <>
       <div className="detail-title"><h3>{step.label}</h3></div>
       <div className="detail-path">{step.file}:{step.line}</div>
       <dl className="kv">
-        <dt>종류</dt>
+        <dt>{t('detail.kind')}</dt>
         <dd>{startupKindLabels[step.kind] ?? step.kind}</dd>
-        {step.lifetime && <><dt>수명</dt><dd>{step.lifetime}</dd></>}
+        {step.lifetime && <><dt>{t('detail.lifetime')}</dt><dd>{step.lifetime}</dd></>}
       </dl>
 
       <div className="detail-section">
-        <h4>소스</h4>
-        <Suspense fallback={<div className="panel-message">소스를 불러오는 중이다.</div>}>
+        <h4>{t('detail.source')}</h4>
+        <Suspense fallback={<div className="panel-message">{t('detail.loadingSource')}</div>}>
           <SourceView
             target={{ file: step.file, startLine: step.line, endLine: step.line }}
             height={160}
-            emptyMessage="소스를 불러오는 중이다."
+            emptyMessage={t('detail.loadingSource')}
           />
         </Suspense>
       </div>
@@ -127,12 +129,12 @@ function StartupStepDetail({
         <div className="detail-section detail-actions">
           {step.serviceTypeId && (
             <button type="button" className="btn sm" onClick={() => actions.onShowInDiagram(step.serviceTypeId!)}>
-              {step.serviceType} 클래스에서 보기
+              {t('detail.showClass', { name: step.serviceType ?? step.serviceTypeId })}
             </button>
           )}
           {step.implementationTypeId && (
             <button type="button" className="btn sm" onClick={() => actions.onShowInDiagram(step.implementationTypeId!)}>
-              {step.implementationType} 클래스에서 보기
+              {t('detail.showClass', { name: step.implementationType ?? step.implementationTypeId })}
             </button>
           )}
         </div>
@@ -155,9 +157,10 @@ function ClassDetail({
   namespacePrefix: string
   actions: DetailActions
 }) {
+  const { t } = useI18n()
   const graphClass = graph.classes.find((item) => item.id === classId)
   const nameById = useMemo(() => new Map(graph.classes.map((item) => [item.id, item.name])), [graph.classes])
-  if (!graphClass) return <div className="panel-message">이 클래스는 마지막 분석 결과에 없다.</div>
+  if (!graphClass) return <div className="panel-message">{t('detail.classMissing')}</div>
 
   const { fields, methods } = classMembers(graphClass)
   const stereotype = stereotypeOf(graphClass)
@@ -173,12 +176,12 @@ function ClassDetail({
       </div>
       <div className="detail-path">{graphClass.file}:{graphClass.startLine}-{graphClass.endLine}</div>
       <dl className="kv">
-        <dt>분류</dt>
+        <dt>{t('detail.category')}</dt>
         <dd>{graphClass.kind}{graphClass.isAbstract ? ' · abstract' : ''}{graphClass.isStatic ? ' · static' : ''}</dd>
-        <dt>네임스페이스</dt>
-        <dd>{graphClass.namespace || '(전역)'}</dd>
-        <dt>멤버</dt>
-        <dd>필드 {fields.length} · 메서드 {methods.length}</dd>
+        <dt>{t('detail.namespace')}</dt>
+        <dd>{graphClass.namespace || t('detail.globalNamespace')}</dd>
+        <dt>{t('detail.members')}</dt>
+        <dd>{t('detail.memberCounts', { fields: fields.length, methods: methods.length })}</dd>
       </dl>
 
       {(['inherit', 'implement', 'assoc', 'depend'] as RelationType[]).map((type) => {
@@ -194,41 +197,41 @@ function ClassDetail({
       })}
       {inbound.length > 0 && (
         <PillSection
-          title={`이 클래스를 참조 (${inbound.length})`}
+          title={t('detail.referencedBy', { count: inbound.length })}
           items={inbound.map((id) => ({ label: nameById.get(id) ?? id, onClick: () => actions.onSelect({ type: 'class', key: id }) }))}
         />
       )}
       {graphClass.baseTypeName && !graphClass.baseTypeId && (
         <div className="detail-section">
-          <h4>외부 상위 타입</h4>
+          <h4>{t('detail.externalBaseTypes')}</h4>
           <div className="pill-list"><span className="pill">{graphClass.baseTypeName}</span></div>
         </div>
       )}
 
       {fields.length > 0 && (
-        <MemberList title="필드 · 프로퍼티" members={fields} graphClass={graphClass} actions={actions} />
+        <MemberList title={t('detail.fieldsAndProperties')} members={fields} graphClass={graphClass} actions={actions} />
       )}
-      <MemberList title="메서드" members={methods} graphClass={graphClass} actions={actions} />
+      <MemberList title={t('detail.methods')} members={methods} graphClass={graphClass} actions={actions} />
 
       <div className="detail-section">
-        <h4>소스</h4>
-        <Suspense fallback={<div className="panel-message">소스를 불러오는 중이다.</div>}>
+        <h4>{t('detail.source')}</h4>
+        <Suspense fallback={<div className="panel-message">{t('detail.loadingSource')}</div>}>
           <SourceView
             target={{ file: graphClass.file, startLine: graphClass.startLine, endLine: graphClass.endLine }}
             height={220}
-            emptyMessage="소스를 불러오는 중이다."
+            emptyMessage={t('detail.loadingSource')}
           />
         </Suspense>
       </div>
 
       <div className="detail-section detail-actions">
-        <button type="button" className="btn sm" onClick={() => actions.onFocusOnly(classId)}>이 클래스 1홉만 보기</button>
-        <button type="button" className="btn sm" onClick={() => actions.onShowInDiagram(classId)}>다이어그램에서 보기</button>
+        <button type="button" className="btn sm" onClick={() => actions.onFocusOnly(classId)}>{t('detail.focusOnly')}</button>
+        <button type="button" className="btn sm" onClick={() => actions.onShowInDiagram(classId)}>{t('detail.showInDiagram')}</button>
         <button type="button" className="btn sm" onClick={() => actions.onGoToNamespace(graphClass.namespace)}>
-          패키지로 이동
+          {t('detail.goToPackage')}
         </button>
       </div>
-      <div className="detail-hint">네임스페이스 {shortenNamespace(graphClass.namespace, namespacePrefix)}</div>
+      <div className="detail-hint">{t('detail.namespaceOf', { name: shortenNamespace(graphClass.namespace, namespacePrefix) })}</div>
     </>
   )
 }
@@ -245,6 +248,7 @@ function MethodDetail({
   entryPoints: EntryPoint[]
   actions: DetailActions
 }) {
+  const { t } = useI18n()
   const node = graph.nodes.find((item) => item.id === nodeId)
   const nodeNameById = useMemo(() => new Map(graph.nodes.map((item) => [item.id, item.displayName])), [graph.nodes])
   const member = useMemo(() => {
@@ -273,7 +277,7 @@ function MethodDetail({
     : member && graphClass
       ? { file: graphClass.file, startLine: member.member.startLine, endLine: member.member.endLine }
       : null
-  if (!target) return <div className="panel-message">이 메서드는 마지막 분석 결과에 없다.</div>
+  if (!target) return <div className="panel-message">{t('detail.methodMissing')}</div>
 
   const signature = member?.member.signature ?? node?.displayName ?? nodeId
   const returnType = member?.member.type || node?.returnType || ''
@@ -286,17 +290,17 @@ function MethodDetail({
       </div>
       <div className="detail-path">{target.file}:{target.startLine}-{target.endLine}</div>
       <dl className="kv">
-        <dt>시그니처</dt>
+        <dt>{t('detail.signature')}</dt>
         <dd>
           {member ? `${memberSign(member.member)} ` : ''}{signature}{returnType ? ` : ${returnType}` : ''}
         </dd>
-        <dt>접근제한</dt>
+        <dt>{t('detail.accessibility')}</dt>
         <dd>{member?.member.accessibility ?? node?.accessibility ?? 'Public'}</dd>
-        <dt>선언 클래스</dt>
+        <dt>{t('detail.declaringClass')}</dt>
         <dd>{graphClass?.id ?? node?.classId ?? '-'}</dd>
         {entry && (
           <>
-            <dt>라우트</dt>
+            <dt>{t('detail.routes')}</dt>
             <dd>
               {entry.httpMethod} {entry.route}
               {entry.confidence === 'Estimated' && <span className="chip small warn">~</span>}
@@ -309,11 +313,11 @@ function MethodDetail({
       )}
 
       <PillSection
-        title={`호출하는 대상 (${callees.length})`}
+        title={t('detail.callees', { count: callees.length })}
         items={callees.map((id) => ({ label: nodeNameById.get(id) ?? id, onClick: () => actions.onSelect({ type: 'method', key: id }) }))}
       />
       <PillSection
-        title={`호출하는 쪽 (${callers.length})`}
+        title={t('detail.callers', { count: callers.length })}
         items={callers.map((id) => ({ label: nodeNameById.get(id) ?? id, onClick: () => actions.onSelect({ type: 'method', key: id }) }))}
       />
 
@@ -326,17 +330,17 @@ function MethodDetail({
       />
 
       <div className="detail-section">
-        <h4>소스</h4>
-        <Suspense fallback={<div className="panel-message">소스를 불러오는 중이다.</div>}>
-          <SourceView target={target} height={240} emptyMessage="소스를 불러오는 중이다." />
+        <h4>{t('detail.source')}</h4>
+        <Suspense fallback={<div className="panel-message">{t('detail.loadingSource')}</div>}>
+          <SourceView target={target} height={240} emptyMessage={t('detail.loadingSource')} />
         </Suspense>
       </div>
 
       <div className="detail-section detail-actions">
-        <button type="button" className="btn sm" onClick={() => actions.onShowFlow(nodeId)}>이 위치까지의 흐름 보기</button>
+        <button type="button" className="btn sm" onClick={() => actions.onShowFlow(nodeId)}>{t('detail.showFlowHere')}</button>
         {graphClass && (
           <button type="button" className="btn sm" onClick={() => actions.onShowInDiagram(graphClass.id)}>
-            다이어그램에서 보기
+            {t('detail.showInDiagram')}
           </button>
         )}
       </div>
@@ -432,6 +436,7 @@ function NamespaceDetail({
   namespacePrefix: string
   actions: DetailActions
 }) {
+  const { t } = useI18n()
   const summary = namespaces.find((item) => item.namespace === namespace)
   const classes = graph.classes.filter((item) => item.namespace === namespace)
   const namespaceOf = useMemo(() => new Map(graph.classes.map((item) => [item.id, item.namespace])), [graph.classes])
@@ -446,14 +451,20 @@ function NamespaceDetail({
   return (
     <>
       <div className="detail-title"><h3>{shortenNamespace(namespace, namespacePrefix)}</h3></div>
-      <div className="detail-path">{namespace || '(전역 네임스페이스)'}</div>
+      <div className="detail-path">{namespace || t('detail.globalNamespaceFull')}</div>
       <dl className="kv">
-        <dt>클래스</dt><dd>{classes.length}개</dd>
-        <dt>메서드</dt><dd>{summary?.methodCount ?? classes.reduce((sum, item) => sum + item.methodIds.length, 0)}개</dd>
-        <dt>의존</dt><dd>나감 {outbound.length} · 들어옴 {inbound.length}</dd>
+        <dt>{t('detail.classes')}</dt><dd>{t('detail.count', { count: classes.length })}</dd>
+        <dt>{t('detail.methods')}</dt>
+        <dd>
+          {t('detail.count', {
+            count: summary?.methodCount ?? classes.reduce((sum, item) => sum + item.methodIds.length, 0),
+          })}
+        </dd>
+        <dt>{t('detail.dependencies')}</dt>
+        <dd>{t('detail.dependencyCounts', { outbound: outbound.length, inbound: inbound.length })}</dd>
       </dl>
       <div className="detail-section">
-        <h4>클래스</h4>
+        <h4>{t('detail.classes')}</h4>
         <div className="member-list">
           {classes.map((item) => (
             <button
@@ -470,14 +481,14 @@ function NamespaceDetail({
         </div>
       </div>
       <PillSection
-        title={`나가는 의존 (${outbound.length})`}
+        title={t('detail.outbound', { count: outbound.length })}
         items={outbound.map((item) => ({
           label: shortenNamespace(item, namespacePrefix),
           onClick: () => actions.onGoToNamespace(item),
         }))}
       />
       <PillSection
-        title={`들어오는 의존 (${inbound.length})`}
+        title={t('detail.inbound', { count: inbound.length })}
         items={inbound.map((item) => ({
           label: shortenNamespace(item, namespacePrefix),
           onClick: () => actions.onGoToNamespace(item),
@@ -498,18 +509,19 @@ function MemberList({
   graphClass: GraphClass
   actions: DetailActions
 }) {
+  const { t } = useI18n()
   return (
     <div className="detail-section">
       <h4>{title}</h4>
       <div className="member-list">
-        {members.length === 0 && <div className="panel-message tight">멤버가 없다.</div>}
+        {members.length === 0 && <div className="panel-message tight">{t('detail.noMembers')}</div>}
         {members.map((member) => (
           <button
             type="button"
             className="member"
             key={memberKey(graphClass.id, member)}
             onClick={() => actions.onSelect({ type: 'method', key: memberKey(graphClass.id, member) })}
-            title={member.nodeId ?? '실행 가능한 노드가 없는 멤버다.'}
+            title={member.nodeId ?? t('detail.noExecutableNode')}
           >
             <span className="grow">
               {memberSign(member)} {member.signature ?? member.name}{member.type ? ` : ${member.type}` : ''}
@@ -523,11 +535,12 @@ function MemberList({
 }
 
 function PillSection({ title, items }: { title: string; items: Array<{ label: string; onClick: () => void }> }) {
+  const { t } = useI18n()
   return (
     <div className="detail-section">
       <h4>{title}</h4>
       <div className="pill-list">
-        {items.length === 0 && <span className="pill">없음</span>}
+        {items.length === 0 && <span className="pill">{t('detail.none')}</span>}
         {items.map((item, index) => (
           <button type="button" className="pill" key={`${item.label}-${index}`} onClick={item.onClick}>
             {item.label}

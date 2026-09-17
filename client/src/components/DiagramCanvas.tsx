@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
+import { useI18n } from '../i18n/I18nProvider'
 import type { PlacedPackage } from '../graph/packageLayout'
 
 export interface CanvasPath {
@@ -178,15 +179,32 @@ interface ZoomControlsProps {
 }
 
 function ZoomControls({ zoom, onZoomChange, onFitZoom }: ZoomControlsProps) {
+  const { t } = useI18n()
   return (
     <div className="zoom-controls">
-      <button type="button" onClick={() => onZoomChange(clampZoom(zoom - ZOOM_STEP))} title="축소 (Ctrl -)" aria-label="축소">−</button>
-      <button type="button" className="zoom-pct" onClick={() => onZoomChange(1)} title="100%로">{Math.round(zoom * 100)}%</button>
-      <button type="button" onClick={() => onZoomChange(clampZoom(zoom + ZOOM_STEP))} title="확대 (Ctrl +)" aria-label="확대">+</button>
+      <button
+        type="button"
+        onClick={() => onZoomChange(clampZoom(zoom - ZOOM_STEP))}
+        title={t('canvas.zoomOutTitle')}
+        aria-label={t('canvas.zoomOut')}
+      >
+        −
+      </button>
+      <button type="button" className="zoom-pct" onClick={() => onZoomChange(1)} title={t('canvas.zoomReset')}>
+        {Math.round(zoom * 100)}%
+      </button>
+      <button
+        type="button"
+        onClick={() => onZoomChange(clampZoom(zoom + ZOOM_STEP))}
+        title={t('canvas.zoomInTitle')}
+        aria-label={t('canvas.zoomIn')}
+      >
+        +
+      </button>
       {onFitZoom && (
         <>
           <span className="zoom-sep" />
-          <button type="button" onClick={onFitZoom} title="맞춤 (Ctrl 0)">맞춤</button>
+          <button type="button" onClick={onFitZoom} title={t('canvas.fitTitle')}>{t('canvas.fit')}</button>
         </>
       )}
     </div>

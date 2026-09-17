@@ -25,7 +25,10 @@ export function collapseEdgesToClasses(graph: GraphDocument): GraphEdge[] {
     const from = ownerOf.get(edge.from)
     const to = ownerOf.get(edge.to)
     if (!from || !to || from === to) continue
-    classEdges.set(`${from} -> ${to}`, { from, to })
+    const key = `${from} -> ${to}`
+    // 한 클래스 쌍에 여러 호출이 접히면 가장 높은 확실도를 남긴다(직접 호출이 하나라도 있으면 확실).
+    const confidence = classEdges.get(key)?.confidence === 'Certain' ? 'Certain' : edge.confidence
+    classEdges.set(key, { from, to, confidence })
   }
 
   return [...classEdges.values()]

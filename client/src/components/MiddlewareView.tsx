@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { filterFindings } from '../graph/dataView'
 import type { MiddlewareViewState } from '../state/viewState'
 import type { MiddlewarePipelineDocument, MiddlewareStepInfo, Selection } from '../types/graph'
+import { useI18n } from '../i18n/I18nProvider'
 import { FindingTable, SeverityBadge } from './DataAccessView'
 
 interface MiddlewareViewProps {
@@ -12,6 +13,7 @@ interface MiddlewareViewProps {
 }
 
 export function MiddlewareView({ pipeline, view, selection, onSelect }: MiddlewareViewProps) {
+  const { t } = useI18n()
   const findings = useMemo(
     () => filterFindings(pipeline.findings, { severity: view.severity, onlyCertain: false }),
     [pipeline.findings, view.severity])
@@ -38,10 +40,8 @@ export function MiddlewareView({ pipeline, view, selection, onSelect }: Middlewa
   return (
     <div className="data-view">
       <div className="pipe-head">
-        <h3>요청 파이프라인</h3>
-        <span className="sub">
-          위에서 아래로 요청, 아래에서 위로 응답. 오른쪽 빨간 가지는 그 자리에서 끊길 수 있다는 뜻이다.
-        </span>
+        <h3>{t('mw.title')}</h3>
+        <span className="sub">{t('mw.lead')}</span>
       </div>
 
       {pipeline.steps.map((step, index) => (
@@ -63,27 +63,27 @@ export function MiddlewareView({ pipeline, view, selection, onSelect }: Middlewa
             >
               <div className="mw-top">
                 <span className="mw-name">{step.name}</span>
-                <span className="tag">{step.type === 'Custom' ? '직접 작성' : '프레임워크'}</span>
-                {step.kind === 'EndpointRegistration' && <span className="tag">엔드포인트 등록</span>}
-                {step.kind === 'Terminal' && <span className="tag">종단</span>}
-                {step.condition && <span className="tag replica">조건부</span>}
-                {step.isDead && <span className="sev warn">실행되지 않음</span>}
+                <span className="tag">{step.type === 'Custom' ? t('mw.custom') : t('mw.framework')}</span>
+                {step.kind === 'EndpointRegistration' && <span className="tag">{t('mw.registration')}</span>}
+                {step.kind === 'Terminal' && <span className="tag">{t('mw.terminal')}</span>}
+                {step.condition && <span className="tag replica">{t('mw.conditional')}</span>}
+                {step.isDead && <span className="sev warn">{t('mw.dead')}</span>}
                 {findingsByStep.get(step.id)?.map((finding) => (
                   <span className={`sev ${finding.severity.toLowerCase()}`} key={finding.id}>{finding.ruleId}</span>
                 ))}
                 <span className="mw-reg">{step.registrationFile}:{step.registrationLine}</span>
               </div>
               {step.pre && (
-                <div className="mw-line pre"><span className="dir">요청 →</span><span>{step.pre}</span></div>
+                <div className="mw-line pre"><span className="dir">{t('mw.request')}</span><span>{step.pre}</span></div>
               )}
               {view.showPost && step.post && (
-                <div className="mw-line post"><span className="dir">← 응답</span><span>{step.post}</span></div>
+                <div className="mw-line post"><span className="dir">{t('mw.response')}</span><span>{step.post}</span></div>
               )}
               {(step.contextAccesses.length > 0 || step.storeAccesses.length > 0) && (
                 <div className="mw-io">
                   {step.contextAccesses.map((access) => (
                     <span className={`io ${access.mode === 'Read' ? 'r' : 'w'}`} key={`${access.mode}${access.target}`}>
-                      {access.mode === 'Read' ? '읽기' : '쓰기'} {access.target}
+                      {access.mode === 'Read' ? t('mw.read') : t('mw.write')} {access.target}
                     </span>
                   ))}
                   {step.storeAccesses.map((access) => (
@@ -118,14 +118,18 @@ export function MiddlewareView({ pipeline, view, selection, onSelect }: Middlewa
             <div className="mwnum">·</div>
             <div className="mw-card endpoint">
               <div className="mw-top">
-                <span className="mw-name">엔드포인트 실행</span>
-                <span className="tag">가상 단계</span>
+                <span className="mw-name">{t('mw.endpointExecution')}</span>
+                <span className="tag">{t('mw.virtualStep')}</span>
               </div>
               <div className="mw-line pre">
-                <span className="dir">요청 →</span>
+                <span className="dir">{t('mw.request')}</span>
                 <span>
-                  위에서 등록한 엔드포인트({pipeline.steps.filter((step) => step.kind === 'EndpointRegistration').map((step) => step.name).join(', ')})
-                  중 라우트가 맞는 것을 여기서 실행한다. 등록 순서와 실행 순서는 다르다.
+                  {t('mw.endpointExecutionBody', {
+                    names: pipeline.steps
+                      .filter((step) => step.kind === 'EndpointRegistration')
+                      .map((step) => step.name)
+                      .join(', '),
+                  })}
                 </span>
               </div>
             </div>
@@ -135,9 +139,12 @@ export function MiddlewareView({ pipeline, view, selection, onSelect }: Middlewa
       )}
 
       <div className="pipe-legend">
-        <span><b className="pre-mark">요청 →</b> next 호출 전에 하는 일</span>
-        <span><b className="post-mark">← 응답</b> next 이후, 응답이 돌아올 때 하는 일</span>
-        <span><span className="io r">읽기</span><span className="io w">쓰기</span> HttpContext 접근</span>
+        <span><b className="pre-mark">{t('mw.request')}</b> {t('mw.legendPre')}</span>
+        <span><b className="post-mark">{t('mw.response')}</b> {t('mw.legendPost')}</span>
+        <span>
+          <span className="io r">{t('mw.read')}</span>
+          <span className="io w">{t('mw.write')}</span> {t('mw.legendIo')}
+        </span>
       </div>
     </div>
   )
@@ -145,12 +152,13 @@ export function MiddlewareView({ pipeline, view, selection, onSelect }: Middlewa
 
 /** 끊기는 자리마다 "실행되지 않는 것"과 "그래도 실행되는 응답 후처리"를 나란히 보여준다. */
 function ShortCircuitView({ pipeline }: { pipeline: MiddlewarePipelineDocument }) {
+  const { t } = useI18n()
   const points = pipeline.steps
     .map((step, index) => ({ step, index }))
     .filter((item) => item.step.shortCircuit !== null && !item.step.isDead)
 
   if (points.length === 0) {
-    return <div className="panel-message">요청을 끊는 자리를 찾지 못했다.</div>
+    return <div className="panel-message">{t('mw.noShortCircuit')}</div>
   }
 
   return (
@@ -163,29 +171,29 @@ function ShortCircuitView({ pipeline }: { pipeline: MiddlewarePipelineDocument }
             <div className="sc-head">
               <span className="code">{step.shortCircuit!.statusCode}</span>
               <span className="name">{step.name}</span>
-              <span className="tag">{step.shortCircuit!.condition || '조건을 읽지 못했다'}</span>
+              <span className="tag">{step.shortCircuit!.condition || t('mw.conditionUnknown')}</span>
               <span className="mw-reg">{step.registrationFile}:{step.registrationLine}</span>
             </div>
             <div className="sc-cols">
               <div className="sc-col skip">
-                <h5>실행되지 않는 것</h5>
+                <h5>{t('mw.skipped')}</h5>
                 <ul>
-                  {skipped.length === 0 && <li>없음 — 마지막 단계다</li>}
+                  {skipped.length === 0 && <li>{t('mw.skippedNone')}</li>}
                   {skipped.map((item) => (
-                    <li key={item.id}>{item.name}{item.kind !== 'Middleware' ? ' (액션까지 전부)' : ''}</li>
+                    <li key={item.id}>{item.name}{item.kind !== 'Middleware' ? t('mw.allTheWay') : ''}</li>
                   ))}
                 </ul>
               </div>
               <div className="sc-col">
-                <h5>그래도 실행되는 것 (응답 경로)</h5>
+                <h5>{t('mw.stillRun')}</h5>
                 <ul>
-                  {stillRun.length === 0 && <li>없음</li>}
+                  {stillRun.length === 0 && <li>{t('mw.none')}</li>}
                   {stillRun.map((item) => <li key={item.id}>{item.name} — {item.post}</li>)}
                 </ul>
               </div>
             </div>
             <div className="sc-note">
-              여기서 끊기면 상태 코드 {step.shortCircuit!.statusCode}로 응답이 만들어지고, 위 목록의 응답 처리를 거쳐 돌아간다.
+              {t('mw.shortCircuitNote', { status: step.shortCircuit!.statusCode })}
             </div>
           </div>
         )
@@ -206,6 +214,7 @@ export function MiddlewareStepRow({
   severity: 'Critical' | 'Warning' | 'Info' | null
   onSelect: () => void
 }) {
+  const { t } = useI18n()
   return (
     <button
       type="button"
@@ -217,9 +226,9 @@ export function MiddlewareStepRow({
       <span className="grow">
         {step.name}
         <span className="sub">
-          {step.type === 'Custom' ? '직접 작성' : '프레임워크'}
-          {step.shortCircuit ? ` · 단락 ${step.shortCircuit.statusCode}` : ''}
-          {step.post ? ' · 응답 처리 있음' : ''}
+          {step.type === 'Custom' ? t('mw.custom') : t('mw.framework')}
+          {step.shortCircuit ? t('mw.shortCircuitTag', { status: step.shortCircuit.statusCode }) : ''}
+          {step.post ? t('mw.hasPost') : ''}
         </span>
       </span>
       {severity && <SeverityBadge severity={severity} />}

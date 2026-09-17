@@ -2,6 +2,7 @@ import Editor, { type OnMount } from '@monaco-editor/react'
 import { useEffect, useState } from 'react'
 import { getSource } from '../api/client'
 import type { SourceResponse } from '../types/graph'
+import { useI18n } from '../i18n/I18nProvider'
 
 export interface SourceTarget {
   file: string
@@ -17,6 +18,7 @@ interface SourceViewProps {
 
 /** 지정한 파일 구간을 읽어 Monaco로 보여준다. 상세 패널의 "소스" 절에 끼워 넣어 쓴다. */
 export function SourceView({ target, height, emptyMessage }: SourceViewProps) {
+  const { t } = useI18n()
   const [source, setSource] = useState<SourceResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -26,7 +28,7 @@ export function SourceView({ target, height, emptyMessage }: SourceViewProps) {
     if (!target) return
     void getSource(target.file, target.startLine, target.endLine)
       .then(setSource)
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : '소스를 불러오지 못했다.'))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : t('code.loadFailed')))
   }, [target?.file, target?.startLine, target?.endLine]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMount: OnMount = (editor) => {

@@ -3,10 +3,12 @@ import {
   buildAccessMatrix,
   buildEntryDataFlow,
   buildFailGrid,
-  compensationLabels,
+  compensationLabelKeys,
   filterFindings,
-  severityLabels,
+  severityLabelKeys,
 } from '../graph/dataView'
+import { useI18n } from '../i18n/I18nProvider'
+import type { TranslationKey } from '../i18n/ko'
 import type { DataViewState } from '../state/viewState'
 import type {
   DataAccess,
@@ -30,20 +32,22 @@ interface DataAccessViewProps {
 }
 
 export function SeverityBadge({ severity, muted }: { severity: FindingSeverity; muted?: boolean }) {
+  const { t } = useI18n()
   return (
-    <span className={`sev ${muted ? 'muted' : severity.toLowerCase()}`}>{severityLabels[severity]}</span>
+    <span className={`sev ${muted ? 'muted' : severity.toLowerCase()}`}>{t(severityLabelKeys[severity])}</span>
   )
 }
 
 /** 저장소 배지. 데이터소스 이름과 읽기/쓰기를 한 줄에 보여준다. */
 function AccessTags({ access }: { access: DataAccess }) {
+  const { t } = useI18n()
   const operation = access.operation === 'Read' ? 'read' : access.operation === 'Delete' ? 'write' : 'write'
   return (
     <>
       <span className={`tag ${access.storage === 'Cache' ? 'redis' : 'shard'}`}>{access.dataSource}</span>
       <span className={`tag ${operation}`}>{access.operation}</span>
-      {access.inTransaction && <span className="tag tx">트랜잭션</span>}
-      {access.inLoop && <span className="tag write">반복문</span>}
+      {access.inTransaction && <span className="tag tx">{t('data.inTransaction')}</span>}
+      {access.inLoop && <span className="tag write">{t('data.inLoop')}</span>}
     </>
   )
 }
@@ -104,6 +108,7 @@ function RouteView({
   onChangeView: (patch: Partial<DataViewState>) => void
   onSelect: (selection: Selection) => void
 }) {
+  const { t } = useI18n()
   const entryNodeId = view.entryNodeId ?? entryPoints[0]?.nodeId ?? null
   const entry = entryPoints.find((item) => item.nodeId === entryNodeId) ?? null
   const steps = useMemo(
@@ -111,7 +116,7 @@ function RouteView({
     [graph, entryNodeId])
 
   if (!entry) {
-    return <div className="panel-message">진입점을 고르면 그 요청이 건드리는 저장소를 순서대로 보여준다.</div>
+    return <div className="panel-message">{t('data.pickEntryPoint')}</div>
   }
 
   const dataSources = [...new Set(steps.flatMap((step) => step.accesses.map((access) => access.dataSource)))]
@@ -121,20 +126,20 @@ function RouteView({
       <div className="route-head">
         <span className={`http ${entry.httpMethod.toLowerCase()}`}>{entry.httpMethod}</span>
         <h3>{entry.route}</h3>
-        <span className="route-path">저장소에 닿는 메서드 {steps.length}곳</span>
+        <span className="route-path">{t('data.methodsTouchingStore', { count: steps.length })}</span>
         <span className="route-tags">
           {dataSources.map((name) => <span className="tag shard" key={name}>{name}</span>)}
         </span>
       </div>
 
       {steps.length === 0 && (
-        <div className="panel-message">이 진입점에서는 DB·캐시 접근을 찾지 못했다.</div>
+        <div className="panel-message">{t('data.noAccessForEntry')}</div>
       )}
 
       {steps.map((step, index) => (
         <div key={step.nodeId}>
           <div className="stage">
-            <div className="stage-label">{index === 0 ? '진입점' : `${step.depth}단계`}</div>
+            <div className="stage-label">{index === 0 ? t('data.entryStage') : t('data.depthStage', { depth: step.depth })}</div>
             <div className="stage-cards">
               <button
                 type="button"
@@ -143,7 +148,7 @@ function RouteView({
               >
                 <div className="card-top">
                   <span className="card-title">{step.displayName}</span>
-                  <span className="tag">{step.accesses.length}곳</span>
+                  <span className="tag">{t('data.siteCount', { count: step.accesses.length })}</span>
                 </div>
                 <div className="loc">{step.file}</div>
               </button>
@@ -169,9 +174,9 @@ function RouteView({
       ))}
 
       <div className="view-hint">
-        호출 그래프를 따라 6단계까지 훑는다. 인터페이스 호출은 DI 등록으로 구현체를 찾아 잇는다.
+        {t('data.routeHint')}
         <button type="button" className="btn sm" onClick={() => onChangeView({ sub: 'comp' })}>
-          이 코드베이스의 쓰기 경로 보기
+          {t('data.seeWritePaths')}
         </button>
       </div>
     </div>
@@ -193,6 +198,7 @@ function MapView({
   selection: Selection | null
   onSelect: (selection: Selection) => void
 }) {
+  const { t } = useI18n()
   const matrix = useMemo(() => buildAccessMatrix(data, view.mapFilter), [data, view.mapFilter])
   const cacheKeys = useMemo(() => {
     const keys = new Map<string, { key: string; operations: Set<string>; users: Set<string> }>()
@@ -207,16 +213,16 @@ function MapView({
     return [...keys.values()]
   }, [data.accesses])
 
-  const filters: { key: DataViewState['mapFilter']; label: string }[] = [
-    { key: 'all', label: '전체' },
-    { key: 'write', label: '쓰기만' },
-    { key: 'flagged', label: '걸린 것만' },
+  const filters: { key: DataViewState['mapFilter']; labelKey: TranslationKey }[] = [
+    { key: 'all', labelKey: 'data.filter.all' },
+    { key: 'write', labelKey: 'data.filter.write' },
+    { key: 'flagged', labelKey: 'data.filter.flagged' },
   ]
 
   return (
     <div className="data-view">
       <div className="grid-title">
-        클래스 · 저장 대상
+        {t('data.mapTitle')}
         <span className="grid-filters">
           {filters.map((filter) => (
             <button
@@ -225,20 +231,20 @@ function MapView({
               className={`chipbtn${view.mapFilter === filter.key ? ' active' : ''}`}
               onClick={() => onChangeView({ mapFilter: filter.key })}
             >
-              {filter.label}
+              {t(filter.labelKey)}
             </button>
           ))}
         </span>
       </div>
 
       {matrix.rows.length === 0 ? (
-        <div className="panel-message">거른 조건에 맞는 접근이 없다.</div>
+        <div className="panel-message">{t('data.noMatchingAccess')}</div>
       ) : (
         <div className="matrix-wrap">
           <table className="matrix">
             <thead>
               <tr>
-                <th style={{ minWidth: 190 }}>클래스 · 대상</th>
+                <th style={{ minWidth: 190 }}>{t('data.classTargetHeader')}</th>
                 {matrix.targets.map((target) => (
                   <th key={target.name}>
                     {target.name}
@@ -285,15 +291,15 @@ function MapView({
       )}
 
       <div className="matrix-legend">
-        <span><span className="cell r">R</span> 읽기</span>
-        <span><span className="cell w">W</span> 쓰기</span>
-        <span><span className="cell d">D</span> 삭제</span>
-        <span><span className="cell r flag">R</span> 규칙에 걸린 칸 — 누르면 상세로</span>
+        <span><span className="cell r">R</span> {t('data.legendRead')}</span>
+        <span><span className="cell w">W</span> {t('data.legendWrite')}</span>
+        <span><span className="cell d">D</span> {t('data.legendDelete')}</span>
+        <span><span className="cell r flag">R</span> {t('data.legendFlagged')}</span>
       </div>
 
       {cacheKeys.length > 0 && (
         <>
-          <div className="grid-title" style={{ marginTop: 18 }}>캐시 키 패턴 · 쓰는 곳</div>
+          <div className="grid-title" style={{ marginTop: 18 }}>{t('data.cacheKeyTitle')}</div>
           <div className="keylist">
             {cacheKeys.map((item) => (
               <button
@@ -312,7 +318,7 @@ function MapView({
       )}
 
       {selection?.type === 'storageTarget' && (
-        <div className="view-hint">선택한 대상: {selection.key}</div>
+        <div className="view-hint">{t('data.selectedTarget', { target: selection.key })}</div>
       )}
     </div>
   )
@@ -327,8 +333,9 @@ function TransactionView({
   data: DataAccessDocument
   onSelect: (selection: Selection) => void
 }) {
+  const { t } = useI18n()
   if (data.transactions.length === 0) {
-    return <div className="panel-message">트랜잭션을 여는 코드를 찾지 못했다. 쓰기 경로는 “보상 처리”에서 본다.</div>
+    return <div className="panel-message">{t('data.noTransactions')}</div>
   }
 
   return (
@@ -348,33 +355,31 @@ function TransactionView({
                 {transaction.methodDisplayName}
               </button>
               <span className="loc">{transaction.file}:{transaction.startLine}</span>
-              {!transaction.hasCommit && <span className="sev warn">커밋 호출 없음</span>}
+              {!transaction.hasCommit && <span className="sev warn">{t('data.noCommit')}</span>}
             </div>
             <div className="tx-steps">
               <div className="tx-step conn">
-                커넥션 {transaction.dataSources.length}개
-                <span className="meta">{transaction.dataSources.join(' · ') || '확인 못 함'}</span>
+                {t('data.connectionCount', { count: transaction.dataSources.length })}
+                <span className="meta">{transaction.dataSources.join(' · ') || t('data.unknownSource')}</span>
               </div>
               {transaction.externalCalls.map((call) => (
-                <div className="tx-step ext" key={call}>외부 호출<span className="meta">{call}</span></div>
+                <div className="tx-step ext" key={call}>{t('data.externalCall')}<span className="meta">{call}</span></div>
               ))}
               {transaction.cacheCalls.map((call) => (
-                <div className="tx-step query" key={call}>캐시 호출<span className="meta">{call}</span></div>
+                <div className="tx-step query" key={call}>{t('data.cacheCall')}<span className="meta">{call}</span></div>
               ))}
               <div className="tx-step commit">
-                {transaction.hasCommit ? 'CommitAsync()' : '커밋 호출을 찾지 못했다'}
+                {transaction.hasCommit ? 'CommitAsync()' : t('data.commitNotFound')}
               </div>
             </div>
             {transaction.dataSources.length > 1 && (
-              <div className="tx-flag bad">
-                커넥션이 둘 이상이라 한쪽만 반영될 수 있다 — TX-003
-              </div>
+              <div className="tx-flag bad">{t('data.txMultiConnection')}</div>
             )}
             {transaction.externalCalls.length > 0 && (
-              <div className="tx-flag warn">커밋 전에 외부 응답을 기다린다 — TX-001</div>
+              <div className="tx-flag warn">{t('data.txExternal')}</div>
             )}
             {tone === 'ok' && (
-              <div className="tx-flag ok">커넥션 1개 · 외부 호출 없음 — 이 모양이 기준이다</div>
+              <div className="tx-flag ok">{t('data.txOk')}</div>
             )}
           </div>
         )
@@ -398,8 +403,9 @@ function CompensationView({
   findingById: Map<string, Finding>
   onSelect: (selection: Selection) => void
 }) {
+  const { t } = useI18n()
   if (data.writePaths.length === 0) {
-    return <div className="panel-message">쓰기를 두 번 이상 하는 경로를 찾지 못했다.</div>
+    return <div className="panel-message">{t('data.noWritePaths')}</div>
   }
 
   const openId = view.pathId ?? data.writePaths.find((path) => !path.inTransaction)?.id ?? data.writePaths[0].id
@@ -423,11 +429,11 @@ function CompensationView({
               <span className="loc">{path.file}:{path.startLine}</span>
               <span className="path-tags">
                 {path.inTransaction
-                  ? <span className="tag tx">트랜잭션</span>
-                  : <span className="tag write">트랜잭션 없음</span>}
-                <span className="tag">쓰기 {path.steps.length}단계</span>
+                  ? <span className="tag tx">{t('data.inTransaction')}</span>
+                  : <span className="tag write">{t('data.noTransaction')}</span>}
+                <span className="tag">{t('data.writeSteps', { count: path.steps.length })}</span>
                 {worst && <SeverityBadge severity={worst} />}
-                <span className="chipbtn">{open ? '접기' : '펼치기'}</span>
+                <span className="chipbtn">{open ? t('data.collapse') : t('data.expand')}</span>
               </span>
             </button>
             <div className="path-note">{path.note}</div>
@@ -448,6 +454,7 @@ function PathDetail({
   findingById: Map<string, Finding>
   onSelect: (selection: Selection) => void
 }) {
+  const { t } = useI18n()
   const grid = useMemo(() => buildFailGrid(path), [path])
 
   return (
@@ -466,23 +473,21 @@ function PathDetail({
                 <span className="m">{step.detail}</span>
                 <span className="m note">{step.compensationNote}</span>
               </span>
-              <span className={`comp ${tone}`}>{compensationLabels[step.compensation]}</span>
+              <span className={`comp ${tone}`}>{t(compensationLabelKeys[step.compensation])}</span>
             </div>
           )
         })}
       </div>
 
       {path.inTransaction ? (
-        <div className="tx-flag ok">
-          모든 쓰기가 한 트랜잭션 안에 있다 — 실패하면 함께 롤백되므로 보상 격자가 필요 없다.
-        </div>
+        <div className="tx-flag ok">{t('data.allInTransaction')}</div>
       ) : (
         <>
-          <div className="grid-title">실패 지점 × 단계 — 그때 저장소에 남는 것</div>
+          <div className="grid-title">{t('data.failGridTitle')}</div>
           <table className="failgrid">
             <thead>
               <tr>
-                <th style={{ minWidth: 130 }}>실패 지점</th>
+                <th style={{ minWidth: 130 }}>{t('data.failPoint')}</th>
                 {path.steps.map((step) => (
                   <th key={step.order}>{step.order}. {shorten(step.label)}</th>
                 ))}
@@ -491,10 +496,10 @@ function PathDetail({
             <tbody>
               {grid.map((row, index) => (
                 <tr key={path.steps[index].order}>
-                  <th>{index + 1}번에서 실패</th>
+                  <th>{t('data.failsAt', { order: index + 1 })}</th>
                   {row.map((cell, cellIndex) => (
                     <td key={path.steps[cellIndex].order}>
-                      <span className={`fc ${cell.kind}`}>{cell.label}</span>
+                      <span className={`fc ${cell.kind}`}>{t(cell.labelKey)}</span>
                     </td>
                   ))}
                 </tr>
@@ -502,10 +507,10 @@ function PathDetail({
             </tbody>
           </table>
           <div className="failgrid-legend">
-            <span><span className="fc stays">남는다</span> 되돌리는 코드를 찾지 못했다</span>
-            <span><span className="fc undone">되돌림</span> 실패 경로에서 역연산을 찾았다</span>
-            <span><span className="fc harmless">무해</span> 재실행해도 안전하다</span>
-            <span><span className="fc notrun">미실행</span> 아직 실행 전</span>
+            <span><span className="fc stays">{t('data.cell.stays')}</span> {t('data.legendStays')}</span>
+            <span><span className="fc undone">{t('data.cell.undone')}</span> {t('data.legendUndone')}</span>
+            <span><span className="fc harmless">{t('data.cell.harmless')}</span> {t('data.legendHarmless')}</span>
+            <span><span className="fc notrun">{t('data.cell.notrun')}</span> {t('data.legendNotRun')}</span>
           </div>
         </>
       )}
@@ -517,7 +522,7 @@ function PathDetail({
             if (!finding) return null
             return (
               <button type="button" className="btn sm" key={id} onClick={() => onSelect({ type: 'finding', key: id })}>
-                {finding.ruleId} 상세
+                {t('data.findingDetail', { rule: finding.ruleId })}
               </button>
             )
           })}
@@ -538,8 +543,9 @@ export function FindingTable({
   selection: Selection | null
   onSelect: (selection: Selection) => void
 }) {
+  const { t } = useI18n()
   if (findings.length === 0) {
-    return <div className="panel-message">거른 조건에 맞는 항목이 없다.</div>
+    return <div className="panel-message">{t('data.noMatchingFinding')}</div>
   }
 
   return (
@@ -547,11 +553,11 @@ export function FindingTable({
       <table className="findings">
         <thead>
           <tr>
-            <th>규칙</th>
-            <th>심각도</th>
-            <th>내용</th>
-            <th>위치</th>
-            <th>확실도</th>
+            <th>{t('data.colRule')}</th>
+            <th>{t('data.colSeverity')}</th>
+            <th>{t('data.colWhat')}</th>
+            <th>{t('data.colWhere')}</th>
+            <th>{t('data.colConfidence')}</th>
           </tr>
         </thead>
         <tbody>
@@ -565,7 +571,7 @@ export function FindingTable({
               <td><SeverityBadge severity={finding.severity} /></td>
               <td className="what">{finding.what}</td>
               <td className="where">{finding.file}:{finding.line}</td>
-              <td className="conf">{finding.confidence === 'Certain' ? '확실' : '추정'}</td>
+              <td className="conf">{finding.confidence === 'Certain' ? t('data.certain') : t('data.estimated')}</td>
             </tr>
           ))}
         </tbody>

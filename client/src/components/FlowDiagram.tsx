@@ -3,6 +3,7 @@ import { layoutFlow, type FlowView } from '../graph/flowMap'
 import type { Selection } from '../types/graph'
 import { clampZoom, DiagramCanvas, type CanvasPath } from './DiagramCanvas'
 import { kindColors } from './kindColors'
+import { useI18n } from '../i18n/I18nProvider'
 
 interface FlowDiagramProps {
   view: FlowView
@@ -16,6 +17,7 @@ interface FlowDiagramProps {
 
 /** 전체 진입점 지도와 진입점 흐름을 같은 캔버스로 그린다. 차이는 박스 줄의 내용뿐이다. */
 export function FlowDiagram({ view, selection, zoom, shellRef, onSelectClass, onSelectRow, onZoomChange }: FlowDiagramProps) {
+  const { t } = useI18n()
   const layout = useMemo(() => layoutFlow(view), [view])
   const selectedKey = selection?.key ?? null
 
@@ -47,8 +49,8 @@ export function FlowDiagram({ view, selection, zoom, shellRef, onSelectClass, on
       height={layout.size.height}
       zoom={zoom}
       paths={paths}
-      emptyMessage={view.boxes.length === 0 ? '표시할 노드가 없다.' : undefined}
-      ariaLabel="전체 흐름도"
+      emptyMessage={view.boxes.length === 0 ? t('flow.empty') : undefined}
+      ariaLabel={t('flow.aria')}
       onZoomChange={onZoomChange}
       onFitZoom={onZoomChange ? fitZoom : undefined}
     >
@@ -77,7 +79,7 @@ export function FlowDiagram({ view, selection, zoom, shellRef, onSelectClass, on
                     key={row.key}
                     className={`dg-row${selectedKey === row.key ? ' selected' : ''}`}
                     onClick={(event) => { event.stopPropagation(); onSelectRow(row.key, row.rowKind) }}
-                    title={row.recursive ? `${row.label} (자기 자신을 호출한다)` : row.label}
+                    title={row.recursive ? t('flow.recursive', { label: row.label }) : row.label}
                   >
                     {row.httpMethod && (
                       <span className={`http ${row.httpMethod.toLowerCase()}`}>{row.httpMethod}</span>

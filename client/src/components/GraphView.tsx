@@ -2,6 +2,7 @@ import cytoscape from 'cytoscape'
 import { useEffect, useRef } from 'react'
 import type { GraphNode, GraphWindow } from '../types/graph'
 import { kindColors } from './kindColors'
+import { useI18n } from '../i18n/I18nProvider'
 
 interface GraphViewProps {
   graphWindow: GraphWindow | null
@@ -11,6 +12,7 @@ interface GraphViewProps {
 }
 
 export function GraphView({ graphWindow, selectedNodeId, onSelectNode, onDrilldown }: GraphViewProps) {
+  const { t } = useI18n()
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -84,13 +86,13 @@ export function GraphView({ graphWindow, selectedNodeId, onSelectNode, onDrilldo
 
   return (
     <div className="graph-shell">
-      <div className="graph-help">⊕가 붙은 노드를 클릭하면 그 아래 호출 흐름을 펼친다.</div>
+      <div className="graph-help">{t('graph.expandHint')}</div>
       {(!graphWindow || graphWindow.nodes.length === 0) && (
         <div className="panel-message canvas-empty">
-          {graphWindow ? '그래프에 표시할 노드가 없다.' : '왼쪽에서 진입점을 선택해야 한다.'}
+          {graphWindow ? t('graph.emptyWindow') : t('graph.pickEntryPoint')}
         </div>
       )}
-      <div className="graph-canvas" ref={containerRef} aria-label="호출 흐름 그래프" />
+      <div className="graph-canvas" ref={containerRef} aria-label={t('graph.aria')} />
     </div>
   )
 }

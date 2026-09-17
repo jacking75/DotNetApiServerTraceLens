@@ -72,8 +72,8 @@ describe('관계 파생', () => {
   it('의존은 다른 관계에 이미 있는 쌍을 빼고 남은 호출 엣지만 남긴다', () => {
     const relations = deriveRelations(classes, [
       // 필드로 들고 있으면서 호출도 하는 관계는 연관 하나로만 그린다.
-      { from: 'App.OrderService', to: 'App.IOrderRepository' },
-      { from: 'App.OrderService', to: 'App.Reporter' },
+      { from: 'App.OrderService', to: 'App.IOrderRepository', confidence: 'Certain' },
+      { from: 'App.OrderService', to: 'App.Reporter', confidence: 'Certain' },
     ])
 
     const depend = relations.filter((relation) => relation.type === 'depend')
@@ -83,7 +83,7 @@ describe('관계 파생', () => {
   it('자기 자신·목록에 없는 클래스로 향하는 관계는 버린다', () => {
     const relations = deriveRelations(
       [graphClass('App.Loop', { baseTypeId: 'App.Loop', interfaceIds: ['App.Missing'] })],
-      [{ from: 'App.Loop', to: 'App.Missing' }])
+      [{ from: 'App.Loop', to: 'App.Missing', confidence: 'Certain' }])
 
     expect(relations).toHaveLength(0)
   })

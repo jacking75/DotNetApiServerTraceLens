@@ -49,6 +49,7 @@ import { collapseEdgesToClasses, deriveRelations } from './graph/relations'
 import { findStartupStep } from './graph/startupFlow'
 import { getDrilldownWindow, getInitialWindow } from './graph/windowing'
 import { translateError, useI18n, type Language } from './i18n/I18nProvider'
+import type { TranslationKey } from './i18n/ko'
 import {
   defaultColumns,
   loadState,
@@ -647,16 +648,16 @@ export default function App() {
     }
 
     if (viewMode === 'data') {
-      const labels: Record<DataViewState['sub'], string> = {
-        route: '실행 경로',
-        map: '접근 지도',
-        tx: '트랜잭션',
-        comp: '보상 처리',
-        check: '점검 결과',
+      const labels: Record<DataViewState['sub'], TranslationKey> = {
+        route: 'sub.route',
+        map: 'sub.map',
+        tx: 'sub.tx',
+        comp: 'sub.comp',
+        check: 'sub.check',
       }
       const crumbs: BreadcrumbItem[] = [
         { key: 'data', label: t('view.data') },
-        { key: dataView.sub, label: labels[dataView.sub] },
+        { key: dataView.sub, label: t(labels[dataView.sub]) },
       ]
       if (dataView.sub === 'route' && dataView.entryNodeId) {
         const entry = entryPoints.find((item) => item.nodeId === dataView.entryNodeId)
@@ -667,12 +668,15 @@ export default function App() {
     }
 
     if (viewMode === 'middleware') {
-      const labels: Record<MiddlewareViewState['sub'], string> = {
-        pipe: '파이프라인',
-        sc: '단락 지점',
-        check: '점검 결과',
+      const labels: Record<MiddlewareViewState['sub'], TranslationKey> = {
+        pipe: 'sub.pipe',
+        sc: 'sub.sc',
+        check: 'sub.check',
       }
-      return [{ key: 'middleware', label: t('view.middleware') }, { key: middlewareView.sub, label: labels[middlewareView.sub] }]
+      return [
+        { key: 'middleware', label: t('view.middleware') },
+        { key: middlewareView.sub, label: t(labels[middlewareView.sub]) },
+      ]
     }
 
     const crumbs: BreadcrumbItem[] = [{ key: 'map', label: t('view.flowmap') }]
@@ -844,21 +848,32 @@ export default function App() {
 
   const staleSchemaNotice = graph && graph.classes.length > 0 &&
     graph.classes.every((item) => item.members.length === 0)
-    ? '이 그래프에는 멤버 정보가 없다. 다시 분석해야 클래스 다이어그램을 제대로 그릴 수 있다.'
+    ? t('hint.noMembers')
     : null
   const largeSolutionNotice = graph && graph.classes.length > largeSolutionThreshold
-    ? `클래스가 ${graph.classes.length}개다. 왼쪽에서 네임스페이스를 골라 좁혀 보는 편이 빠르다.`
+    ? t('hint.manyClasses', { count: graph.classes.length })
     : null
 
   const graphMeta = viewMode === 'classmap'
     ? classDiagram
-      ? `클래스 ${classDiagram.visible.length} · 관계 ${classDiagram.relations.length} (상속 ${classDiagram.counts.inherit} · 구현 ${classDiagram.counts.implement} · 연관 ${classDiagram.counts.assoc} · 의존 ${classDiagram.counts.depend})`
+      ? t('hint.classCounts', {
+          classes: classDiagram.visible.length,
+          relations: classDiagram.relations.length,
+          inherit: classDiagram.counts.inherit,
+          implement: classDiagram.counts.implement,
+          assoc: classDiagram.counts.assoc,
+          depend: classDiagram.counts.depend,
+        })
       : t('empty.needAnalysis')
     : viewMode === 'flowmap'
       ? flowView?.meta ?? t('empty.needAnalysis')
       : viewMode === 'data'
         ? dataAccess
-          ? `접근 ${dataAccess.accesses.length} · 쓰기 경로 ${dataAccess.writePaths.length} · 점검 ${dataAccess.findings.length}`
+          ? t('hint.dataCounts', {
+            accesses: dataAccess.accesses.length,
+            paths: dataAccess.writePaths.length,
+            findings: dataAccess.findings.length,
+          })
           : t('empty.needAnalysis')
       : viewMode === 'middleware'
         ? middlewarePipeline
@@ -1108,6 +1123,7 @@ export default function App() {
               entryPoints={entryPoints}
               selectedEndpointId={callFlowEntry?.endpointId ?? null}
               emptyMessage={t('empty.entryPoints')}
+              classIdOfMethod={classIdOfMethod}
               onSelect={(entryPoint) => {
                 setCallFlowEntry(entryPoint)
                 setFocusStack([])

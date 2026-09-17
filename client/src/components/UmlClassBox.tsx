@@ -2,6 +2,7 @@ import { captionOf, classMembers, memberKey, memberSign, type DiagramLayoutMode 
 import type { PlacedBox } from '../graph/treeLayout'
 import type { GraphClass, GraphClassMember } from '../types/graph'
 import { kindColors } from './kindColors'
+import { useI18n } from '../i18n/I18nProvider'
 
 interface UmlClassBoxProps {
   graphClass: GraphClass
@@ -32,6 +33,7 @@ export function UmlClassBox({
   onSelectClass,
   onSelectMember,
 }: UmlClassBoxProps) {
+  const { t } = useI18n()
   const caption = captionOf(graphClass, layout, namespacePrefix)
   const { fields, methods } = classMembers(graphClass)
   const className = ['uml', selected ? 'selected' : '', dimmed ? 'dim' : ''].filter(Boolean).join(' ')
@@ -60,7 +62,7 @@ export function UmlClassBox({
       {showFields && (
         <MemberSection
           members={fields}
-          emptyLabel="필드 없음"
+          emptyLabel={t('classmap.noFields')}
           graphClass={graphClass}
           selectedMemberKey={selectedMemberKey}
           onSelectMember={onSelectMember}
@@ -69,7 +71,7 @@ export function UmlClassBox({
       {showMethods && (
         <MemberSection
           members={methods}
-          emptyLabel="메서드 없음"
+          emptyLabel={t('classmap.noMethods')}
           graphClass={graphClass}
           selectedMemberKey={selectedMemberKey}
           onSelectMember={onSelectMember}

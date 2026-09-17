@@ -1,4 +1,5 @@
-import { useRef, type PointerEvent as ReactPointerEvent } from 'react'
+import { useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useI18n } from '../i18n/I18nProvider'
 
 interface SplitterProps {
   side: 'left' | 'right'
@@ -12,6 +13,7 @@ interface SplitterProps {
  * 리렌더가 안 생겨서 부드럽게 움직인다(폭 계산과 클램프는 App의 applyColumns가 한다).
  */
 export function Splitter({ side, columns, onDrag, onReset }: SplitterProps) {
+  const { t } = useI18n()
   const startRef = useRef({ x: 0, left: 0, right: 0 })
   const elementRef = useRef<HTMLDivElement>(null)
 
@@ -35,13 +37,38 @@ export function Splitter({ side, columns, onDrag, onReset }: SplitterProps) {
     document.body.classList.remove('resizing')
   }
 
+  /** 마우스 없이도 폭을 바꿀 수 있어야 한다. 화살표 키 한 번에 16px, Home은 기본값으로 되돌린다. */
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 64 : 16
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      onDrag(-step, columns)
+      return
+    }
+
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      onDrag(step, columns)
+      return
+    }
+
+    if (event.key === 'Home') {
+      event.preventDefault()
+      onReset()
+    }
+  }
+
   return (
     <div
       ref={elementRef}
       className="splitter"
       role="separator"
+      tabIndex={0}
       aria-orientation="vertical"
-      title={`드래그해서 ${side === 'left' ? '좌측' : '우측'} 패널 폭 조절 · 더블클릭하면 기본값`}
+      aria-valuenow={Math.round(side === 'left' ? columns.left : columns.right)}
+      aria-label={t('split.hint', { side: side === 'left' ? t('split.left') : t('split.right') })}
+      title={t('split.hint', { side: side === 'left' ? t('split.left') : t('split.right') })}
+      onKeyDown={handleKeyDown}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

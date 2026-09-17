@@ -1,3 +1,5 @@
+import { useI18n } from '../i18n/I18nProvider'
+
 export interface BreadcrumbItem {
   key: string
   label: string
@@ -9,8 +11,9 @@ interface BreadcrumbProps {
 }
 
 export function Breadcrumb({ items, onNavigate }: BreadcrumbProps) {
+  const { t } = useI18n()
   return (
-    <nav className="breadcrumb" aria-label="그래프 탐색 경로">
+    <nav className="breadcrumb" aria-label={t('graph.breadcrumbAria')}>
       {items.map((item, index) => (
         <span key={`${item.key}-${index}`}>
           {index > 0 && <span className="breadcrumb-separator">›</span>}

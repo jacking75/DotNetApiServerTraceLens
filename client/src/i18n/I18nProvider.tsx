@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { en } from './en'
 import { ko, type Dictionary, type TranslationKey } from './ko'
 
@@ -34,6 +34,11 @@ const I18nContext = createContext<I18n | null>(null)
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Language>(detectLanguage)
+
+  // 화면 언어가 바뀌면 문서의 lang도 따라가야 한다(스크린 리더의 발음·브라우저 번역 판단이 이 값을 본다).
+  useEffect(() => {
+    document.documentElement.lang = lang
+  }, [lang])
 
   const setLang = useCallback((next: Language) => {
     setLangState(next)

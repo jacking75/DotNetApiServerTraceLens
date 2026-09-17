@@ -42,7 +42,7 @@ describe('buildFailGrid', () => {
   it('되돌릴 수 없는 단계는 남는 것으로 본다', () => {
     const grid = buildFailGrid(path([step(1, 'Irreversible'), step(2, 'No')]))
 
-    expect(grid[1][0]).toEqual({ kind: 'stays', label: '남는다 · 불가' })
+    expect(grid[1][0]).toEqual({ kind: 'stays', labelKey: 'data.cell.staysIrreversible' })
   })
 
   it('트랜잭션 안의 단계는 롤백으로 표시한다', () => {
@@ -66,6 +66,9 @@ const access = (over: Partial<DataAccess>): DataAccess => ({
   line: 1,
   inTransaction: false,
   inLoop: false,
+  confidence: 'Certain',
+  note: '',
+  transactionWrapper: '',
   ...over,
 })
 

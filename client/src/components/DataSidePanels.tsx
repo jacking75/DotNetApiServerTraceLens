@@ -9,6 +9,7 @@ import type {
   RuleInfo,
   Selection,
 } from '../types/graph'
+import { useI18n } from '../i18n/I18nProvider'
 import { SeverityBadge } from './DataAccessView'
 import { MiddlewareStepRow } from './MiddlewareView'
 
@@ -53,22 +54,31 @@ export function DataSidePanel({
     return counts
   }, [data.findings])
 
+  const { t } = useI18n()
   const keyword = search.trim().toLowerCase()
   const matches = (value: string) => keyword.length === 0 || value.toLowerCase().includes(keyword)
 
   return (
     <>
       <div className="side-tabs">
-        <button type="button" className={tab === 'entries' ? 'active' : ''} onClick={() => setTab('entries')}>진입점</button>
-        <button type="button" className={tab === 'sources' ? 'active' : ''} onClick={() => setTab('sources')}>데이터소스</button>
-        <button type="button" className={tab === 'targets' ? 'active' : ''} onClick={() => setTab('targets')}>테이블·키</button>
-        <button type="button" className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>점검</button>
+        <button type="button" className={tab === 'entries' ? 'active' : ''} onClick={() => setTab('entries')}>
+          {t('side.tab.entries')}
+        </button>
+        <button type="button" className={tab === 'sources' ? 'active' : ''} onClick={() => setTab('sources')}>
+          {t('side.tab.sources')}
+        </button>
+        <button type="button" className={tab === 'targets' ? 'active' : ''} onClick={() => setTab('targets')}>
+          {t('side.tab.targets')}
+        </button>
+        <button type="button" className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>
+          {t('side.tab.rules')}
+        </button>
       </div>
       <input
         className="side-search"
         value={search}
         onChange={(event) => setSearch(event.target.value)}
-        placeholder="검색…"
+        placeholder={t('side.search')}
       />
       <div className="side-list">
         {tab === 'entries' && entryPoints.filter((entry) => matches(entry.route)).map((entry) => (
@@ -98,8 +108,8 @@ export function DataSidePanel({
               {source.name}
               <span className="sub">
                 {source.description}
-                {source.readOnly ? ' · 읽기 전용' : ''}
-                {source.writeOnly ? ' · 쓰기 전용' : ''}
+                {source.readOnly ? t('side.readOnly') : ''}
+                {source.writeOnly ? t('side.writeOnly') : ''}
               </span>
             </span>
             <span className="count">{source.accessCount}</span>
@@ -116,7 +126,7 @@ export function DataSidePanel({
             <span className={`ds-dot ${target.storage === 'Cache' ? 'redis' : 'shard'}`} />
             <span className="grow">
               {target.name}
-              <span className="sub">{target.dataSource} · 접근 {target.count}곳</span>
+              <span className="sub">{t('side.accessCount', { source: target.dataSource, count: target.count })}</span>
             </span>
           </button>
         ))}
@@ -141,6 +151,7 @@ interface MiddlewareSidePanelProps {
 }
 
 export function MiddlewareSidePanel({ pipeline, selection, onSelect }: MiddlewareSidePanelProps) {
+  const { t } = useI18n()
   const [tab, setTab] = useState<'pipeline' | 'rules'>('pipeline')
   const severityByStep = useMemo(() => {
     const map = new Map<string, FindingSeverity>()
@@ -162,8 +173,12 @@ export function MiddlewareSidePanel({ pipeline, selection, onSelect }: Middlewar
   return (
     <>
       <div className="side-tabs two">
-        <button type="button" className={tab === 'pipeline' ? 'active' : ''} onClick={() => setTab('pipeline')}>파이프라인</button>
-        <button type="button" className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>점검</button>
+        <button type="button" className={tab === 'pipeline' ? 'active' : ''} onClick={() => setTab('pipeline')}>
+          {t('side.tab.pipeline')}
+        </button>
+        <button type="button" className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>
+          {t('side.tab.rules')}
+        </button>
       </div>
       <div className="side-list">
         {tab === 'pipeline' && pipeline.steps.map((step) => (
@@ -194,6 +209,7 @@ function RuleList({
   selection: Selection | null
   onSelect: (selection: Selection) => void
 }) {
+  const { t } = useI18n()
   const hit = rules.filter((rule) => (counts.get(rule.id) ?? 0) > 0)
   const clean = rules.filter((rule) => (counts.get(rule.id) ?? 0) === 0 && rule.enabled)
   const off = rules.filter((rule) => !rule.enabled)
@@ -216,12 +232,12 @@ function RuleList({
 
   return (
     <>
-      {hit.length > 0 && <div className="side-group">걸린 규칙</div>}
+      {hit.length > 0 && <div className="side-group">{t('side.rulesHit')}</div>}
       {hit.map((rule) => row(rule, false, String(counts.get(rule.id))))}
-      {clean.length > 0 && <div className="side-group">통과한 규칙</div>}
+      {clean.length > 0 && <div className="side-group">{t('side.rulesClean')}</div>}
       {clean.map((rule) => row(rule, true, '0'))}
-      {off.length > 0 && <div className="side-group">검사하지 않는 규칙</div>}
-      {off.map((rule) => row(rule, true, rule.shardOnly ? '샤딩 전용' : '꺼짐'))}
+      {off.length > 0 && <div className="side-group">{t('side.rulesOff')}</div>}
+      {off.map((rule) => row(rule, true, rule.shardOnly ? t('side.ruleShardOnly') : t('side.ruleOff')))}
     </>
   )
 }

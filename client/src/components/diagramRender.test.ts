@@ -6,6 +6,7 @@ import { buildEntryFlow, buildEntryMap } from '../graph/flowMap'
 import { collapseEdgesToClasses, deriveRelations } from '../graph/relations'
 import type { GraphClass, GraphDocument, GraphNode } from '../types/graph'
 import { entryPoint, graphDefaults, nodeDefaults } from '../types/testFactories'
+import { I18nProvider } from '../i18n/I18nProvider'
 import { ClassDiagram } from './ClassDiagram'
 import { FlowDiagram } from './FlowDiagram'
 
@@ -80,7 +81,7 @@ const graph: GraphDocument = {
     node('App.Api.OrdersController.Create', 'App.Api.OrdersController'),
     node('App.Core.OrderService.CreateAsync', 'App.Core.OrderService'),
   ],
-  edges: [{ from: 'App.Api.OrdersController.Create', to: 'App.Core.OrderService.CreateAsync' }],
+  edges: [{ from: 'App.Api.OrdersController.Create', to: 'App.Core.OrderService.CreateAsync', confidence: 'Certain' }],
   fileHashes: {},
   ...graphDefaults,
   startupFlow: null,
@@ -107,7 +108,7 @@ const renderClassDiagram = (overrides: Partial<ClassDiagramOptions> = {}, select
   const merged = { ...options, ...overrides }
   const view = buildClassDiagram(graph.classes, relations, merged, (id) =>
     graph.nodes.find((item) => item.id === id)?.classId)
-  return renderToStaticMarkup(createElement(ClassDiagram, {
+  return renderToStaticMarkup(createElement(I18nProvider, null, createElement(ClassDiagram, {
     view,
     options: merged,
     selection: selectedClassId ? { type: 'class', key: selectedClassId } : null,
@@ -119,7 +120,7 @@ const renderClassDiagram = (overrides: Partial<ClassDiagramOptions> = {}, select
     notice: null,
     onSelectClass: () => undefined,
     onSelectMember: () => undefined,
-  }))
+  })))
 }
 
 describe('클래스 다이어그램 렌더', () => {
@@ -157,14 +158,14 @@ describe('클래스 다이어그램 렌더', () => {
 })
 
 describe('전체 흐름도 렌더', () => {
-  const renderFlow = (view: ReturnType<typeof buildEntryMap>) => renderToStaticMarkup(createElement(FlowDiagram, {
+  const renderFlow = (view: ReturnType<typeof buildEntryMap>) => renderToStaticMarkup(createElement(I18nProvider, null, createElement(FlowDiagram, {
     view,
     selection: null,
     zoom: 0.75,
     shellRef: createRef<HTMLDivElement>(),
     onSelectClass: () => undefined,
     onSelectRow: () => undefined,
-  }))
+  })))
 
   it('진입점 지도는 컨트롤러 박스에 라우트를 줄로 붙인다', () => {
     const markup = renderFlow(buildEntryMap(graph, graph.entryPoints, 'App.'))

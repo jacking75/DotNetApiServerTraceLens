@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { shortenNamespace } from '../graph/classDiagram'
 import { countByLifetime, countSteps } from '../graph/startupFlow'
 import type { EntryPoint, GraphClass, GraphNamespaceSummary, Selection, StartupFlowDocument } from '../types/graph'
+import { useI18n } from '../i18n/I18nProvider'
 import { kindColors } from './kindColors'
 
 interface EntryPointListProps {
@@ -9,15 +10,47 @@ interface EntryPointListProps {
   /** 선택 표시는 엔드포인트 ID로 한다. 같은 메서드에 여러 라우트가 걸릴 수 있기 때문이다. */
   selectedEndpointId: string | null
   emptyMessage: string
+  /** 컨트롤러 이름으로도 거를 수 있게 노드 → 클래스 매핑을 받는다. */
+  classIdOfMethod?: (nodeId: string) => string | undefined
   onSelect: (entryPoint: EntryPoint) => void
 }
 
-/** 호출 흐름 보기의 좌측 패널. */
-export function EntryPointList({ entryPoints, selectedEndpointId, emptyMessage, onSelect }: EntryPointListProps) {
+/** 호출 흐름 보기의 좌측 패널. 진입점이 많은 솔루션을 위해 라우트·동사·컨트롤러로 거른다. */
+export function EntryPointList({
+  entryPoints,
+  selectedEndpointId,
+  emptyMessage,
+  classIdOfMethod,
+  onSelect,
+}: EntryPointListProps) {
+  const { t } = useI18n()
+  const [keyword, setKeyword] = useState('')
+  const filtered = useMemo(() => {
+    const needle = keyword.trim().toLowerCase()
+    if (!needle) return entryPoints
+    return entryPoints.filter((entryPoint) =>
+      entryPoint.route.toLowerCase().includes(needle) ||
+      entryPoint.httpMethod.toLowerCase().includes(needle) ||
+      (classIdOfMethod?.(entryPoint.nodeId) ?? '').toLowerCase().includes(needle) ||
+      entryPoint.handlerDisplayName.toLowerCase().includes(needle))
+  }, [entryPoints, keyword, classIdOfMethod])
+
   return (
     <div className="side-list">
+      {entryPoints.length > 0 && (
+        <input
+          className="side-search"
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          placeholder={t('side.entrySearch')}
+          aria-label={t('side.entrySearch')}
+        />
+      )}
       {entryPoints.length === 0 && <div className="panel-message">{emptyMessage}</div>}
-      {entryPoints.map((entryPoint) => (
+      {entryPoints.length > 0 && filtered.length === 0 && (
+        <div className="panel-message">{t('side.entryPointsEmpty')}</div>
+      )}
+      {filtered.map((entryPoint) => (
         <button
           type="button"
           key={entryPoint.endpointId}
@@ -70,6 +103,7 @@ export function NamespacePanel({
   onGoToNamespace,
   onGoToClass,
 }: NamespacePanelProps) {
+  const { t } = useI18n()
   const keyword = search.trim().toLowerCase()
   const classesByNamespace = useMemo(() => {
     const grouped = new Map<string, GraphClass[]>()
@@ -100,15 +134,15 @@ export function NamespacePanel({
         className="side-search"
         value={search}
         onChange={(event) => onSearch(event.target.value)}
-        placeholder="클래스 검색"
-        aria-label="클래스 검색"
+        placeholder={t('side.classSearch')}
+        aria-label={t('side.classSearch')}
       />
       <div className="side-tools">
-        <button type="button" className="chipbtn" onClick={onShowAll}>전체 표시</button>
-        <button type="button" className="chipbtn" onClick={onHideAll}>전체 숨김</button>
+        <button type="button" className="chipbtn" onClick={onShowAll}>{t('side.showAll')}</button>
+        <button type="button" className="chipbtn" onClick={onHideAll}>{t('side.hideAll')}</button>
       </div>
       <div className="side-list">
-        {namespaces.length === 0 && <div className="panel-message">솔루션을 분석하면 네임스페이스가 표시된다.</div>}
+        {namespaces.length === 0 && <div className="panel-message">{t('side.namespacesEmpty')}</div>}
         {groups.map(([group, items]) => {
           const visible = items.filter((item) => !keyword ||
             item.namespace.toLowerCase().includes(keyword) ||
@@ -131,8 +165,8 @@ export function NamespacePanel({
                       <button
                         type="button"
                         className={`tick${hidden ? '' : ' on'}`}
-                        title="다이어그램에서 표시/숨김"
-                        aria-label={`${item.namespace} 표시/숨김`}
+                        title={t('side.toggleVisibility')}
+                        aria-label={t('side.toggleVisibilityOf', { name: item.namespace })}
                         aria-pressed={!hidden}
                         onClick={() => onToggle(item.namespace)}
                       >
@@ -190,11 +224,12 @@ export function FlowSidePanel({
   onSelectMap,
   onSelectEntry,
 }: FlowSidePanelProps) {
+  const { t } = useI18n()
   const classNameById = useMemo(() => new Map(classes.map((item) => [item.id, item.name])), [classes])
   const byController = useMemo(() => {
     const grouped = new Map<string, EntryPoint[]>()
     for (const entryPoint of entryPoints) {
-      const classId = classIdOfMethod(entryPoint.nodeId) ?? '(알 수 없음)'
+      const classId = classIdOfMethod(entryPoint.nodeId) ?? t('side.unknownClass')
       const list = grouped.get(classId)
       if (list) list.push(entryPoint)
       else grouped.set(classId, [entryPoint])
@@ -210,10 +245,10 @@ export function FlowSidePanel({
         className={`side-item${flowEntryId === null ? ' selected' : ''}`}
         onClick={onSelectMap}
       >
-        <span className="grow">▦ 전체 진입점 지도</span>
+        <span className="grow">{t('side.entryMap')}</span>
         <span className="count">{entryPoints.length}</span>
       </button>
-      {entryPoints.length === 0 && <div className="panel-message">솔루션을 분석하면 진입점이 표시된다.</div>}
+      {entryPoints.length === 0 && <div className="panel-message">{t('side.entryPointsEmpty')}</div>}
       {byController.map(([classId, items]) => (
         <div key={classId}>
           <div className="side-group">{classNameById.get(classId) ?? classId}</div>
@@ -237,6 +272,7 @@ export function FlowSidePanel({
 
 /** 시작 흐름의 좌측 패널. Program.cs 위치와 단계 요약만 보여준다(타임라인 자체는 가운데에 있다). */
 export function StartupFlowSidePanel({ flow }: { flow: StartupFlowDocument }) {
+  const { t } = useI18n()
   const lifetimeCounts = useMemo(() => countByLifetime(flow.serviceSteps), [flow])
   const total = useMemo(() => countSteps(flow), [flow])
 
@@ -245,15 +281,15 @@ export function StartupFlowSidePanel({ flow }: { flow: StartupFlowDocument }) {
       <div className="side-group">Program.cs</div>
       <div className="panel-message tight" title={flow.programFile}>{flow.programFile}</div>
 
-      <div className="side-group">전체 단계</div>
-      <div className="panel-message tight">{total}개</div>
+      <div className="side-group">{t('side.allSteps')}</div>
+      <div className="panel-message tight">{t('side.stepCount', { count: total })}</div>
 
-      <div className="side-group">서비스 등록 ({flow.serviceSteps.length})</div>
+      <div className="side-group">{t('side.serviceSteps', { count: flow.serviceSteps.length })}</div>
       <div className="panel-message tight">
         Scoped {lifetimeCounts.scoped} · Singleton {lifetimeCounts.singleton} · Transient {lifetimeCounts.transient}
       </div>
 
-      <div className="side-group">미들웨어 파이프라인 ({flow.middlewareSteps.length})</div>
+      <div className="side-group">{t('side.middlewareSteps', { count: flow.middlewareSteps.length })}</div>
     </div>
   )
 }

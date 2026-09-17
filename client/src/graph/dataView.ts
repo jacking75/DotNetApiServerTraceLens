@@ -1,3 +1,4 @@
+import type { TranslationKey } from '../i18n/ko'
 import type {
   CompensationKind,
   DataAccess,
@@ -11,9 +12,13 @@ import type {
 /** 실패 지점 × 단계 격자의 칸 하나. */
 export type FailCellKind = 'stays' | 'undone' | 'harmless' | 'here' | 'notrun'
 
+/**
+ * 배치 계산은 화면 문자열을 만들지 않는다. 사전 키만 돌려주고 번역은 컴포넌트가 한다
+ * (CLAUDE.md: graph/ 아래는 React에 의존하지 않는 순수 함수).
+ */
 export interface FailCell {
   kind: FailCellKind
-  label: string
+  labelKey: TranslationKey
 }
 
 /**
@@ -22,36 +27,36 @@ export interface FailCell {
  */
 export function buildFailGrid(path: WritePath): FailCell[][] {
   return path.steps.map((_, failureIndex) => path.steps.map((step, index) => {
-    if (index > failureIndex) return { kind: 'notrun', label: '미실행' }
-    if (index === failureIndex) return { kind: 'here', label: '실패 지점' }
+    if (index > failureIndex) return { kind: 'notrun', labelKey: 'data.cell.notrun' }
+    if (index === failureIndex) return { kind: 'here', labelKey: 'data.cell.here' }
     return cellForCompensation(step.compensation)
   }))
 }
 
 function cellForCompensation(compensation: CompensationKind): FailCell {
   switch (compensation) {
-    case 'Yes': return { kind: 'undone', label: '되돌림' }
-    case 'Transaction': return { kind: 'undone', label: '롤백' }
-    case 'NotNeeded': return { kind: 'harmless', label: '무해' }
-    case 'Irreversible': return { kind: 'stays', label: '남는다 · 불가' }
-    case 'PartialPaths': return { kind: 'stays', label: '경로 따라 남음' }
-    default: return { kind: 'stays', label: '남는다' }
+    case 'Yes': return { kind: 'undone', labelKey: 'data.cell.undone' }
+    case 'Transaction': return { kind: 'undone', labelKey: 'data.cell.rolledBack' }
+    case 'NotNeeded': return { kind: 'harmless', labelKey: 'data.cell.harmless' }
+    case 'Irreversible': return { kind: 'stays', labelKey: 'data.cell.staysIrreversible' }
+    case 'PartialPaths': return { kind: 'stays', labelKey: 'data.cell.staysPartial' }
+    default: return { kind: 'stays', labelKey: 'data.cell.stays' }
   }
 }
 
-export const compensationLabels: Record<CompensationKind, string> = {
-  Transaction: '트랜잭션이 처리',
-  Yes: '되돌림 있음',
-  PartialPaths: '일부 경로만',
-  No: '되돌림 없음',
-  NotNeeded: '불필요',
-  Irreversible: '되돌릴 수 없음',
+export const compensationLabelKeys: Record<CompensationKind, TranslationKey> = {
+  Transaction: 'data.comp.Transaction',
+  Yes: 'data.comp.Yes',
+  PartialPaths: 'data.comp.PartialPaths',
+  No: 'data.comp.No',
+  NotNeeded: 'data.comp.NotNeeded',
+  Irreversible: 'data.comp.Irreversible',
 }
 
-export const severityLabels: Record<FindingSeverity, string> = {
-  Critical: '치명',
-  Warning: '경고',
-  Info: '정보',
+export const severityLabelKeys: Record<FindingSeverity, TranslationKey> = {
+  Critical: 'data.severity.Critical',
+  Warning: 'data.severity.Warning',
+  Info: 'data.severity.Info',
 }
 
 export interface MatrixRow {

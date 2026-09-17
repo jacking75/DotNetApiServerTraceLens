@@ -1,4 +1,5 @@
-import { compensationLabels, dataSourceTone, severityLabels } from '../graph/dataView'
+import { compensationLabelKeys, dataSourceTone, severityLabelKeys } from '../graph/dataView'
+import { useI18n } from '../i18n/I18nProvider'
 import type {
   DataAccessDocument,
   Finding,
@@ -19,29 +20,30 @@ interface DataDetailPanelProps {
  * 점검 항목은 "무엇이 걸렸나 → 판정 근거 → 왜 문제인가 → 제안" 순서로 보여준다.
  */
 export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: DataDetailPanelProps) {
+  const { t } = useI18n()
   const data = graph.dataAccess
   const pipeline = graph.middleware
 
   if (selection.type === 'finding') {
     const finding = findFinding(data, pipeline, selection.key)
-    if (!finding) return <div className="panel-message">이 점검 항목을 찾지 못했다. 다시 분석하면 갱신된다.</div>
+    if (!finding) return <div className="panel-message">{t('dd.findingMissing')}</div>
     return <FindingDetail finding={finding} data={data} pipeline={pipeline} onSelect={onSelect} onShowFlow={onShowFlow} />
   }
 
   if (selection.type === 'writePath') {
     const path = data?.writePaths.find((item) => item.id === selection.key)
-    if (!path) return <div className="panel-message">이 쓰기 경로를 찾지 못했다.</div>
+    if (!path) return <div className="panel-message">{t('dd.pathMissing')}</div>
     return (
       <div className="detail-body">
         <div className="detail-title">
           {path.inTransaction
-            ? <span className="sev ok">정상</span>
-            : <span className="sev critical">보상 확인</span>}
+            ? <span className="sev ok">{t('dd.ok')}</span>
+            : <span className="sev critical">{t('dd.checkCompensation')}</span>}
           <h3>{path.methodDisplayName}</h3>
         </div>
         <div className="detail-path">{path.file}:{path.startLine}</div>
-        <Section title="판정"><p>{path.note}</p></Section>
-        <Section title="단계별 되돌림">
+        <Section title={t('dd.verdict')}><p>{path.note}</p></Section>
+        <Section title={t('dd.stepByStep')}>
           <div className="chain">
             {path.steps.map((step) => (
               <div
@@ -49,7 +51,7 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: Data
                 key={step.order}
               >
                 {step.order}. {step.label}
-                <span className="note mono">{compensationLabels[step.compensation]}</span>
+                <span className="note mono">{t(compensationLabelKeys[step.compensation])}</span>
                 <span className="note">{step.compensationNote}</span>
               </div>
             ))}
@@ -57,7 +59,7 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: Data
         </Section>
         <div className="detail-actions">
           <button type="button" className="btn sm" onClick={() => onShowFlow(path.methodNodeId)}>
-            호출 흐름에서 보기
+            {t('dd.showInCallFlow')}
           </button>
         </div>
       </div>
@@ -66,7 +68,7 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: Data
 
   if (selection.type === 'dataSource') {
     const source = data?.dataSources.find((item) => item.name === selection.key)
-    if (!source) return <div className="panel-message">이 데이터소스를 찾지 못했다.</div>
+    if (!source) return <div className="panel-message">{t('dd.sourceMissing')}</div>
     const accesses = data?.accesses.filter((access) => access.dataSource === source.name) ?? []
     return (
       <div className="detail-body">
@@ -76,23 +78,25 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: Data
         </div>
         <div className="detail-path">
           {source.description}
-          {source.readOnly ? ' · 읽기 전용' : ''}
-          {source.writeOnly ? ' · 쓰기 전용' : ''}
+          {source.readOnly ? t('side.readOnly') : ''}
+          {source.writeOnly ? t('side.writeOnly') : ''}
         </div>
-        <Section title="접근 지점">
+        <Section title={t('dd.accessSites')}>
           <p>
-            코드에서 {source.accessCount}곳이 이 저장소를 건드린다
-            (읽기 {accesses.filter((item) => item.operation === 'Read').length} ·
-            쓰기 {accesses.filter((item) => item.operation !== 'Read').length}).
+            {t('dd.accessSummary', {
+              count: source.accessCount,
+              reads: accesses.filter((item) => item.operation === 'Read').length,
+              writes: accesses.filter((item) => item.operation !== 'Read').length,
+            })}
           </p>
         </Section>
-        <Section title="설정">
+        <Section title={t('dd.settings')}>
           <p>
             {source.kind === 'shard'
-              ? `tracelens.config.json에서 샤드 ${source.shardCount}개로 잡았다. 샤드 번호는 런타임에 정해지므로 이 화면은 "어떤 키로 골랐는가"까지만 확정한다.`
+              ? t('dd.shardNote', { count: source.shardCount })
               : source.kind === 'cache'
-                ? '캐시로 잡은 데이터소스다. 키는 보간 문자열을 패턴으로 정규화해 모은다.'
-                : '단일 데이터소스다. 샤드로 보려면 설정의 dataSources에서 kind를 shard로 바꾼다.'}
+                ? t('dd.cacheNote')
+                : t('dd.singleNote')}
           </p>
         </Section>
       </div>
@@ -101,15 +105,15 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: Data
 
   if (selection.type === 'storageTarget') {
     const accesses = data?.accesses.filter((access) => access.target === selection.key) ?? []
-    if (accesses.length === 0) return <div className="panel-message">이 대상에 대한 접근을 찾지 못했다.</div>
+    if (accesses.length === 0) return <div className="panel-message">{t('dd.targetMissing')}</div>
     return (
       <div className="detail-body">
         <div className="detail-title">
           <span className={`ds-dot ${accesses[0].storage === 'Cache' ? 'redis' : 'shard'}`} />
           <h3 className="mono">{selection.key}</h3>
         </div>
-        <div className="detail-path">{accesses[0].dataSource} · 접근 {accesses.length}곳</div>
-        <Section title="이 대상을 쓰는 코드">
+        <div className="detail-path">{t('dd.targetSummary', { source: accesses[0].dataSource, count: accesses.length })}</div>
+        <Section title={t('dd.usedBy')}>
           {accesses.map((access) => (
             <div className="target-row" key={access.id}>
               <span className={`cell ${access.operation === 'Read' ? 'r' : access.operation === 'Delete' ? 'd' : 'w'}`}>
@@ -119,9 +123,9 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: Data
                 {access.methodDisplayName}
               </button>
               <span className="note">{access.file}:{access.line}</span>
-              {access.confidence === 'Estimated' && <span className="chip small warn">추정</span>}
+              {access.confidence === 'Estimated' && <span className="chip small warn">{t('dd.estimated')}</span>}
               {access.transactionWrapper.length > 0 && (
-                <span className="chip small">트랜잭션 래퍼 {access.transactionWrapper}</span>
+                <span className="chip small">{t('dd.transactionWrapper', { name: access.transactionWrapper })}</span>
               )}
               {access.note.length > 0 && <div className="note">{access.note}</div>}
             </div>
@@ -133,32 +137,35 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: Data
 
   if (selection.type === 'rule') {
     const rule = [...(data?.rules ?? []), ...(pipeline?.rules ?? [])].find((item) => item.id === selection.key)
-    if (!rule) return <div className="panel-message">이 규칙을 찾지 못했다.</div>
+    if (!rule) return <div className="panel-message">{t('dd.ruleMissing')}</div>
     const hits = [...(data?.findings ?? []), ...(pipeline?.findings ?? [])]
       .filter((finding) => finding.ruleId === rule.id)
     return (
       <div className="detail-body">
         <div className="detail-title">
-          {rule.enabled ? <span className={`sev ${rule.severity.toLowerCase()}`}>{severityLabels[rule.severity]}</span>
-            : <span className="sev muted">검사 안 함</span>}
+          {rule.enabled ? <span className={`sev ${rule.severity.toLowerCase()}`}>{t(severityLabelKeys[rule.severity])}</span>
+            : <span className="sev muted">{t('dd.notChecked')}</span>}
           <h3>{rule.id}</h3>
         </div>
         <div className="detail-path">
-          {rule.name} · 판정 {rule.judge === 'Certain' ? '확실' : '추정'}
-          {rule.shardOnly ? ' · 샤딩 전용' : ''}
+          {t('dd.ruleJudge', {
+            name: rule.name,
+            confidence: rule.judge === 'Certain' ? t('data.certain') : t('data.estimated'),
+          })}
+          {rule.shardOnly ? t('dd.shardOnly') : ''}
         </div>
-        <Section title="규칙 설명"><p>{rule.description}</p></Section>
+        <Section title={t('dd.ruleDescription')}><p>{rule.description}</p></Section>
         {!rule.enabled && (
-          <Section title="지금은 검사하지 않는다">
+          <Section title={t('dd.notCheckedTitle')}>
             <p>
               {rule.shardOnly
-                ? '설정에 샤드 데이터소스가 없어 이 규칙군은 꺼져 있다. dataSources에서 kind를 shard로 잡으면 켜진다.'
-                : '이번 단계에서는 구현하지 않은 규칙이다. 무엇을 검사하지 않는지 분명히 보이도록 목록에는 남겨 둔다.'}
+                ? t('dd.shardOffNote')
+                : t('dd.notImplementedNote')}
             </p>
           </Section>
         )}
-        <Section title={`걸린 항목 ${hits.length}건`}>
-          {hits.length === 0 && <p>이 코드베이스에서는 걸린 항목이 없다.</p>}
+        <Section title={t('dd.hits', { count: hits.length })}>
+          {hits.length === 0 && <p>{t('dd.noHits')}</p>}
           {hits.map((finding) => (
             <div key={finding.id} style={{ marginBottom: 6 }}>
               <button type="button" className="btn sm" onClick={() => onSelect({ type: 'finding', key: finding.id })}>
@@ -173,50 +180,53 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: Data
 
   if (selection.type === 'middlewareStep') {
     const step = pipeline?.steps.find((item) => item.id === selection.key)
-    if (!step) return <div className="panel-message">이 미들웨어 단계를 찾지 못했다.</div>
+    if (!step) return <div className="panel-message">{t('dd.stepMissing')}</div>
     const hits = pipeline?.findings.filter((finding) => finding.stepId === step.id) ?? []
     return (
       <div className="detail-body">
         <div className="detail-title">
           <h3>{step.name}</h3>
-          {step.isDead && <span className="sev warn">실행되지 않음</span>}
+          {step.isDead && <span className="sev warn">{t('mw.dead')}</span>}
         </div>
         <div className="detail-path">
-          {step.implementationFile ?? '(프레임워크)'}
+          {step.implementationFile ?? t('dd.frameworkImpl')}
           <br />
-          등록: {step.registrationFile}:{step.registrationLine}
+          {t('dd.registeredAt', { file: step.registrationFile, line: step.registrationLine })}
         </div>
-        <Section title="요청 시"><p>{step.pre ?? '—'}</p></Section>
-        <Section title="응답 시 (next 이후)">
-          <p>{step.post ?? '하는 일 없음 — next 호출이 마지막이다.'}</p>
+        <Section title={t('dd.onRequest')}><p>{step.pre ?? '—'}</p></Section>
+        <Section title={t('dd.onResponse')}>
+          <p>{step.post ?? t('dd.noPost')}</p>
         </Section>
-        <Section title="단락">
+        <Section title={t('dd.shortCircuit')}>
           <p>
             {step.shortCircuit
-              ? `조건: ${step.shortCircuit.condition || '조건을 읽지 못했다'} → ${step.shortCircuit.statusCode}로 끊는다. 아래 단계는 실행되지 않는다.`
-              : '끊지 않는다 — 항상 next를 부른다.'}
+              ? t('dd.shortCircuitNote', {
+                condition: step.shortCircuit.condition || t('mw.conditionUnknown'),
+                status: step.shortCircuit.statusCode,
+              })
+              : t('dd.noShortCircuit')}
           </p>
         </Section>
         {step.contextAccesses.length > 0 && (
-          <Section title="HttpContext 접근">
+          <Section title={t('dd.contextAccess')}>
             <div className="pill-list">
               {step.contextAccesses.map((access) => (
                 <span className="pill" key={`${access.mode}${access.target}`}>
-                  {access.mode === 'Read' ? '읽기' : '쓰기'} {access.target}
+                  {access.mode === 'Read' ? t('mw.read') : t('mw.write')} {access.target}
                 </span>
               ))}
             </div>
           </Section>
         )}
         {step.storeAccesses.length > 0 && (
-          <Section title="저장소 접근">
+          <Section title={t('dd.storeAccess')}>
             <p>{step.storeAccesses.join(' · ')}</p>
-            <p className="dim">DB · 캐시 보기에서도 같은 규칙으로 검사한다.</p>
+            <p className="dim">{t('dd.storeAccessNote')}</p>
           </Section>
         )}
-        {step.note && <Section title="메모"><p>{step.note}</p></Section>}
+        {step.note && <Section title={t('dd.note')}><p>{step.note}</p></Section>}
         {hits.length > 0 && (
-          <Section title={`점검 결과 ${hits.length}건`}>
+          <Section title={t('dd.checkResults', { count: hits.length })}>
             {hits.map((finding) => (
               <div key={finding.id} style={{ marginBottom: 6 }}>
                 <button type="button" className="btn sm" onClick={() => onSelect({ type: 'finding', key: finding.id })}>
@@ -230,7 +240,7 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: Data
         {step.classId && (
           <div className="detail-actions">
             <button type="button" className="btn sm" onClick={() => onSelect({ type: 'class', key: step.classId! })}>
-              클래스 다이어그램에서 보기
+              {t('dd.showInClassDiagram')}
             </button>
           </div>
         )}
@@ -254,17 +264,18 @@ function FindingDetail({
   onSelect: (selection: Selection) => void
   onShowFlow: (nodeId: string) => void
 }) {
+  const { t } = useI18n()
   const rule = [...(data?.rules ?? []), ...(pipeline?.rules ?? [])].find((item) => item.id === finding.ruleId)
   return (
     <div className="detail-body">
       <div className="detail-title">
-        <span className={`sev ${finding.severity.toLowerCase()}`}>{severityLabels[finding.severity]}</span>
+        <span className={`sev ${finding.severity.toLowerCase()}`}>{t(severityLabelKeys[finding.severity])}</span>
         <h3>{rule?.name ?? finding.ruleId}</h3>
       </div>
       <div className="detail-path">{finding.symbol}<br />{finding.file}:{finding.line}</div>
 
-      <Section title="무엇이 걸렸나"><p>{finding.what}</p></Section>
-      <Section title={`판정 근거 · ${finding.confidence === 'Certain' ? '확실' : '추정'}`}>
+      <Section title={t('dd.whatFlagged')}><p>{finding.what}</p></Section>
+      <Section title={t('dd.evidence', { confidence: finding.confidence === 'Certain' ? t('data.certain') : t('data.estimated') })}>
         <div className="chain">
           {finding.evidence.map((item, index) => (
             <div className={`chain-step ${item.tone}`} key={`${item.head}${index}`}>
@@ -275,26 +286,26 @@ function FindingDetail({
           ))}
         </div>
       </Section>
-      <Section title="왜 문제인가"><p>{finding.why}</p></Section>
-      <Section title="제안"><p>{finding.fix}</p></Section>
+      <Section title={t('dd.whyProblem')}><p>{finding.why}</p></Section>
+      <Section title={t('dd.suggestion')}><p>{finding.fix}</p></Section>
 
       <div className="detail-actions">
         <button type="button" className="btn sm" onClick={() => onSelect({ type: 'rule', key: finding.ruleId })}>
-          규칙 설명
+          {t('dd.ruleDescription')}
         </button>
         {finding.nodeId && (
           <button type="button" className="btn sm" onClick={() => onShowFlow(finding.nodeId!)}>
-            호출 흐름에서 보기
+            {t('dd.showInCallFlow')}
           </button>
         )}
         {finding.pathId && (
           <button type="button" className="btn sm" onClick={() => onSelect({ type: 'writePath', key: finding.pathId! })}>
-            보상 격자에서 보기
+            {t('dd.showInFailGrid')}
           </button>
         )}
         {finding.stepId && pipeline?.steps.some((step) => step.id === finding.stepId) && (
           <button type="button" className="btn sm" onClick={() => onSelect({ type: 'middlewareStep', key: finding.stepId! })}>
-            파이프라인에서 보기
+            {t('dd.showInPipeline')}
           </button>
         )}
       </div>

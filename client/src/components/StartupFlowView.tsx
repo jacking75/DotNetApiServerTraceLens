@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { startupStepKey, type StartupGroup } from '../graph/startupFlow'
 import type { Selection, StartupFlowDocument, StartupStep } from '../types/graph'
+import { useI18n } from '../i18n/I18nProvider'
 
 interface StartupFlowViewProps {
   flow: StartupFlowDocument
@@ -13,6 +14,7 @@ interface StartupFlowViewProps {
  * 미들웨어 파이프라인(app)을 타임라인 두 단으로 보여준다. 확장 메서드 호출은 접혀 있다가 누르면 펼쳐진다.
  */
 export function StartupFlowView({ flow, selection, onSelect }: StartupFlowViewProps) {
+  const { t } = useI18n()
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const toggle = (key: string) => setExpanded((current) => {
     const next = new Set(current)
@@ -26,11 +28,11 @@ export function StartupFlowView({ flow, selection, onSelect }: StartupFlowViewPr
 
   return (
     <div className="graph-shell">
-      {isEmpty && <div className="panel-message canvas-empty">Program.cs에서 등록·미들웨어 호출을 찾지 못했다.</div>}
+      {isEmpty && <div className="panel-message canvas-empty">{t('startup.empty')}</div>}
       {!isEmpty && (
         <div className="startup-flow">
           <StartupSection
-            title="서비스 등록"
+            title={t('startup.services')}
             hint="builder.Services"
             steps={flow.serviceSteps}
             group="svc"
@@ -40,7 +42,7 @@ export function StartupFlowView({ flow, selection, onSelect }: StartupFlowViewPr
             onSelect={onSelect}
           />
           <StartupSection
-            title="미들웨어 파이프라인"
+            title={t('startup.pipeline')}
             hint="app"
             steps={flow.middlewareSteps}
             group="mw"
@@ -67,6 +69,7 @@ interface StartupSectionProps {
 }
 
 function StartupSection({ title, hint, steps, group, expanded, onToggle, selectedKey, onSelect }: StartupSectionProps) {
+  const { t } = useI18n()
   return (
     <div className="startup-section">
       <div className="startup-section-title">
@@ -74,7 +77,7 @@ function StartupSection({ title, hint, steps, group, expanded, onToggle, selecte
         <span className="startup-section-hint">{hint}</span>
         <span className="count">{steps.length}</span>
       </div>
-      {steps.length === 0 && <div className="panel-message tight">단계가 없다.</div>}
+      {steps.length === 0 && <div className="panel-message tight">{t('startup.noSteps')}</div>}
       {steps.length > 0 && (
         <ol className="startup-list">
           {steps.map((step, index) => (

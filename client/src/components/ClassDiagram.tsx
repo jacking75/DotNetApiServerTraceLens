@@ -5,6 +5,8 @@ import type { RelationType } from '../graph/relations'
 import type { GraphClass, GraphClassMember, Selection } from '../types/graph'
 import { DiagramCanvas, type CanvasPath } from './DiagramCanvas'
 import { UmlClassBox } from './UmlClassBox'
+import { useI18n } from '../i18n/I18nProvider'
+import type { TranslationKey } from '../i18n/ko'
 
 interface ClassDiagramProps {
   view: ClassDiagramView
@@ -44,6 +46,7 @@ export function ClassDiagram({
   onZoomChange,
   onFitZoom,
 }: ClassDiagramProps) {
+  const { t } = useI18n()
   // 선택한 클래스에 붙은 선만 강조하고, 그 선이 닿지 않는 박스는 흐리게 만든다.
   const { paths, related } = useMemo(() => {
     const connected = new Set<string>()
@@ -68,7 +71,7 @@ export function ClassDiagram({
 
   const highlightNamespace = selection?.type === 'namespace' ? selection.key : null
   const emptyMessage = view.boxes.size === 0
-    ? '표시할 클래스가 없다. 왼쪽에서 네임스페이스를 켜야 한다.'
+    ? t('classmap.empty')
     : undefined
 
   return (
@@ -84,7 +87,7 @@ export function ClassDiagram({
         packageLabel={(namespace) => shortenNamespace(namespace, options.namespacePrefix)}
         emptyMessage={emptyMessage}
         scrollTarget={scrollTarget}
-        ariaLabel="클래스 다이어그램"
+        ariaLabel={t('classmap.aria')}
         onZoomChange={onZoomChange}
         onFitZoom={onFitZoom}
       >
@@ -116,11 +119,12 @@ export function ClassDiagram({
 }
 
 function ClassDiagramLegend() {
-  const items: Array<{ label: string; type: RelationType }> = [
-    { label: '상속', type: 'inherit' },
-    { label: '구현', type: 'implement' },
-    { label: '연관(필드)', type: 'assoc' },
-    { label: '의존(호출)', type: 'depend' },
+  const { t } = useI18n()
+  const items: Array<{ key: TranslationKey; type: RelationType }> = [
+    { key: 'classmap.legend.inherit', type: 'inherit' },
+    { key: 'classmap.legend.implement', type: 'implement' },
+    { key: 'classmap.legend.assoc', type: 'assoc' },
+    { key: 'classmap.legend.depend', type: 'depend' },
   ]
 
   return (
@@ -135,10 +139,10 @@ function ClassDiagramLegend() {
               markerEnd={`url(#${item.type === 'inherit' || item.type === 'implement' ? 'mk-triangle' : 'mk-open'})`}
             />
           </svg>
-          <span>{item.label}</span>
+          <span>{t(item.key)}</span>
         </span>
       ))}
-      <span className="legend-item">«» = 인터페이스 / record · 기울임 = abstract</span>
+      <span className="legend-item">{t('classmap.legend.note')}</span>
     </div>
   )
 }
