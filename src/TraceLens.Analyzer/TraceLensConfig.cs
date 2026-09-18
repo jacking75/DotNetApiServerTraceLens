@@ -35,6 +35,10 @@ public enum AnalysisScope
 /// </param>
 /// <param name="MaxCallSitesPerEdge">한 엣지에 남길 근거 수 상한. 반복문 안 호출로 파일이 커지는 것을 막는다.</param>
 /// <param name="MaxBoundaryCallSites">미해석·모호 호출(경계 목록)의 상한.</param>
+/// <param name="ExcludeProjectNamePatterns">
+/// 이 패턴(와일드카드 <c>*</c>)에 맞는 프로젝트를 로드에서 뺀다. 테스트 프로젝트의 타입이
+/// 클래스 다이어그램에 섞이는 것을 막는다. 뺀 프로젝트는 진단에 <c>Loaded=false</c>로 남는다.
+/// </param>
 /// <param name="Db">
 /// 사내 DB·캐시 계층의 모양을 알려주는 설정. 비워 두면 SQL 리터럴과 타입 이름에서 짐작한다.
 /// </param>
@@ -53,6 +57,7 @@ public sealed record TraceLensConfig(
     bool IncludeCallSites,
     int MaxCallSitesPerEdge,
     int MaxBoundaryCallSites,
+    IReadOnlyList<string> ExcludeProjectNamePatterns,
     DataAccessOptions Db)
 {
     public static TraceLensConfig Default { get; } = new(
@@ -77,14 +82,145 @@ public sealed record TraceLensConfig(
         true,
         3,
         300,
+        [],
         DataAccessOptions.Default);
+
+
+    /// <summary>설정 파일 이름. <c>init</c>·<c>config --show</c>·분석이 같은 값을 쓴다.</summary>
+    public const string FileName = "tracelens.config.json";
+
+    /// <summary>
+    /// 대상 폴더에서 위로 올라가며 설정 파일을 찾는다. 없으면 null이다.
+    /// 분석 루트는 프로젝트를 연 뒤에야 확정되지만, 프로젝트 제외 패턴은 <b>열기 전에</b> 알아야 한다.
+    /// </summary>
+    public static string? FindConfigFile(string startDirectory, int maxAncestorLevels = 8)
+    {
+        var directory = new DirectoryInfo(startDirectory);
+        for (var level = 0; directory is not null && level <= maxAncestorLevels; level++, directory = directory.Parent)
+        {
+            var path = Path.Combine(directory.FullName, FileName);
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 프로젝트를 열기 전에 필요한 <c>excludeProjectNamePatterns</c>만 먼저 읽는다.
+    /// 파일이 없거나 깨져 있으면 빈 목록이다 — 여기서 분석을 멈추지 않는다.
+    /// </summary>
+    public static async Task<IReadOnlyList<string>> ReadProjectExclusionsAsync(
+        string startDirectory, CancellationToken cancellationToken = default)
+    {
+        if (FindConfigFile(startDirectory) is not { } path)
+        {
+            return [];
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(path, cancellationToken));
+            return ReadStringArray(document.RootElement, "excludeProjectNamePatterns") ?? [];
+        }
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// <c>tracelens init</c>이 쓰는 기본 설정 파일. 값은 기본값과 빈 배열이라 동작을 바꾸지 않는다.
+    /// 여기 적힌 키를 지우면 그냥 기본값을 쓰는 것과 같다 — "이 파일이 있으면 달라진다"가 되면 안 된다.
+    /// </summary>
+    public static string BuildTemplate(string schemaPathOrUrl) => $$"""
+        {
+          "$schema": "{{schemaPathOrUrl}}",
+          "_comment": "TraceLens 설정. 적지 않은 키는 기본값을 쓴다. 지금 적용되는 값 전체는 `tracelens config --show`로 본다.",
+          "_comment_empty": "빈 배열은 기본값이 아니라 '없음'이다. 기본값을 쓰고 싶으면 그 키를 아예 적지 않는다.",
+          "_comment_db": "DB·캐시 보기가 비어 있다면 db.queryApis에 사내 데이터 래퍼의 전체 이름 패턴을 적는다. 예: \"db\": { \"queryApis\": [\"*.IMyDb.*\"] }",
+          "_comment_scope": "테스트 프로젝트를 빼려면 아래에 패턴을 적는다. 예: [\"*.Tests\"]",
+
+          "excludeProjectNamePatterns": []
+        }
+        """;
+
+    /// <summary>
+    /// 기본값과 파일을 합친 <b>유효 설정</b>을 JSON으로 만든다.
+    /// "내 설정이 먹었는지"를 확인할 수 있어야 한다 — 화면에 없는 값을 짐작하게 두지 않는다.
+    /// </summary>
+    public static string SerializeEffective(TraceLensConfig config) => JsonSerializer.Serialize(
+        new
+        {
+            entryPointAttributes = config.EntryPointAttributes,
+            kindRules = config.KindRules.Select(rule => new
+            {
+                kind = rule.Kind,
+                matchBaseType = rule.MatchBaseType,
+                matchNameSuffix = rule.MatchNameSuffix
+            }),
+            maxCallDepth = config.MaxCallDepth,
+            excludeNamespacePrefixes = config.ExcludeNamespacePrefixes,
+            analysisScope = config.AnalysisScope.ToString(),
+            excludeProjectNamePatterns = config.ExcludeProjectNamePatterns,
+            includeObjectCreation = config.IncludeObjectCreation,
+            includeMembers = config.IncludeMembers,
+            includeInterfaces = config.IncludeInterfaces,
+            includeStartupFlow = config.IncludeStartupFlow,
+            includeDataAccess = config.IncludeDataAccess,
+            includeMiddleware = config.IncludeMiddleware,
+            includeCallSites = config.IncludeCallSites,
+            maxCallSitesPerEdge = config.MaxCallSitesPerEdge,
+            maxBoundaryCallSites = config.MaxBoundaryCallSites,
+            db = new
+            {
+                queryApis = config.Db.QueryApis,
+                cacheApis = config.Db.CacheApis,
+                connectionFactories = config.Db.ConnectionFactories,
+                shardKeyParameters = config.Db.ShardKeyParameters,
+                externalApis = config.Db.ExternalApis,
+                transactionWrappers = config.Db.TransactionWrappers,
+                cacheWrappers = config.Db.CacheWrappers,
+                dataSources = config.Db.DataSources.ToDictionary(
+                    item => item.Name,
+                    item => new
+                    {
+                        kind = item.Kind,
+                        shardCount = item.ShardCount,
+                        readOnly = item.ReadOnly,
+                        writeOnly = item.WriteOnly,
+                        typePatterns = item.TypePatterns
+                    }),
+                compensation = new
+                {
+                    pairs = config.Db.Compensation.Pairs.Select(pair => new { @do = pair.Do, undo = pair.Undo }),
+                    irreversible = config.Db.Compensation.Irreversible,
+                    idempotent = config.Db.Compensation.Idempotent
+                },
+                queryBuilders = config.Db.QueryBuilders.Select(builder => new
+                {
+                    root = builder.Root,
+                    tableArgumentIndex = builder.TableArgumentIndex,
+                    queryType = builder.QueryType,
+                    terminals = builder.Terminals.ToDictionary(item => item.Key, item => item.Value.ToString()),
+                    joinMethods = builder.JoinMethods
+                })
+            }
+        },
+        new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        });
 
     /// <summary>설정을 읽는다. 문제가 있어도 예외로 분석을 죽이지 않고 기본값으로 대체한 뒤 사유를 함께 돌려준다.</summary>
     public static async Task<ConfigLoadResult> LoadAsync(
         string solutionDirectory,
         CancellationToken cancellationToken = default)
     {
-        var path = Path.Combine(solutionDirectory, "tracelens.config.json");
+        var path = Path.Combine(solutionDirectory, FileName);
         if (!File.Exists(path))
         {
             return new ConfigLoadResult(Default, []);
@@ -129,7 +265,8 @@ public sealed record TraceLensConfig(
 
         foreach (var property in root.EnumerateObject())
         {
-            if (!KnownKeys.Contains(property.Name))
+            if (!KnownKeys.Contains(property.Name) &&
+                !property.Name.StartsWith(CommentKeyPrefix, StringComparison.Ordinal))
             {
                 issues.Add(new ConfigIssue(
                     ConfigIssueSeverity.Warning,
@@ -152,6 +289,7 @@ public sealed record TraceLensConfig(
             ReadBool("includeCallSites", Default.IncludeCallSites),
             ReadInt("maxCallSitesPerEdge", Default.MaxCallSitesPerEdge),
             ReadInt("maxBoundaryCallSites", Default.MaxBoundaryCallSites),
+            ReadStringArray(root, "excludeProjectNamePatterns") ?? Default.ExcludeProjectNamePatterns,
             DataAccessOptions.Read(root));
         return new ConfigLoadResult(config, issues);
 
@@ -191,15 +329,20 @@ public sealed record TraceLensConfig(
     }
 
     /// <summary>알고 있는 최상위 키. 여기에 없는 키는 경고로 알린다(조용히 무시하지 않는다).</summary>
+    public static IReadOnlyCollection<string> TopLevelKeys => KnownKeys;
+
     private static readonly HashSet<string> KnownKeys = new(StringComparer.Ordinal)
     {
         "entryPointAttributes", "kindRules", "maxCallDepth", "excludeNamespacePrefixes", "analysisScope",
         "includeObjectCreation", "includeMembers", "includeInterfaces", "includeStartupFlow",
         "includeDataAccess", "includeMiddleware", "includeCallSites",
-        "maxCallSitesPerEdge", "maxBoundaryCallSites", "db",
+        "maxCallSitesPerEdge", "maxBoundaryCallSites", "excludeProjectNamePatterns", "db",
         // JSON에는 주석이 없어서 관용적으로 쓰는 키다. 경고하지 않는다.
-        "_comment", "$schema"
+        "$schema"
     };
+
+    /// <summary>주석 대용 키의 접두사. <c>_comment</c>·<c>_comment_db</c>처럼 여러 개를 쓸 수 있다.</summary>
+    private const string CommentKeyPrefix = "_comment";
 
     private static AnalysisScope? ReadAnalysisScope(JsonElement root) =>
         root.TryGetProperty("analysisScope", out var scope) &&

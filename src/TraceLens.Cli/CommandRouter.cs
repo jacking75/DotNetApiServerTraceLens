@@ -28,8 +28,10 @@ public static class CommandRouter
             "serve" => await ServeAsync(rest),
             "analyze" => await AnalyzeAsync(rest),
             "mcp" => await McpAsync(rest),
-            "doctor" => Doctor(rest),
+            "doctor" => await Doctor(rest),
             "demo" => await DemoAsync(rest),
+            "init" => await InitAsync(rest),
+            "config" => await ConfigAsync(rest),
             _ => Unknown(command)
         };
     }
@@ -52,6 +54,10 @@ public static class CommandRouter
                   실행 환경을 점검하고 실패 원인과 다음 행동을 알려준다. 설치·설정 변경은 하지 않는다.
               tracelens demo [--dir <복사할 위치>]
                   예제 프로젝트를 원하는 폴더에 복사하고 분석 방법을 안내한다.
+              tracelens init [--target <경로>] [--force]
+                  대상 폴더에 tracelens.config.json을 만든다. 이미 있으면 덮어쓰지 않고 차이만 알려준다.
+              tracelens config --show [--target <경로>]
+                  기본값과 설정 파일을 합친 유효 설정 전체를 출력한다("내 설정이 먹었는지" 확인용).
 
             지원하는 분석 대상: {string.Join(", ", SolutionLoader.SupportedExtensions)}
             """);
@@ -301,6 +307,161 @@ public static class CommandRouter
         }
     }
 
+    /// <summary>
+    /// 대상 폴더에 설정 파일을 만든다. 이미 있으면 <b>덮어쓰지 않는다</b> —
+    /// 사내 설정을 날리는 것이 설정 파일 하나를 새로 만드는 것보다 훨씬 비싸다.
+    /// </summary>
+    private static async Task<int> InitAsync(string[] args)
+    {
+        var target = GetOption(args, "--target") ?? Directory.GetCurrentDirectory();
+        if (ResolveConfigDirectory(target) is not { } directory)
+        {
+            Console.Error.WriteLine($"대상 폴더를 찾을 수 없다: {Path.GetFullPath(target)}");
+            return 2;
+        }
+
+        var path = Path.Combine(directory, TraceLensConfig.FileName);
+        var force = HasFlag(args, "--force");
+
+        if (File.Exists(path) && !force)
+        {
+            Console.WriteLine($"이미 있다: {path}");
+            var existing = await TraceLensConfig.LoadAsync(directory);
+            foreach (var issue in existing.Issues)
+            {
+                Console.WriteLine($"  ! {issue.Message}");
+            }
+
+            var changed = DescribeNonDefaults(existing.Config);
+            Console.WriteLine(changed.Count == 0
+                ? "  기본값과 다른 키: 없음(이 파일은 동작을 바꾸지 않는다)."
+                : $"  기본값과 다른 키: {string.Join(", ", changed)}");
+            Console.WriteLine("  덮어쓰려면 --force를 준다.");
+            return 0;
+        }
+
+        // 스키마는 배포물 안의 파일을 가리킨다. 없으면 저장소의 raw 주소를 적어 자동완성이라도 되게 한다.
+        var schema = FindSchemaPath() is { } schemaPath
+            ? new Uri(schemaPath).AbsoluteUri
+            : "https://raw.githubusercontent.com/tracelens/tracelens/main/docs/tracelens.config.schema.json";
+        await File.WriteAllTextAsync(path, TraceLensConfig.BuildTemplate(schema));
+        Console.WriteLine($"설정 파일을 만들었다: {path}");
+        Console.WriteLine("  값은 모두 기본값·빈 배열이라 지금 동작은 그대로다.");
+        Console.WriteLine("  DB·캐시 보기가 비어 있다면 db.queryApis에 사내 데이터 래퍼 패턴을 적는다.");
+        return 0;
+    }
+
+    /// <summary>기본값과 합친 유효 설정 전체를 출력한다. 설정 파일에서 읽은 키도 함께 알려 준다.</summary>
+    private static async Task<int> ConfigAsync(string[] args)
+    {
+        if (!HasFlag(args, "--show"))
+        {
+            Console.Error.WriteLine("사용법: tracelens config --show [--target <경로>]");
+            return 2;
+        }
+
+        var target = GetOption(args, "--target") ?? Directory.GetCurrentDirectory();
+        if (ResolveConfigDirectory(target) is not { } directory)
+        {
+            Console.Error.WriteLine($"대상 폴더를 찾을 수 없다: {Path.GetFullPath(target)}");
+            return 2;
+        }
+
+        var found = TraceLensConfig.FindConfigFile(directory);
+        var result = await TraceLensConfig.LoadAsync(
+            found is null ? directory : Path.GetDirectoryName(found)!);
+
+        Console.WriteLine(found is null
+            ? $"설정 파일이 없다(기본값만 쓴다). 만들려면 `tracelens init --target \"{directory}\"`."
+            : $"설정 파일: {found}");
+        foreach (var issue in result.Issues)
+        {
+            Console.WriteLine($"  ! {issue.Message}");
+        }
+
+        var changed = DescribeNonDefaults(result.Config);
+        Console.WriteLine(changed.Count == 0
+            ? "기본값과 다른 키: 없음"
+            : $"기본값과 다른 키: {string.Join(", ", changed)}");
+        Console.WriteLine();
+        Console.WriteLine(TraceLensConfig.SerializeEffective(result.Config));
+        return 0;
+    }
+
+    /// <summary>
+    /// 기본값과 다른 최상위 키 이름. "내 설정이 먹었는가"의 답이다.
+    /// 값 자체는 유효 설정 JSON에 그대로 나오므로 여기서는 이름만 센다.
+    /// </summary>
+    private static IReadOnlyList<string> DescribeNonDefaults(TraceLensConfig config)
+    {
+        var defaults = TraceLensConfig.Default;
+        var changed = new List<string>();
+        void Check(string name, bool differs)
+        {
+            if (differs)
+            {
+                changed.Add(name);
+            }
+        }
+
+        Check("entryPointAttributes", !config.EntryPointAttributes.SequenceEqual(defaults.EntryPointAttributes, StringComparer.Ordinal));
+        Check("maxCallDepth", config.MaxCallDepth != defaults.MaxCallDepth);
+        Check("excludeNamespacePrefixes", !config.ExcludeNamespacePrefixes.SequenceEqual(defaults.ExcludeNamespacePrefixes, StringComparer.Ordinal));
+        Check("analysisScope", config.AnalysisScope != defaults.AnalysisScope);
+        Check("excludeProjectNamePatterns", config.ExcludeProjectNamePatterns.Count != 0);
+        Check("includeObjectCreation", config.IncludeObjectCreation != defaults.IncludeObjectCreation);
+        Check("includeMembers", config.IncludeMembers != defaults.IncludeMembers);
+        Check("includeInterfaces", config.IncludeInterfaces != defaults.IncludeInterfaces);
+        Check("includeStartupFlow", config.IncludeStartupFlow != defaults.IncludeStartupFlow);
+        Check("includeDataAccess", config.IncludeDataAccess != defaults.IncludeDataAccess);
+        Check("includeMiddleware", config.IncludeMiddleware != defaults.IncludeMiddleware);
+        Check("includeCallSites", config.IncludeCallSites != defaults.IncludeCallSites);
+        Check("maxCallSitesPerEdge", config.MaxCallSitesPerEdge != defaults.MaxCallSitesPerEdge);
+        Check("maxBoundaryCallSites", config.MaxBoundaryCallSites != defaults.MaxBoundaryCallSites);
+        Check("db.queryApis", !config.Db.QueryApis.SequenceEqual(defaults.Db.QueryApis, StringComparer.Ordinal));
+        Check("db.cacheApis", !config.Db.CacheApis.SequenceEqual(defaults.Db.CacheApis, StringComparer.Ordinal));
+        Check("db.connectionFactories", !config.Db.ConnectionFactories.SequenceEqual(defaults.Db.ConnectionFactories, StringComparer.Ordinal));
+        Check("db.dataSources", config.Db.DataSources.Count != 0);
+        Check("db.cacheWrappers", config.Db.CacheWrappers.Count != 0);
+        return changed;
+    }
+
+    /// <summary>
+    /// 설정 파일을 둘 폴더. 폴더를 주면 그대로, <c>.sln</c>/<c>.csproj</c>를 주면 그 파일이 있는 폴더다.
+    /// 둘 다 아니면 null이다 — 없는 폴더의 부모에 조용히 쓰면 "만들었다는데 없다"가 된다.
+    /// </summary>
+    private static string? ResolveConfigDirectory(string target)
+    {
+        var fullPath = Path.GetFullPath(target);
+        if (Directory.Exists(fullPath))
+        {
+            return fullPath;
+        }
+
+        if (File.Exists(fullPath) && Path.GetDirectoryName(fullPath) is { Length: > 0 } parent)
+        {
+            return parent;
+        }
+
+        return null;
+    }
+
+    /// <summary>배포물·저장소에서 스키마 파일을 찾는다. 없으면 null이다.</summary>
+    private static string? FindSchemaPath()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var level = 0; directory is not null && level <= 8; level++, directory = directory.Parent)
+        {
+            var path = Path.Combine(directory.FullName, "docs", "tracelens.config.schema.json");
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+
+        return null;
+    }
+
     private static async Task<int> McpAsync(string[] args)
     {
         try
@@ -314,7 +475,7 @@ public static class CommandRouter
         }
     }
 
-    private static int Doctor(string[] args)
+    private static async Task<int> Doctor(string[] args)
     {
         var report = new EnvironmentDiagnostics().Run(new DiagnosticsOptions
         {
@@ -329,8 +490,29 @@ public static class CommandRouter
 
         if (HasFlag(args, "--json"))
         {
+            // 유효 설정을 함께 담는다. "내 설정이 먹었는지"를 doctor 한 번으로 확인할 수 있어야 한다.
+            var configDirectory = ResolveConfigDirectory(GetOption(args, "--target") ?? Directory.GetCurrentDirectory());
+            var effective = configDirectory is null
+                ? TraceLensConfig.Default
+                : (await TraceLensConfig.LoadAsync(
+                    TraceLensConfig.FindConfigFile(configDirectory) is { } found
+                        ? Path.GetDirectoryName(found)!
+                        : configDirectory)).Config;
             Console.WriteLine(JsonSerializer.Serialize(
-                report,
+                new
+                {
+                    report.CanAnalyze,
+                    report.ToolVersion,
+                    report.RuntimeVersion,
+                    report.OperatingSystem,
+                    report.SdkPath,
+                    report.SupportedTargets,
+                    report.UnsupportedTargets,
+                    report.Items,
+                    report.Log,
+                    effectiveConfig = JsonSerializer.Deserialize<JsonElement>(
+                        TraceLensConfig.SerializeEffective(effective))
+                },
                 new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
             return report.CanAnalyze ? 0 : 1;
         }

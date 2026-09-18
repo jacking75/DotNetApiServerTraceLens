@@ -294,6 +294,8 @@ tracelens serve   [--target <경로>] [--port n] [--no-browser]
                                                UI 서버를 띄운다(루프백 전용).
 tracelens mcp     --graph <graph.json 경로>    로컬 stdio MCP 서버를 띄운다.
 tracelens demo    [--dir <복사할 위치>]         예제를 복사하고 무엇을 볼지 안내한다.
+tracelens init    [--target <경로>] [--force]  tracelens.config.json을 만든다. 이미 있으면 덮어쓰지 않는다.
+tracelens config  --show [--target <경로>]     기본값과 파일을 합친 유효 설정 전체를 출력한다.
 ```
 
 `--no-browser`는 브라우저를 자동으로 열지 않는다(원격 셸·컨테이너에서 쓴다). `--profile`은 단계별

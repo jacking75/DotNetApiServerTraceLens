@@ -32,10 +32,13 @@
           Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  <!-- 사용 설명서를 배포물에 넣는다. serve가 /manual/ko·/manual/en으로 연다. -->
+  <!-- 사용 설명서와 설정 스키마를 배포물에 넣는다. serve가 /manual/ko·/manual/en으로 열고, init이 스키마를 가리킨다. -->
   <ItemGroup>
     <None Include="..\..\docs\manual*.html"
           Link="docs\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\tracelens.config.schema.json"
+          Link="docs\tracelens.config.schema.json"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <!-- 배포 패키지에 예제를 함께 넣는다. tracelens demo가 여기서 복사한다. -->

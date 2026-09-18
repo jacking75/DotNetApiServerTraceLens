@@ -846,6 +846,13 @@ npm run dev</code></pre>
         one, it behaves exactly per the defaults below, so there's no need to create one unless
         you have something specific to adjust.
       </p>
+      <p>
+        <code>tracelens init --target &lt;path&gt;</code> writes a starter file with a <code>$schema</code> reference.
+        If one already exists it is <b>never overwritten</b> — you get a list of unknown keys and of keys that
+        differ from the defaults instead. Run <code>tracelens config --show</code> to print the values actually
+        in effect, so you never have to guess whether your file took.
+        <b>An empty array means "none", not "the default".</b> To keep a default, leave that key out entirely.
+      </p>
       <table>
         <tr><th>Field</th><th>Default</th><th>Description</th></tr>
         <tr><td><code>entryPointAttributes</code></td><td>HttpGet · HttpPost · HttpPut · HttpDelete · HttpPatch</td><td>Methods carrying these attributes are treated as HTTP entry points.</td></tr>

@@ -30,6 +30,21 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
     /// <remarks>.csproj를 열면 그 프로젝트가 참조하는 프로젝트까지 함께 로드된다.</remarks>
     public async Task<LoadedSolution> LoadAsync(string targetPath, CancellationToken cancellationToken = default)
     {
+        var exclusions = await TraceLensConfig.ReadProjectExclusionsAsync(
+            Path.GetDirectoryName(Path.GetFullPath(targetPath)) ?? Directory.GetCurrentDirectory(),
+            cancellationToken);
+        return await LoadAsync(targetPath, exclusions, cancellationToken);
+    }
+
+    /// <param name="excludeProjectNamePatterns">
+    /// 로드에서 뺄 프로젝트 이름 패턴(와일드카드 <c>*</c>). 뺀 프로젝트는 컴파일하지 않고
+    /// 진단에 <c>Loaded=false</c>로 남긴다 — 조용히 사라지면 "왜 이 타입이 없지"를 알 수 없다.
+    /// </param>
+    public async Task<LoadedSolution> LoadAsync(
+        string targetPath,
+        IReadOnlyList<string> excludeProjectNamePatterns,
+        CancellationToken cancellationToken = default)
+    {
         var fullPath = Path.GetFullPath(targetPath);
         var extension = Path.GetExtension(fullPath);
         if (UnsupportedExtensions.TryGetValue(extension, out var reason))
@@ -60,6 +75,16 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
         var projectDiagnostics = new List<AnalyzedProject>();
         foreach (var project in solution.Projects.Where(project => project.SupportsCompilation))
         {
+            if (excludeProjectNamePatterns.Count > 0 &&
+                PatternMatch.MatchesAny(project.Name, excludeProjectNamePatterns))
+            {
+                logger.LogInformation("excludeProjectNamePatterns에 맞아 {ProjectName}을(를) 로드에서 뺐다.", project.Name);
+                projectDiagnostics.Add(new AnalyzedProject(
+                    project.Name, project.FilePath ?? string.Empty, false, 0,
+                    ["excludeProjectNamePatterns 설정으로 제외했다."]));
+                continue;
+            }
+
             try
             {
                 var compilation = await project.GetCompilationAsync(cancellationToken);

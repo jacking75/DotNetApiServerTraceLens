@@ -823,6 +823,13 @@ npm run dev</code></pre>
         분석 방식을 조정할 수 있다. 파일이 없으면 아래 기본값 그대로 동작하므로, 특별히 손볼 게 없다면
         굳이 만들 필요는 없다.
       </p>
+      <p>
+        직접 만들기 어렵다면 <code>tracelens init --target &lt;경로&gt;</code>가 <code>$schema</code>가 붙은 기본 파일을 만든다.
+        이미 파일이 있으면 <b>덮어쓰지 않고</b> 모르는 키와 기본값과 다른 키만 알려 준다.
+        지금 실제로 적용되는 값 전체는 <code>tracelens config --show</code>로 확인한다 —
+        "내 설정이 먹었는지"를 짐작하지 않아도 된다.
+        <b>빈 배열은 기본값이 아니라 "없음"이다.</b> 기본값을 쓰려면 그 키를 아예 적지 않는다.
+      </p>
       <table>
         <tr><th>필드</th><th>기본값</th><th>설명</th></tr>
         <tr><td><code>entryPointAttributes</code></td><td>HttpGet · HttpPost · HttpPut · HttpDelete · HttpPatch</td><td>이 특성이 붙은 메서드를 HTTP 진입점으로 본다.</td></tr>

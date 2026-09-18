@@ -309,6 +309,8 @@ tracelens serve   [--target <path>] [--port n] [--no-browser]
                                                The UI server (loopback only).
 tracelens mcp     --graph <graph.json path>    The local stdio MCP server.
 tracelens demo    [--dir <destination>]        Copies the example project and explains what to look at.
+tracelens init    [--target <path>] [--force]  Writes tracelens.config.json. Never overwrites an existing one.
+tracelens config  --show [--target <path>]     Prints the effective config (defaults merged with your file).
 ```
 
 `--no-browser` skips opening a browser (for remote shells and containers). `--profile` prints
