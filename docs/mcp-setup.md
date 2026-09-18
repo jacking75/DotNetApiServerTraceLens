@@ -158,7 +158,19 @@ reach for the tracelens MCP server before grep.
 
 | Tool | Input | Returns |
 |---|---|---|
-| `get_analysis_status` | `expectedSnapshotId?` | Target, timestamp, freshness, diagnostics and capabilities — how much to trust everything else. |
+| `get_analysis_status` | `expectedSnapshotId?` | Target, timestamp, freshness, diagnostics and capabilities. Tells you how much to trust everything else. `suggestedNextTools` in the response proposes where to go next (a suggestion, not a guarantee). |
+
+### Ask it like this
+
+Tool descriptions alone do not make the branching obvious. Here are real questions and the tool order.
+
+| Question | Tool order |
+|---|---|
+| "What does this API do?" | `get_analysis_status` → `get_entrypoints` → `get_entrypoint_flow` → `get_context(intent=explain)` |
+| "What breaks if I change this?" | `get_analysis_status` → `search_symbol` → `get_impact` |
+| "Is this write path safe?" | `get_analysis_status` → `get_findings(ruleId=COMP-)` → `get_context(intent=investigateData)` |
+| "What changed with this edit?" | `get_analysis_status` → `compare_snapshots` |
+| "What does this line actually call?" | `search_symbol` → `get_node` → `get_callees` |
 
 ### Task context
 

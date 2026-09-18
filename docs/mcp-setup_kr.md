@@ -156,7 +156,19 @@ Cursor는 Claude Code와 같은 형식을 쓴다. 작업 폴더의 `.cursor/mcp.
 
 | 도구 | 입력 | 반환 |
 |---|---|---|
-| `get_analysis_status` | `expectedSnapshotId?` | 분석 대상·시각·신선도·진단·지원 기능. 다른 도구를 부르기 전에 결과를 얼마나 믿을 수 있는지 알려 준다. |
+| `get_analysis_status` | `expectedSnapshotId?` | 분석 대상·시각·신선도·진단·지원 기능. 다른 도구를 부르기 전에 결과를 얼마나 믿을 수 있는지 알려 준다. 응답의 `suggestedNextTools`가 지금 상태에서 부를 만한 도구를 제안한다(보장이 아니다). |
+
+### 이렇게 물어본다
+
+도구 설명만으로는 분기를 알기 어렵다. 실제 질문과 도구 순서를 함께 적는다.
+
+| 질문 | 도구 순서 |
+|---|---|
+| "이 API가 뭘 하나" | `get_analysis_status` → `get_entrypoints` → `get_entrypoint_flow` → `get_context(intent=explain)` |
+| "이거 고치면 뭐가 깨지나" | `get_analysis_status` → `search_symbol` → `get_impact` |
+| "이 쓰기 경로가 안전한가" | `get_analysis_status` → `get_findings(ruleId=COMP-)` → `get_context(intent=investigateData)` |
+| "이 수정으로 뭐가 달라졌나" | `get_analysis_status` → `compare_snapshots` |
+| "이 줄이 실제로 뭘 부르나" | `search_symbol` → `get_node` → `get_callees` |
 
 ### 작업 문맥
 

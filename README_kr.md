@@ -225,15 +225,17 @@ Code·Codex CLI·VS Code·Cursor용으로 실제 경로가 채워진 설정 조�
 나오고, **기존 설정을 덮어쓰지 않는다.** 같은 대화상자의 "에이전트 안내문" 탭에는 대상 저장소의
 `CLAUDE.md`/`AGENTS.md`에 붙일 문단이 있다 — 이게 없으면 에이전트는 평소처럼 grep으로 헤맨다.
 
-| 도구 | 무엇을 돌려주나 |
-|---|---|
-| `get_analysis_status` | 분석 대상·시각·신선도·지원 기능·진단. **먼저 부를 것.** |
-| `get_context` | UI 미리보기와 같은 작업 문맥 |
-| `get_entrypoint_flow` | 진입점 하나의 제한된 호출 경로와 경계 |
-| `get_findings` | 점검과 확실도, 꺼진 규칙 목록 |
-| `get_impact` | 이 메서드를 바꾸면 영향받을 수 있는 진입점 후보 |
-| `compare_snapshots` | 보관한 기준과의 차이 |
-| `get_node` · `get_source` · `get_callers` · `get_callees` · `get_entrypoints` · `search_symbol` | 노드·소스·근거가 붙은 인접 호출·진입점·심볼 검색 |
+| 도구 | 무엇을 돌려주나 | 이렇게 물어본다 |
+|---|---|---|
+| `get_analysis_status` | 분석 대상·시각·신선도·지원 기능·진단. **먼저 부를 것.** 응답의 `suggestedNextTools`가 다음 도구를 알려 준다. | (무엇을 묻든 가장 먼저) |
+| `get_entrypoints` | HTTP 진입점 목록 | "이 서비스에 어떤 API가 있나" |
+| `get_entrypoint_flow` | 진입점 하나의 제한된 호출 경로와 경계 | "POST /api/orders가 어떤 순서로 무엇을 부르나" |
+| `get_context` | UI 미리보기와 같은 작업 문맥 | "이 엔드포인트가 입력부터 저장까지 무엇을 하는지 근거 ID와 함께 설명해 줘" |
+| `search_symbol` | 이름·네임스페이스로 노드 검색 | "CreateOrderAsync가 어디 있나" |
+| `get_impact` | 이 메서드를 바꾸면 영향받을 수 있는 진입점 후보 | "이 메서드를 바꾸면 어떤 API가 영향을 받고 어떤 테스트가 필요한가" |
+| `get_findings` | 점검과 확실도, 꺼진 규칙 목록 | "이 쓰기 경로에서 2단계가 실패하면 DB·캐시에 무엇이 남는가" (`ruleId=COMP-`) |
+| `compare_snapshots` | 보관한 기준과의 차이 | "이 수정에서 의도하지 않은 호출 경로 변화가 있는가" |
+| `get_node` · `get_source` · `get_callers` · `get_callees` | 노드·소스·근거가 붙은 인접 호출 | "이 줄이 실제로 무엇을 부르나" |
 
 모든 도구는 이미 저장된 분석만 읽고 **재분석하지 않는다.** 응답에 `snapshotId`가 들어가고, 후속 호출에
 `expectedSnapshotId`로 넘기면 그 사이 분석이 바뀌었을 때 `SNAPSHOT_MISMATCH`로 알려 준다. 목록 도구는

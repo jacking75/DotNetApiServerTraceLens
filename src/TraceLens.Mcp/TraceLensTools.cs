@@ -20,7 +20,9 @@ public sealed class TraceLensTools(GraphFileStore store)
     [McpServerTool(Name = "get_analysis_status")]
     [Description(
         "지금 읽고 있는 분석의 대상·시각·신선도·지원 기능·진단 요약을 조회한다. " +
-        "다른 도구를 부르기 전에 이 값을 먼저 보면 결과가 얼마나 믿을 만한지 알 수 있다. 재분석은 하지 않는다.")]
+        "다른 도구를 부르기 전에 이 값을 먼저 보면 결과가 얼마나 믿을 만한지 알 수 있다. 재분석은 하지 않는다. " +
+        "무엇을 묻든 이 도구를 가장 먼저 부른다. 응답의 suggestedNextTools가 다음에 부를 도구를 알려 준다. " +
+        "Call this first, whatever the question; suggestedNextTools tells you where to go next.")]
     public async Task<AnalysisStatusResult> GetAnalysisStatusAsync(
         [Description("기대하는 분석 스냅샷 ID. 다르면 오류로 알려준다.")] string? expectedSnapshotId,
         CancellationToken cancellationToken)
@@ -47,15 +49,50 @@ public sealed class TraceLensTools(GraphFileStore store)
             graph.Diagnostics,
             issues.Select(issue => $"{issue.Code}: {issue.Message}").ToArray())
         {
-            DataAccessNotes = graph.DataAccess?.Notes ?? []
+            DataAccessNotes = graph.DataAccess?.Notes ?? [],
+            SuggestedNextTools = SuggestNextTools(graph, freshness.Status.ToString())
         };
+    }
+
+    /// <summary>
+    /// 신선도·진입점 수·점검 수를 보고 다음에 부를 만한 도구를 고른다.
+    /// 아무것도 없을 때(진입점 0)는 도구를 권하지 않고 사용자에게 재분석을 요청하는 편이 맞다.
+    /// </summary>
+    private static IReadOnlyList<string> SuggestNextTools(GraphDocument graph, string freshness)
+    {
+        var tools = new List<string>();
+        if (graph.EntryPoints.Count > 0)
+        {
+            tools.Add("get_entrypoints");
+        }
+
+        if (graph.Nodes.Count > 0)
+        {
+            tools.Add("search_symbol");
+        }
+
+        var findingCount = (graph.DataAccess?.Findings.Count ?? 0) + (graph.Middleware?.Findings.Count ?? 0);
+        if (findingCount > 0)
+        {
+            tools.Add("get_findings");
+        }
+
+        // stale이면 무엇을 부르든 답에 그 사실을 적어야 한다. 도구 하나를 더 권하는 것보다 그게 중요하다.
+        if (string.Equals(freshness, "stale", StringComparison.OrdinalIgnoreCase))
+        {
+            tools.Insert(0, "get_analysis_status");
+        }
+
+        return tools;
     }
 
     [McpServerTool(Name = "get_context")]
     [Description(
         "선택한 노드·엔드포인트·클래스·점검 항목에 대해 TraceLens UI와 같은 작업 문맥을 만든다. " +
         "시그니처·검증된 소스·진입점까지의 경로·근거·한계를 한 번에 돌려준다. selectionKind는 " +
-        "node, endpoint, class, namespace, finding, writePath, middlewareStep, startupStep 중 하나다.")]
+        "node, endpoint, class, namespace, finding, writePath, middlewareStep, startupStep 중 하나다. " +
+        "설명·변경 계획·검토처럼 답을 쓰기 위한 문맥이 필요할 때 쓴다. 구조만 훑으려면 get_entrypoint_flow가 가볍다. " +
+        "Use it when you need context to write an answer; use get_entrypoint_flow to just skim the structure.")]
     public async Task<ContextDocument> GetContextAsync(
         [Description("선택 종류: node|endpoint|class|namespace|finding|writePath|middlewareStep|startupStep")] string selectionKind,
         [Description("선택 대상의 ID")] string selectionId,
@@ -90,7 +127,9 @@ public sealed class TraceLensTools(GraphFileStore store)
     [McpServerTool(Name = "get_entrypoint_flow")]
     [Description(
         "HTTP 진입점 하나에서 시작하는 제한된 호출 경로와 그 경계를 조회한다. " +
-        "전체 그래프를 받지 않고 이 진입점에 필요한 만큼만 본다.")]
+        "전체 그래프를 받지 않고 이 진입점에 필요한 만큼만 본다. " +
+        "한 진입점의 구조를 볼 때 쓴다. 소스와 근거까지 필요하면 get_context로 넘어간다. " +
+        "Use it for the shape of one entry point; switch to get_context when you need source and evidence.")]
     public async Task<EntryPointFlowResult> GetEntryPointFlowAsync(
         [Description("엔드포인트 ID(또는 \"GET /orders\" 형태)")] string endpointId,
         [Description("따라갈 최대 깊이(기본 4)")] int? depth,
@@ -167,7 +206,9 @@ public sealed class TraceLensTools(GraphFileStore store)
     [McpServerTool(Name = "get_findings")]
     [Description(
         "DB·캐시와 미들웨어 점검 결과를 근거·확실도와 함께 조회한다. " +
-        "검사하지 않은 규칙도 카탈로그에 \"꺼짐\"으로 남아 있어 무엇을 보지 않았는지 알 수 있다.")]
+        "검사하지 않은 규칙도 카탈로그에 \"꺼짐\"으로 남아 있어 무엇을 보지 않았는지 알 수 있다. " +
+        "규칙 ID 접두사(COMP-, TX-, MW-, SHARD-)로 거른다. 쓰기 경로 안전성은 COMP-로 시작한다. " +
+        "Filter by rule id prefix (COMP-, TX-, MW-, SHARD-); write-path safety starts at COMP-.")]
     public async Task<FindingsResult> GetFindingsAsync(
         [Description("이 노드와 연결된 점검만 본다")] string? nodeId,
         [Description("이 규칙 ID의 점검만 본다")] string? ruleId,
@@ -201,7 +242,9 @@ public sealed class TraceLensTools(GraphFileStore store)
     [Description(
         "이 메서드를 바꾸면 영향을 받을 수 있는 HTTP 진입점 후보와 그 근거 경로를 조회한다. " +
         "분석한 호출 관계에서 도출한 후보이며, reflection·외부 호출·이벤트 구독은 증명하지 않는다. " +
-        "호출자가 없다고 삭제해도 안전하다는 뜻이 아니다.")]
+        "호출자가 없다고 삭제해도 안전하다는 뜻이 아니다. " +
+        "nodeId를 모르면 search_symbol로 먼저 찾아 그 id를 넘긴다. " +
+        "If you do not know the nodeId, find it with search_symbol first and pass that id here.")]
     public async Task<ImpactResult> GetImpactAsync(
         [Description("영향을 확인할 노드 ID 목록")] string[] nodeIds,
         [Description("역방향 탐색 최대 깊이(기본 12)")] int? maxDepth,
@@ -224,7 +267,9 @@ public sealed class TraceLensTools(GraphFileStore store)
     [Description(
         "보관해 둔 기준 스냅샷과 현재 분석의 구조·본문·점검 차이를 조회한다. " +
         "비교 조건(대상·분석기·규칙·범위)이 다르면 그 사실을 함께 돌려준다. " +
-        "\"차이 없음\"은 안전하다는 뜻도, 테스트가 통과한다는 뜻도 아니다.")]
+        "\"차이 없음\"은 안전하다는 뜻도, 테스트가 통과한다는 뜻도 아니다. " +
+        "수정 전후를 비교할 때만 쓴다. 기준은 사용자가 UI에서 저장해 두어야 있다. " +
+        "Use it only to compare before and after a change; the baseline must have been saved by the user.")]
     public async Task<SnapshotDiff> CompareSnapshotsAsync(
         [Description("기준 스냅샷 ID(.tracelens/history 아래에 보관한 것)")] string baselineId,
         [Description("비교 대상 스냅샷 ID. 비우면 지금 그래프와 비교한다.")] string? currentId,
@@ -253,7 +298,10 @@ public sealed class TraceLensTools(GraphFileStore store)
     }
 
     [McpServerTool(Name = "get_node")]
-    [Description("노드 ID로 메타데이터와 해당 메서드의 소스를 조회한다. 저장된 분석만 읽고 재분석하지 않는다.")]
+    [Description(
+        "노드 ID로 메타데이터와 해당 메서드의 소스를 조회한다. 저장된 분석만 읽고 재분석하지 않는다. " +
+        "노드 하나만 볼 때 쓴다. 답을 쓰기 위한 문맥이 필요하면 get_context가 낫다. " +
+        "Use it to look at one node; prefer get_context when you need context to write an answer.")]
     public async Task<NodeResult> GetNodeAsync(
         [Description("TraceLens 그래프 노드 ID")] string nodeId,
         [Description("기대하는 분석 스냅샷 ID")] string? expectedSnapshotId,
@@ -278,7 +326,9 @@ public sealed class TraceLensTools(GraphFileStore store)
     [McpServerTool(Name = "get_source")]
     [Description(
         "분석 대상 솔루션 내부 파일의 지정된 라인 범위를 읽는다. " +
-        "분석 당시와 내용이 같은지(sourceVersion)를 함께 돌려준다.")]
+        "분석 당시와 내용이 같은지(sourceVersion)를 함께 돌려준다. " +
+        "다른 도구가 준 파일·줄을 눈으로 확인할 때 쓴다. 파일을 찾아다니는 용도가 아니다. " +
+        "Use it to verify a file and line another tool returned, not to browse for files.")]
     public async Task<SourceResult> GetSourceAsync(
         [Description("솔루션 루트 기준 상대 파일 경로")] string file,
         [Description("1부터 시작하는 시작 라인")] int startLine,
@@ -303,7 +353,9 @@ public sealed class TraceLensTools(GraphFileStore store)
     [McpServerTool(Name = "get_callers")]
     [Description(
         "지정한 노드를 직접 호출하는 인접 노드와 그 호출 근거를 조회한다. " +
-        "빈 목록은 호출자가 없다는 증명이 아니다 — 확정하지 못한 호출은 경계 목록(boundaries)에 남는다.")]
+        "빈 목록은 호출자가 없다는 증명이 아니다 — 확정하지 못한 호출은 경계 목록(boundaries)에 남는다. " +
+        "한 홉만 본다. 진입점까지 거슬러 올라가려면 get_impact를 쓴다. " +
+        "This is one hop only; use get_impact to walk all the way back to entry points.")]
     public async Task<NeighborResult> GetCallersAsync(
         [Description("TraceLens 그래프 노드 ID")] string nodeId,
         [Description("한 번에 돌려줄 최대 개수(기본 50, 최대 500)")] int? limit,
@@ -327,7 +379,9 @@ public sealed class TraceLensTools(GraphFileStore store)
     [McpServerTool(Name = "get_callees")]
     [Description(
         "지정한 노드가 직접 호출하는 인접 노드와 그 호출 근거를 조회한다. " +
-        "빈 목록은 호출이 없다는 증명이 아니다 — 확정하지 못한 호출은 경계 목록(boundaries)에 남는다.")]
+        "빈 목록은 호출이 없다는 증명이 아니다 — 확정하지 못한 호출은 경계 목록(boundaries)에 남는다. " +
+        "한 홉만 본다. 진입점 전 구간이 필요하면 get_entrypoint_flow를 쓴다. " +
+        "This is one hop only; use get_entrypoint_flow for a whole entry point path.")]
     public async Task<NeighborResult> GetCalleesAsync(
         [Description("TraceLens 그래프 노드 ID")] string nodeId,
         [Description("한 번에 돌려줄 최대 개수(기본 50, 최대 500)")] int? limit,
@@ -349,7 +403,10 @@ public sealed class TraceLensTools(GraphFileStore store)
     }
 
     [McpServerTool(Name = "get_entrypoints")]
-    [Description("현재 TraceLens 그래프의 HTTP 진입점 목록을 조회한다. 같은 메서드에 여러 라우트가 걸리면 각각 나온다.")]
+    [Description(
+        "현재 TraceLens 그래프의 HTTP 진입점 목록을 조회한다. 같은 메서드에 여러 라우트가 걸리면 각각 나온다. " +
+        "\"이 API가 뭘 하나\"의 출발점이다. 고른 endpointId를 get_entrypoint_flow나 get_context에 넘긴다. " +
+        "Start here for \"what does this API do\"; pass the endpointId to get_entrypoint_flow or get_context.")]
     public async Task<EntryPointsResult> GetEntryPointsAsync(
         [Description("라우트나 HTTP 동사에 포함된 문자열로 거른다")] string? query,
         [Description("한 번에 돌려줄 최대 개수(기본 50, 최대 500)")] int? limit,
@@ -375,7 +432,10 @@ public sealed class TraceLensTools(GraphFileStore store)
     }
 
     [McpServerTool(Name = "search_symbol")]
-    [Description("표시 이름, 전체 노드 ID 또는 네임스페이스에 포함된 문자열로 노드를 검색한다.")]
+    [Description(
+        "표시 이름, 전체 노드 ID 또는 네임스페이스에 포함된 문자열로 노드를 검색한다. " +
+        "nodeId를 모를 때 가장 먼저 쓴다. 결과의 id를 get_node·get_impact·get_context에 그대로 넘긴다. " +
+        "Use it first when you do not know a nodeId; pass the result id to get_node, get_impact or get_context.")]
     public async Task<SearchResult> SearchSymbolAsync(
         [Description("대소문자를 구분하지 않는 검색 문자열")] string query,
         [Description("한 번에 돌려줄 최대 개수(기본 50, 최대 500)")] int? limit,
@@ -510,4 +570,10 @@ public sealed record AnalysisStatusResult(
     /// 접근이 0건일 때 "DB를 안 쓴다"로 읽지 않게 한다.
     /// </summary>
     public IReadOnlyList<string> DataAccessNotes { get; init; } = [];
+
+    /// <summary>
+    /// 지금 상태에서 다음에 부를 만한 도구. 도구 설명만으로는 분기를 알기 어렵다.
+    /// 보장이 아니라 제안이다 — 질문에 따라 다른 도구가 맞을 수 있다.
+    /// </summary>
+    public IReadOnlyList<string> SuggestedNextTools { get; init; } = [];
 }

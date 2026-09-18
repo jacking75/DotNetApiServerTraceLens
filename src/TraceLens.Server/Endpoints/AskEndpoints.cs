@@ -15,23 +15,18 @@ public static class AskEndpoints
 
     /// <summary>
     /// 인앱 실행에서 허용하는 MCP 도구 목록이다.
-    /// 새 문맥 도구를 MCP에 추가하면 여기에도 넣어야 실제로 호출할 수 있다.
+    /// <see cref="TraceLens.Mcp.TraceLensTools"/>의 <c>[McpServerTool]</c> 특성에서 직접 만든다 —
+    /// 손으로 맞추면 새 도구를 빠뜨렸을 때 UI에서만 조용히 안 불린다.
     /// </summary>
-    public static IReadOnlyList<string> AllowedMcpTools { get; } =
-    [
-        "mcp__tracelens__get_node",
-        "mcp__tracelens__get_source",
-        "mcp__tracelens__get_callers",
-        "mcp__tracelens__get_callees",
-        "mcp__tracelens__get_entrypoints",
-        "mcp__tracelens__search_symbol",
-        "mcp__tracelens__get_analysis_status",
-        "mcp__tracelens__get_context",
-        "mcp__tracelens__get_entrypoint_flow",
-        "mcp__tracelens__get_findings",
-        "mcp__tracelens__get_impact",
-        "mcp__tracelens__compare_snapshots"
-    ];
+    public static IReadOnlyList<string> AllowedMcpTools { get; } = typeof(TraceLens.Mcp.TraceLensTools)
+        .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+        .Select(method => method.GetCustomAttributes(inherit: false)
+            .OfType<ModelContextProtocol.Server.McpServerToolAttribute>()
+            .FirstOrDefault())
+        .Where(attribute => attribute is not null)
+        .Select(attribute => $"mcp__tracelens__{attribute!.Name}")
+        .OrderBy(name => name, StringComparer.Ordinal)
+        .ToArray();
 
     public static RouteGroupBuilder MapAskEndpoints(this RouteGroupBuilder group)
     {

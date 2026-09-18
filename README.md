@@ -237,15 +237,17 @@ can paste straight into a terminal** — and never overwrites your existing conf
 an "Agent guide" tab with a section to paste into the target repository's `CLAUDE.md`/`AGENTS.md`;
 without it the agent will grep around as usual.
 
-| Tool | What it returns |
-|---|---|
-| `get_analysis_status` | Target, timestamp, freshness, capabilities, diagnostics. **Call this first.** |
-| `get_context` | The same task context the UI previews |
-| `get_entrypoint_flow` | One entry point's bounded call path and its boundaries |
-| `get_findings` | Findings with confidence, plus the list of disabled rules |
-| `get_impact` | Entry points that may be affected by changing a method |
-| `compare_snapshots` | Differences against a saved baseline |
-| `get_node` · `get_source` · `get_callers` · `get_callees` · `get_entrypoints` · `search_symbol` | Nodes, source, adjacent calls with evidence, entry points, symbol search |
+| Tool | What it returns | Ask it like this |
+|---|---|---|
+| `get_analysis_status` | Target, timestamp, freshness, capabilities, diagnostics. **Call this first.** `suggestedNextTools` in the response points at the next tool. | (first, whatever the question) |
+| `get_entrypoints` | The list of HTTP entry points | "What APIs does this service expose?" |
+| `get_entrypoint_flow` | One entry point's bounded call path and its boundaries | "What does POST /api/orders call, in what order?" |
+| `get_context` | The same task context the UI previews | "Explain what this endpoint does from input to storage, citing the evidence ids" |
+| `search_symbol` | Node search by name or namespace | "Where is CreateOrderAsync?" |
+| `get_impact` | Entry points that may be affected by changing a method | "If I change this method, which APIs are affected and which tests are needed?" |
+| `get_findings` | Findings with confidence, plus the list of disabled rules | "If step 2 of this write path fails, what is left behind?" (`ruleId=COMP-`) |
+| `compare_snapshots` | Differences against a saved baseline | "Does this change introduce unintended call path changes?" |
+| `get_node` · `get_source` · `get_callers` · `get_callees` | Nodes, source, adjacent calls with evidence | "What does this line actually call?" |
 
 Every tool reads an already-saved analysis and **never re-analyzes**. Responses carry a `snapshotId`;
 pass it back as `expectedSnapshotId` and you get a `SNAPSHOT_MISMATCH` if the analysis changed
