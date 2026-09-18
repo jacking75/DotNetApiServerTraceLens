@@ -668,10 +668,13 @@ dotnet publish src/TraceLens.Server -c Release -o publish</code></pre>
 # or run the dll directly with dotnet
 dotnet .\publish\TraceLens.Server.dll</code></pre>
       <p>
-        The port is hardcoded to <code>http://127.0.0.1:25011</code> in the source
-        (<code>Program.cs</code>), so the published build comes up at the same address. Open
-        <code>http://127.0.0.1:25011</code> in a browser. Stop with
-        <span class="kbd">Ctrl</span>+<span class="kbd">C</span> or by closing the console window.
+        The default port is <code>25011</code> and it always binds to <code>127.0.0.1</code> only
+        (design constraint 4). If that port is taken, change it with <code>--port &lt;number&gt;</code>:
+        <code>dotnet .\publish\TraceLens.Server.dll --port 25099</code> for a published build,
+        <code>tracelens serve --port 25099</code> for the packaged tool, and
+        <code>.\run.ps1 -Port 25099</code> from source.
+        Stop with <span class="kbd">Ctrl</span>+<span class="kbd">C</span> or by closing the console window;
+        if you started it in the background, end it with <code>Get-Process tracelens | Stop-Process</code>.
       </p>
       <div class="callout warn">
         <strong>Re-analysis is still required.</strong> "Using the build output" means running

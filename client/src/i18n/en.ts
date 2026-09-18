@@ -25,6 +25,8 @@ export const en: Dictionary = {
   'app.guideClose': 'Hide guide',
   'app.analyzeFailed': 'Analysis failed.',
   'app.importFailed': 'Could not open that file.',
+  'app.longRunningHint': 'If this takes long, narrow the target to a .csproj or set analysisScope: "entryPoints" in the config.',
+  'error.PATH_TOO_LONG': 'The path is too long. Enable Windows long path support or move it somewhere shorter.',
   'app.cancel': 'Cancel',
 
   'view.callflow': 'Call flow',
@@ -319,6 +321,7 @@ export const en: Dictionary = {
   'diagnostics.cannotAnalyze': 'Analysis cannot run. Fix the errors below first.',
   'diagnostics.open': 'Run environment check',
   'diagnostics.failed': 'The environment check failed.',
+  'diagnostics.unsupportedFormat': 'This format is not supported yet.',
   'diagnostics.supported': 'Supported targets: {list}',
 
   'diagnostics.logFile': 'Log file',

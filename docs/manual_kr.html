@@ -656,9 +656,12 @@ dotnet publish src/TraceLens.Server -c Release -o publish</code></pre>
 # 또는 dll을 dotnet으로 직접 실행
 dotnet .\publish\TraceLens.Server.dll</code></pre>
       <p>
-        포트는 소스(<code>Program.cs</code>)에 <code>http://127.0.0.1:25011</code>로 고정되어 있어 게시본도
-        똑같은 주소로 뜬다. 브라우저에서 <code>http://127.0.0.1:25011</code>을 열면 된다. 종료는
-        <span class="kbd">Ctrl</span>+<span class="kbd">C</span> 또는 콘솔 창 닫기.
+        기본 포트는 <code>25011</code>이고 항상 <code>127.0.0.1</code>에만 바인딩한다(설계 제약 4).
+        이미 쓰이고 있으면 <code>--port &lt;번호&gt;</code>로 바꾼다 —
+        게시본은 <code>dotnet .\publish\TraceLens.Server.dll --port 25099</code>,
+        배포물은 <code>tracelens serve --port 25099</code>, 소스는 <code>.\run.ps1 -Port 25099</code>다.
+        종료는 <span class="kbd">Ctrl</span>+<span class="kbd">C</span> 또는 콘솔 창 닫기이고,
+        백그라운드로 띄웠다면 <code>Get-Process tracelens | Stop-Process</code>로 끝낸다.
       </p>
       <div class="callout warn">
         <strong>재분석은 여전히 필요하다.</strong> "빌드된 것을 쓴다"는 TraceLens 도구 자체를 배포판으로

@@ -7,6 +7,7 @@ namespace TraceLens.Analyzer.Tests;
 /// 존재하지 않는 라우트를 "확실"로 보여 주거나 버전이 다른 두 API를 하나로 뭉개지 않는지 본다.
 /// 둘 다 화면의 숫자를 그대로 믿는 사람에게 직접 피해를 주는 오류다.
 /// </summary>
+[Collection(FixtureClassicAppCollection.Name)]
 public sealed class EntryPointAccuracyTests
 {
     [Fact]

@@ -7,6 +7,7 @@ namespace TraceLens.Analyzer.Tests;
 /// .NET Core 3.1~5 구조(<c>Program.cs</c> + <c>Startup.cs</c>)에서 시작 흐름·미들웨어가 채워지는지 본다.
 /// 예전에는 <c>Program.cs</c>를 먼저 찾고 거기서 멈춰 두 보기가 통째로 비었고, 이유도 결과에 남지 않았다.
 /// </summary>
+[Collection(FixtureClassicAppCollection.Name)]
 public sealed class ClassicHostTests
 {
     [Fact]

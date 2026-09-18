@@ -1,3 +1,5 @@
+using TraceLens.Analyzer;
+
 namespace TraceLens.Server.Endpoints;
 
 /// <summary>
@@ -21,7 +23,21 @@ public static class BrowseEndpoints
 
     internal static IResult Browse(string? path)
     {
-        var directory = ResolveDirectory(path);
+        string? directory;
+        try
+        {
+            directory = ResolveDirectory(path);
+        }
+        catch (PathTooLongException exception)
+        {
+            // 조용히 드라이브 목록으로 돌아가면 "찾아보기가 갑자기 처음으로 간다"로 보인다.
+            return ApiResults.Error(
+                StatusCodes.Status400BadRequest,
+                "PATH_TOO_LONG",
+                "경로가 너무 길다. Windows 긴 경로 지원을 켜거나 더 짧은 위치로 옮겨야 한다.",
+                new { detail = exception.Message });
+        }
+
         if (directory is null)
         {
             return Results.Ok(new BrowseResponse(null, null, GetRoots()));
@@ -34,7 +50,12 @@ public static class BrowseEndpoints
                 .Select(file => (File: file, Kind: GetTargetKind(file.Name)))
                 .Where(item => item.Kind is not null)
                 .OrderBy(item => item.File.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(item => new BrowseEntry(item.File.Name, item.File.FullName, item.Kind!.Value));
+                .Select(item => new BrowseEntry(item.File.Name, item.File.FullName, item.Kind!.Value)
+                {
+                    Reason = item.Kind == BrowseEntryKind.Unsupported
+                        ? SolutionLoader.UnsupportedExtensions[Path.GetExtension(item.File.Name).ToLowerInvariant()]
+                        : string.Empty
+                });
             var directories = info.EnumerateDirectories()
                 .Where(child => !child.Attributes.HasFlag(FileAttributes.Hidden) && !SkippedDirectories.Contains(child.Name))
                 .OrderBy(child => child.Name, StringComparer.OrdinalIgnoreCase)
@@ -70,7 +91,12 @@ public static class BrowseEndpoints
         {
             candidate = Path.GetFullPath(path.Trim());
         }
-        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        catch (PathTooLongException)
+        {
+            // 호출자가 오류 코드로 바꾼다. 여기서 null을 돌려주면 원인이 사라진다.
+            throw;
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
         {
             return null;
         }
@@ -88,12 +114,25 @@ public static class BrowseEndpoints
         return string.IsNullOrEmpty(candidate) ? null : candidate;
     }
 
-    private static BrowseEntryKind? GetTargetKind(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() switch
+    /// <summary>
+    /// 목록에 보여 줄 파일 종류. 지원하지 않는 형식(<c>.slnx</c> 등)도 <see cref="BrowseEntryKind.Unsupported"/>로 보여 준다 —
+    /// 목록에서 아예 빼면 <c>.slnx</c>만 있는 폴더가 빈 폴더로 보이고, 잘 써 둔 미지원 사유에 닿을 수 없다.
+    /// </summary>
+    private static BrowseEntryKind? GetTargetKind(string fileName)
     {
-        ".sln" => BrowseEntryKind.Solution,
-        ".csproj" => BrowseEntryKind.Project,
-        _ => null
-    };
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        if (extension is ".sln")
+        {
+            return BrowseEntryKind.Solution;
+        }
+
+        if (extension is ".csproj")
+        {
+            return BrowseEntryKind.Project;
+        }
+
+        return SolutionLoader.UnsupportedExtensions.ContainsKey(extension) ? BrowseEntryKind.Unsupported : null;
+    }
 
     private static IReadOnlyList<BrowseEntry> GetRoots()
     {
@@ -121,10 +160,17 @@ public enum BrowseEntryKind
 {
     Directory,
     Solution,
-    Project
+    Project,
+
+    /// <summary>아직 지원하지 않는 형식. 목록에는 보여 주되 고를 수는 없고 사유를 함께 준다.</summary>
+    Unsupported
 }
 
-public sealed record BrowseEntry(string Name, string Path, BrowseEntryKind Kind);
+/// <param name="Reason">지원하지 않는 형식일 때의 사유. 그 밖에는 빈 문자열이다.</param>
+public sealed record BrowseEntry(string Name, string Path, BrowseEntryKind Kind)
+{
+    public string Reason { get; init; } = string.Empty;
+}
 
 /// <param name="Path">지금 보고 있는 디렉터리. 드라이브 목록을 보여줄 때는 null이다.</param>
 /// <param name="ParentPath">상위 디렉터리. 드라이브 루트면 null이다.</param>

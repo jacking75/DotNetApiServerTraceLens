@@ -77,6 +77,9 @@ import type {
 
 const GraphView = lazy(() => import('./components/GraphView').then((module) => ({ default: module.GraphView })))
 
+/** 분석이 이만큼 넘게 걸리면 범위를 좁히는 처방을 띄운다. */
+const longRunningHintMs = 60_000
+
 const minCenter = 360
 const minLeft = 190
 const minRight = 280
@@ -119,6 +122,9 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<string | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
+  /** 분석이 오래 걸릴 때 처방을 띄우기 위한 시작 시각. null이면 분석 중이 아니다. */
+  const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null)
+  const [longRunning, setLongRunning] = useState(false)
   /**
    * 실패 배너. `summary`는 번역한 한 줄, `detail`은 서버·예외 원문(접어 둔다).
    * `code`가 있으면 다음 행동(환경 점검·대상 다시 고르기)을 함께 보여 준다.
@@ -523,6 +529,8 @@ export default function App() {
     setError(null)
     setProgress(null)
     setTargetPicked(false)
+    setAnalysisStartedAt(Date.now())
+    setLongRunning(false)
     try {
       const job = await startAnalysisJob(target)
       setJobId(job.id)
@@ -568,8 +576,17 @@ export default function App() {
       setBusy(false)
       setProgress(null)
       setJobId(null)
+      setAnalysisStartedAt(null)
+      setLongRunning(false)
     }
   }, [solutionPath, loadGraphData, applyAnalyzedGraph, describeError, summarizeFrom, t])
+
+  // 오래 걸리면 "기다리는 것 말고 할 수 있는 일"을 알려 준다. 진행 표시만으로는 알 수 없다.
+  useEffect(() => {
+    if (analysisStartedAt === null) return
+    const timer = window.setTimeout(() => setLongRunning(true), longRunningHintMs)
+    return () => window.clearTimeout(timer)
+  }, [analysisStartedAt])
 
 
   const cancelAnalysis = async () => {
@@ -1333,7 +1350,17 @@ export default function App() {
           )}
         </div>
       )}
-      {progress && <div className="analysis-progress" aria-live="polite">{progress}</div>}
+      {progress && (
+        <div className="analysis-progress" aria-live="polite">
+          {progress}
+          {longRunning && (
+            <span className="hint">
+              {' · '}{t('app.longRunningHint')}
+              <a href={`/manual/${lang}#target-config`} target="_blank" rel="noreferrer">{t('help.manual')}</a>
+            </span>
+          )}
+        </div>
+      )}
       {summary?.notice && (
         <div className="analysis-notice warn-banner" role="status">
           <span aria-hidden="true">⚠</span>

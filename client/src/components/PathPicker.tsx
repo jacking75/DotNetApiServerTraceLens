@@ -8,6 +8,7 @@ const kindBadge: Record<BrowseEntry['kind'], string> = {
   Directory: '',
   Solution: 'SLN',
   Project: 'CSPROJ',
+  Unsupported: '?',
 }
 
 interface PathPickerProps {
@@ -77,6 +78,9 @@ export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: 
       return
     }
 
+    // 지원하지 않는 형식은 고를 수 없다. 목록에서 빼면 .slnx만 있는 폴더가 빈 폴더로 보인다.
+    if (entry.kind === 'Unsupported') return
+
     setSelected(entry)
   }
 
@@ -132,12 +136,16 @@ export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: 
               key={entry.path}
               className={`picker-row ${entry.kind.toLowerCase()} ${selected?.path === entry.path ? 'selected' : ''}`}
               onClick={() => openEntry(entry)}
-              onDoubleClick={() => entry.kind !== 'Directory' && onSelect(entry.path)}
-              title={entry.path}
+              onDoubleClick={() => entry.kind !== 'Directory' && entry.kind !== 'Unsupported' && onSelect(entry.path)}
+              disabled={entry.kind === 'Unsupported'}
+              title={entry.kind === 'Unsupported' ? `${entry.path}\n${entry.reason ?? ''}` : entry.path}
             >
               <span className="picker-icon">{entry.kind === 'Directory' ? '📁' : '📄'}</span>
               <span className="picker-name">{entry.name}</span>
               {kindBadge[entry.kind] && <span className="picker-badge">{kindBadge[entry.kind]}</span>}
+              {entry.kind === 'Unsupported' && (
+                <span className="picker-reason">{entry.reason || t('diagnostics.unsupportedFormat')}</span>
+              )}
             </button>
           ))}
         </div>

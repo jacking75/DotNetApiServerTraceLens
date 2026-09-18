@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace TraceLens.Analyzer.Tests;
@@ -78,4 +79,46 @@ public sealed class ConfigSchemaTests
 
     private static string GetRepositoryRoot([System.Runtime.CompilerServices.CallerFilePath] string sourcePath = "") =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(sourcePath)!, "..", ".."));
+}
+
+/// <summary>
+/// 기본 analysisScope=solution이라 테스트 프로젝트의 타입이 클래스 다이어그램에 섞인다.
+/// 제외 수단이 실제로 동작하는지, 그리고 뺀 프로젝트가 진단에 남는지 확인한다 —
+/// 조용히 사라지면 "왜 이 타입이 없지"를 알 수 없다.
+/// </summary>
+[Collection(FixtureClassicAppCollection.Name)]
+public sealed class ProjectExclusionTests
+{
+    [Fact]
+    public async Task ExcludeProjectNamePatterns_RemovesMatchingProjectsButKeepsThemInDiagnostics()
+    {
+        var root = Path.Combine(GetTestsRoot(), "FixturesClassic");
+        var configPath = Path.Combine(root, TraceLensConfig.FileName);
+        await File.WriteAllTextAsync(configPath, "{ \"excludeProjectNamePatterns\": [\"FixtureClassicApp\"] }");
+        try
+        {
+            var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+            services.AddLogging();
+            services.AddTraceLensAnalyzer();
+            await using var provider = services.BuildServiceProvider();
+
+            var result = await provider.GetRequiredService<ITraceLensAnalyzer>()
+                .AnalyzeAsync(Path.Combine(root, "FixtureClassicApp", "FixtureClassicApp.csproj"));
+
+            // 제외했으므로 진입점도 클래스도 나오지 않는다.
+            Assert.Empty(result.Graph.EntryPoints);
+
+            // 그러나 "무엇을 뺐는지"는 진단에 남는다.
+            var excluded = result.Graph.Diagnostics!.Projects.Single(project => project.Name == "FixtureClassicApp");
+            Assert.False(excluded.Loaded);
+            Assert.Contains(excluded.SampleErrors, line => line.Contains("excludeProjectNamePatterns", StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(configPath);
+        }
+    }
+
+    private static string GetTestsRoot([System.Runtime.CompilerServices.CallerFilePath] string sourcePath = "") =>
+        Path.GetDirectoryName(sourcePath)!;
 }

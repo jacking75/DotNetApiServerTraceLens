@@ -131,14 +131,26 @@ public static class DemoSamples
     /// <summary>저장소 루트까지는 보통 6~7단계면 닿는다. 드라이브 루트까지 훑지 않도록 상한을 둔다.</summary>
     private const int MaxAncestorLevels = 7;
 
+    /// <summary>
+    /// 마지막으로 무시한 경로 문제. 긴 경로(OneDrive 등)에서 예제가 "그냥 없는 것"처럼 보이지 않게
+    /// 호출자가 사유를 읽어 로그·안내에 남길 수 있게 한다.
+    /// </summary>
+    public static string? LastPathIssue { get; private set; }
+
     private static DirectoryInfo? SafeDirectory(string path)
     {
         try
         {
             return new DirectoryInfo(path);
         }
-        catch (Exception exception) when (exception is ArgumentException or PathTooLongException or NotSupportedException)
+        catch (PathTooLongException exception)
         {
+            LastPathIssue = $"경로가 너무 길어 예제를 찾지 못했다: {exception.Message}";
+            return null;
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+        {
+            LastPathIssue = $"경로를 읽지 못해 예제를 찾지 못했다: {exception.Message}";
             return null;
         }
     }

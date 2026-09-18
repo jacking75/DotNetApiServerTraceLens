@@ -10,6 +10,8 @@
     -Dev를 주면 API 서버(25011)와 Vite 개발 서버(25012)를 함께 띄운다.
     클라이언트 코드를 고치면서 HMR로 확인할 때 쓴다.
 
+    포트가 이미 쓰이고 있으면 -Port로 바꾼다. 서버에 --port로 그대로 넘기고 브라우저 주소도 맞춘다.
+
     배포물을 만들려면 .\pack.ps1 을 쓴다(소스·Node.js 없이 실행할 수 있는 ZIP과 .NET tool 패키지).
     분석만 하거나 MCP만 띄우려면 CLI를 쓴다: dotnet run --project src/TraceLens.Cli -- analyze <대상>
 
@@ -18,6 +20,9 @@
 
 .EXAMPLE
     .\run.ps1 -Dev
+
+.EXAMPLE
+    .\run.ps1 -Port 25099
 #>
 [CmdletBinding()]
 param(
@@ -26,7 +31,9 @@ param(
     # 빌드를 건너뛰고 바로 실행한다(이미 빌드해 둔 경우).
     [switch]$SkipBuild,
     # 브라우저를 자동으로 열지 않는다.
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    # API 서버가 쓸 포트. 기본값 25011이 이미 쓰이고 있을 때 바꾼다.
+    [int]$Port = 25011
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,7 +42,7 @@ $repositoryRoot = $PSScriptRoot
 $clientPath = Join-Path $repositoryRoot 'client'
 $serverProject = Join-Path $repositoryRoot 'src\TraceLens.Server'
 $solutionPath = Join-Path $repositoryRoot 'TraceLens.sln'
-$apiUrl = 'http://127.0.0.1:25011'
+$apiUrl = "http://127.0.0.1:$Port"
 $devUrl = 'http://localhost:25012'
 
 function Assert-Command {
@@ -101,7 +108,7 @@ if (-not $SkipBuild) {
 if (-not $Dev) {
     Write-Host "==> TraceLens 실행: $apiUrl (Ctrl+C로 종료)" -ForegroundColor Green
     Start-BrowserWhenReady $apiUrl
-    dotnet run --project $serverProject --no-launch-profile
+    dotnet run --project $serverProject --no-launch-profile -- --port $Port
     exit $LASTEXITCODE
 }
 
@@ -113,7 +120,7 @@ if (-not (Test-Path $serverAssembly)) {
 # 개발 모드에서는 API 서버를 백그라운드로 띄우고, 포그라운드의 Vite 개발 서버가 /api 요청을 프록시한다.
 $env:ASPNETCORE_ENVIRONMENT = 'Development'
 Write-Host "==> API 서버 실행: $apiUrl" -ForegroundColor Green
-$serverProcess = Start-Process 'dotnet' -ArgumentList $serverAssembly -PassThru
+$serverProcess = Start-Process 'dotnet' -ArgumentList @($serverAssembly, '--port', $Port) -PassThru
 
 try {
     Write-Host "==> Vite 개발 서버 실행: $devUrl (Ctrl+C로 둘 다 종료)" -ForegroundColor Green

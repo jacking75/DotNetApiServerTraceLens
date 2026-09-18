@@ -25,6 +25,8 @@ export const ko = {
   'app.guideClose': '안내 닫기',
   'app.analyzeFailed': '분석에 실패했다.',
   'app.importFailed': '파일을 불러오지 못했다.',
+  'app.longRunningHint': '오래 걸린다면 대상을 .csproj로 좁히거나 설정에 analysisScope: "entryPoints"를 둔다.',
+  'error.PATH_TOO_LONG': '경로가 너무 길다. Windows 긴 경로 지원을 켜거나 더 짧은 위치로 옮겨야 한다.',
   'app.cancel': '취소',
 
   'view.callflow': '호출 흐름',
@@ -316,6 +318,7 @@ export const ko = {
   'diagnostics.cannotAnalyze': '분석을 실행할 수 없다. 아래 오류를 먼저 해결해야 한다.',
   'diagnostics.open': '환경 점검 보기',
   'diagnostics.failed': '환경 점검에 실패했다.',
+  'diagnostics.unsupportedFormat': '아직 지원하지 않는 형식이다.',
   'diagnostics.supported': '지원 대상: {list}',
 
   'diagnostics.logFile': '로그 파일',

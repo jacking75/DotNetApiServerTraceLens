@@ -729,3 +729,7 @@ table.findings .conf { color: #8a97a9; font-size: 10.5px; white-space: nowrap; }
 
 /* T34 — 헤더의 버전 표시 */
 .app-version { color: var(--dim-2); font-size: 10.5px; align-self: center; }
+
+/* T36 — 지원하지 않는 형식은 목록에 보이되 고를 수 없다. 빈 폴더로 보이면 사유에 닿을 수 없다. */
+.picker-row.unsupported { opacity: .6; cursor: not-allowed; }
+.picker-reason { color: var(--dim-2); font-size: 10.5px; margin-left: auto; }

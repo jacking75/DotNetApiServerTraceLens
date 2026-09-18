@@ -60,6 +60,7 @@
 | `diagnostics.entryPointCandidates` | HTTP 밖 실행 단위 후보(`HostedService`·`MessageConsumer`·`SignalRHub`·`GrpcService`·`ScheduledJob`·`AzureFunction`·`HealthCheck`·`ConventionalRouting`). 진입점·엣지를 만들지 않는다. | 빈 목록 |
 | `middleware.steps[].type = "Extension"` | 솔루션 안 확장 메서드(`app.UseCompanyAuth()`). 본문에서 등록한 미들웨어를 하위 단계로 펼치고 `parentId`로 잇는다(깊이 2). 펼치지 못하면 그 사유를 `pre`에 적는다. | `Framework`로 읽는다 |
 | `middleware.steps[].parentId` | 이 단계를 펼쳐서 나온 상위 단계 ID. 최상위면 null. | null |
+| `browse` 응답의 `kind = "Unsupported"` | 아직 지원하지 않는 형식(.slnx 등). 목록에는 보이되 고를 수 없고 `reason`에 사유가 있다. | 이 값이 없던 서버는 그 파일을 목록에서 뺐다 |
 | `entryPoints[].apiVersions` | `[ApiVersion]`으로 선언한 버전. 라우트에 `{version:apiVersion}` 토큰이 있으면 버전마다 진입점이 하나씩 나오고, 없으면 라우트는 같고 `endpointId`로만 구분한다. | 빈 목록 |
 | `dataAccess.accesses[].operation = "Unknown"` | 저장 프로시저처럼 본문을 읽지 않아 읽기/쓰기를 확정하지 못한 접근. 쓰기 경로 단계로 세지 않고 점검 결과 상단에 개수로만 나온다. | 이 값이 없던 문서에는 나오지 않는다 |
 | `dataAccess.transactions[].kind = "Scope"` | `using var scope = new TransactionScope(...)`로 연 주변 트랜잭션. `scope.Complete()`가 커밋이다. | `Explicit`로 읽는다 |

@@ -269,7 +269,34 @@ public static class CommandRouter
             }
         }
 
+        PrintTestProjectHint(diagnostics);
         PrintGitIgnoreTip(targetPath);
+    }
+
+    /// <summary>
+    /// 테스트로 보이는 프로젝트가 섞여 있으면 알린다. 기본 analysisScope=solution이라
+    /// 테스트 프로젝트의 타입이 클래스 다이어그램에 함께 나온다.
+    /// 판정은 이름 규칙뿐이라 "보인다"로만 쓰고 자동으로 빼지 않는다.
+    /// </summary>
+    private static void PrintTestProjectHint(AnalysisDiagnostics? diagnostics)
+    {
+        if (diagnostics is null)
+        {
+            return;
+        }
+
+        var testLike = diagnostics.Projects
+            .Where(project => project.Loaded)
+            .Count(project =>
+                project.Name.EndsWith(".Tests", StringComparison.OrdinalIgnoreCase) ||
+                project.Name.EndsWith(".Test", StringComparison.OrdinalIgnoreCase) ||
+                project.Name.EndsWith("Tests", StringComparison.OrdinalIgnoreCase));
+        if (testLike > 0)
+        {
+            Console.WriteLine(
+                $"  테스트로 보이는 프로젝트 {testLike}개를 함께 분석했다 → 빼려면 설정에 " +
+                "excludeProjectNamePatterns: [\"*.Tests\"]를 둔다(`tracelens init`).");
+        }
     }
 
     /// <summary>
@@ -557,6 +584,10 @@ public static class CommandRouter
         if (samples.Count == 0)
         {
             Console.Error.WriteLine("예제를 찾을 수 없다. 배포 패키지에 samples 폴더가 들어 있어야 한다.");
+            if (DemoSamples.LastPathIssue is { Length: > 0 } issue)
+            {
+                Console.Error.WriteLine($"  {issue}");
+            }
             return 1;
         }
 
