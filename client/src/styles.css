@@ -736,3 +736,24 @@ table.findings .conf { color: #8a97a9; font-size: 10.5px; white-space: nowrap; }
 
 /* T37 — 첫 화면 지원 범위의 "지금 읽지 않는 것" */
 .scope-not-read { color: var(--dim-2); }
+
+/* T38 — 통합 찾기(Ctrl+K) */
+.quick-find { width: min(620px, 92vw); max-height: 70vh; }
+.quick-find input { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+.find-row {
+  display: flex; gap: 10px; align-items: baseline; width: 100%; text-align: left;
+  background: transparent; border: 0; border-radius: 7px; padding: 5px 8px; color: var(--text); font-size: 12.5px;
+}
+.find-row:hover, .find-row.selected { background: #17253a; }
+.find-row .grow { flex: 1; }
+.find-row .hint { flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+
+/* T38 — 진입점 목록의 컨트롤러 그룹 접기 */
+.side-group.toggle {
+  display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
+  background: transparent; border: 0; cursor: pointer;
+}
+.side-group.toggle .grow { flex: 1; }
+.side-group.toggle:hover { color: var(--text); }
+.side-item.nested.deep { padding-left: 34px; }
+.detail-hint.warn { color: #ffc68e; }

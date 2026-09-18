@@ -31,6 +31,7 @@ import { MiddlewareView } from './components/MiddlewareView'
 import { FlowDiagram } from './components/FlowDiagram'
 import { FreshnessBadge } from './components/FreshnessBadge'
 import { PathPicker } from './components/PathPicker'
+import { QuickFind } from './components/QuickFind'
 import { EntryPointList, FlowSidePanel, NamespacePanel, StartupFlowSidePanel } from './components/SidePanels'
 import { SnapshotDiffPanel } from './components/SnapshotDiffPanel'
 import { Splitter } from './components/Splitter'
@@ -153,6 +154,8 @@ export default function App() {
   const [targetPicked, setTargetPicked] = useState(false)
   /** 도움말 대화상자. `?` 링크로 열면 그 용어를 강조한 용어집 탭이 열린다. */
   const [help, setHelp] = useState<{ tab: HelpTab; term: GlossaryTerm | null } | null>(null)
+  /** Ctrl+K 통합 찾기. 입력칸에 포커스가 없을 때만 열린다. */
+  const [findOpen, setFindOpen] = useState(false)
   const openGlossary = useCallback((term: GlossaryTerm) => setHelp({ tab: 'glossary', term }), [])
   const [diagnostics, setDiagnostics] = useState<DiagnosticsReport | null>(null)
   const [samples, setSamples] = useState<SampleView[]>([])
@@ -395,6 +398,20 @@ export default function App() {
   }, [applyColumns, measureShell])
 
   useEffect(() => { measureShell() }, [viewMode, columns, measureShell])
+
+  // Ctrl+K로 통합 찾기를 연다. 입력·편집 중에는 가로채지 않는다(검색어를 치다 팔레트가 뜨면 안 된다).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k') return
+      const target = event.target as HTMLElement | null
+      if (target?.isContentEditable || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
+      event.preventDefault()
+      setFindOpen(true)
+    }
+
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   /* ---------------------------------------------------------------- 데이터 적재 */
 
@@ -845,6 +862,41 @@ export default function App() {
       setRecipeCopied(t('ask.copyFailed'))
     }
   }
+
+  /**
+   * 통합 찾기 결과를 연다. 진입점 → 호출 흐름, 클래스 → 클래스 다이어그램, 메서드 → 그 노드 선택.
+   * 메서드가 어떤 진입점에서도 도달하지 않으면 상세만 열고 그 사실을 상세 패널이 말한다.
+   */
+  const openSearchHit = useCallback((hit: { kind: string; id: string }) => {
+    setFindOpen(false)
+    if (hit.kind === 'entryPoint') {
+      const entry = entryPoints.find((item) => item.endpointId === hit.id)
+      if (!entry) return
+      setViewMode('callflow')
+      setCallFlowEntry(entry)
+      setFocusStack([])
+      setHighlightPath([])
+      setSelection({ type: 'method', key: entry.nodeId })
+      return
+    }
+
+    if (hit.kind === 'class') {
+      showInDiagram(hit.id)
+      return
+    }
+
+    // 메서드: 도달하는 진입점이 있으면 그 호출 흐름을 열고, 없으면 선택만 한다.
+    const entryNodeId = findEntryPointFor(hit.id)
+    const entry = entryNodeId ? entryPoints.find((item) => item.nodeId === entryNodeId) : undefined
+    if (entry) {
+      setViewMode('callflow')
+      setCallFlowEntry(entry)
+      setFocusStack([])
+      setHighlightPath(findPath(entry.nodeId, hit.id))
+    }
+
+    setSelection({ type: 'method', key: hit.id })
+  }, [entryPoints, findEntryPointFor, findPath, showInDiagram])
 
   const drilldown = useCallback((nodeId: string) => {
     setFocusStack((current) => (current[current.length - 1] === nodeId ? current : [...current, nodeId]))
@@ -1479,6 +1531,10 @@ export default function App() {
         </div>
       )}
 
+      {findOpen && (
+        <QuickFind graph={graph} onPick={openSearchHit} onClose={() => setFindOpen(false)} />
+      )}
+
       {help && (
         <HelpDialog
           initialTab={help.tab}
@@ -1587,6 +1643,7 @@ export default function App() {
               }))}
               onGoToNamespace={goToNamespace}
               onGoToClass={(graphClass) => showInDiagram(graphClass.id)}
+              onSelectMember={selectMember}
             />
           )}
           {viewMode === 'flowmap' && (

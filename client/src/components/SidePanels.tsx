@@ -1,7 +1,14 @@
 import { useMemo, useState } from 'react'
-import { shortenNamespace } from '../graph/classDiagram'
+import { memberKey, shortenNamespace } from '../graph/classDiagram'
 import { countByLifetime, countSteps } from '../graph/startupFlow'
-import type { EntryPoint, GraphClass, GraphNamespaceSummary, Selection, StartupFlowDocument } from '../types/graph'
+import type {
+  EntryPoint,
+  GraphClass,
+  GraphClassMember,
+  GraphNamespaceSummary,
+  Selection,
+  StartupFlowDocument,
+} from '../types/graph'
 import { useI18n } from '../i18n/I18nProvider'
 import { kindColors } from './kindColors'
 
@@ -18,6 +25,29 @@ interface EntryPointListProps {
   onSelect: (entryPoint: EntryPoint) => void
 }
 
+/**
+ * 진입점을 컨트롤러(선언 클래스)별로 묶는다. 호출 흐름 목록과 전체 흐름도 사이드가 같은 규칙을 쓴다.
+ * 클래스를 알 수 없는 진입점(Minimal API 람다 등)은 한 그룹으로 모은다.
+ */
+export function groupByController(
+  entryPoints: readonly EntryPoint[],
+  classIdOfMethod: ((nodeId: string) => string | undefined) | undefined,
+  unknownLabel: string,
+): [string, EntryPoint[]][] {
+  const grouped = new Map<string, EntryPoint[]>()
+  for (const entryPoint of entryPoints) {
+    const classId = classIdOfMethod?.(entryPoint.nodeId) ?? unknownLabel
+    const list = grouped.get(classId)
+    if (list) list.push(entryPoint)
+    else grouped.set(classId, [entryPoint])
+  }
+
+  return [...grouped.entries()]
+}
+
+/** 이 개수를 넘는 컨트롤러 그룹은 접힌 채로 시작한다. 200개짜리 목록이 한 화면을 넘지 않게 한다. */
+const collapseGroupsAbove = 20
+
 /** 호출 흐름 보기의 좌측 패널. 진입점이 많은 솔루션을 위해 라우트·동사·컨트롤러로 거른다. */
 export function EntryPointList({
   entryPoints,
@@ -30,6 +60,8 @@ export function EntryPointList({
 }: EntryPointListProps) {
   const { t } = useI18n()
   const [keyword, setKeyword] = useState('')
+  /** 기본 접힘 상태를 뒤집은 그룹. 목록이 짧으면 펼침이 기본이라 여기 든 것이 접힌 것이다. */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const filtered = useMemo(() => {
     const needle = keyword.trim().toLowerCase()
     if (!needle) return entryPoints
@@ -39,6 +71,12 @@ export function EntryPointList({
       (classIdOfMethod?.(entryPoint.nodeId) ?? '').toLowerCase().includes(needle) ||
       entryPoint.handlerDisplayName.toLowerCase().includes(needle))
   }, [entryPoints, keyword, classIdOfMethod])
+
+  const groups = useMemo(
+    () => groupByController(filtered, classIdOfMethod, t('side.unknownClass')),
+    [filtered, classIdOfMethod, t])
+  // 컨트롤러가 많으면 접힌 채로 시작한다. 검색 중에는 결과가 보여야 하므로 항상 펼친다.
+  const collapsedByDefault = groups.length > collapseGroupsAbove && keyword.trim().length === 0
 
   return (
     <div className="side-list">
@@ -63,7 +101,24 @@ export function EntryPointList({
           </button>
         </div>
       )}
-      {filtered.map((entryPoint) => (
+      {groups.map(([classId, items]) => {
+        const open = expanded.has(classId) !== collapsedByDefault
+        return (
+          <div key={classId}>
+            <button
+              type="button"
+              className="side-group toggle"
+              aria-expanded={open}
+              onClick={() => setExpanded((current) => {
+                const next = new Set(current)
+                if (!next.delete(classId)) next.add(classId)
+                return next
+              })}
+            >
+              <span className="grow">{classId.split('.').pop() ?? classId}</span>
+              <span className="count">{items.length}</span>
+            </button>
+            {open && items.map((entryPoint) => (
         <button
           type="button"
           key={entryPoint.endpointId}
@@ -90,7 +145,10 @@ export function EntryPointList({
             </span>
           )}
         </button>
-      ))}
+            ))}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -108,6 +166,8 @@ interface NamespacePanelProps {
   onHideAll: () => void
   onGoToNamespace: (namespace: string) => void
   onGoToClass: (graphClass: GraphClass) => void
+  /** 검색으로 찾은 멤버를 눌렀을 때. 클래스가 아니라 그 멤버를 선택한다. */
+  onSelectMember: (graphClass: GraphClass, member: GraphClassMember) => void
 }
 
 /**
@@ -127,6 +187,7 @@ export function NamespacePanel({
   onHideAll,
   onGoToNamespace,
   onGoToClass,
+  onSelectMember,
 }: NamespacePanelProps) {
   const { t } = useI18n()
   const keyword = search.trim().toLowerCase()
@@ -171,7 +232,9 @@ export function NamespacePanel({
         {groups.map(([group, items]) => {
           const visible = items.filter((item) => !keyword ||
             item.namespace.toLowerCase().includes(keyword) ||
-            (classesByNamespace.get(item.namespace) ?? []).some((cls) => cls.name.toLowerCase().includes(keyword)))
+            (classesByNamespace.get(item.namespace) ?? []).some((cls) =>
+              cls.name.toLowerCase().includes(keyword) ||
+              cls.members.some((member) => member.name.toLowerCase().includes(keyword))))
           if (visible.length === 0) return null
 
           return (
@@ -180,8 +243,16 @@ export function NamespacePanel({
               {visible.map((item) => {
                 const hidden = hiddenNamespaces.has(item.namespace)
                 const selected = selection?.type === 'namespace' && selection.key === item.namespace
+                // 클래스 이름이 맞으면 클래스만, 멤버 이름이 맞으면 그 멤버를 클래스 아래 들여쓴 줄로 보여 준다.
                 const matched = keyword
-                  ? (classesByNamespace.get(item.namespace) ?? []).filter((cls) => cls.name.toLowerCase().includes(keyword))
+                  ? (classesByNamespace.get(item.namespace) ?? [])
+                    .map((cls) => ({
+                      cls,
+                      members: cls.name.toLowerCase().includes(keyword)
+                        ? []
+                        : cls.members.filter((member) => member.name.toLowerCase().includes(keyword)),
+                    }))
+                    .filter((entry) => entry.cls.name.toLowerCase().includes(keyword) || entry.members.length > 0)
                   : []
 
                 return (
@@ -208,17 +279,30 @@ export function NamespacePanel({
                       </button>
                       <span className="count">{item.classCount}</span>
                     </div>
-                    {matched.map((graphClass) => (
-                      <button
-                        type="button"
-                        key={graphClass.id}
-                        className={`side-item nested${selection?.type === 'class' && selection.key === graphClass.id ? ' selected' : ''}`}
-                        onClick={() => onGoToClass(graphClass)}
-                        title={graphClass.id}
-                      >
-                        <span className="ns-dot" style={{ background: kindColors[graphClass.kind] }} />
-                        <span className="grow">{graphClass.name}</span>
-                      </button>
+                    {matched.map(({ cls: graphClass, members }) => (
+                      <div key={graphClass.id}>
+                        <button
+                          type="button"
+                          className={`side-item nested${selection?.type === 'class' && selection.key === graphClass.id ? ' selected' : ''}`}
+                          onClick={() => onGoToClass(graphClass)}
+                          title={graphClass.id}
+                        >
+                          <span className="ns-dot" style={{ background: kindColors[graphClass.kind] }} />
+                          <span className="grow">{graphClass.name}</span>
+                        </button>
+                        {members.map((member) => (
+                          <button
+                            type="button"
+                            key={memberKey(graphClass.id, member)}
+                            className={`side-item nested deep${
+                              selection?.type === 'method' && selection.key === memberKey(graphClass.id, member) ? ' selected' : ''}`}
+                            onClick={() => onSelectMember(graphClass, member)}
+                            title={member.signature ?? member.name}
+                          >
+                            <span className="grow">{member.name}</span>
+                          </button>
+                        ))}
+                      </div>
                     ))}
                   </div>
                 )
@@ -251,17 +335,9 @@ export function FlowSidePanel({
 }: FlowSidePanelProps) {
   const { t } = useI18n()
   const classNameById = useMemo(() => new Map(classes.map((item) => [item.id, item.name])), [classes])
-  const byController = useMemo(() => {
-    const grouped = new Map<string, EntryPoint[]>()
-    for (const entryPoint of entryPoints) {
-      const classId = classIdOfMethod(entryPoint.nodeId) ?? t('side.unknownClass')
-      const list = grouped.get(classId)
-      if (list) list.push(entryPoint)
-      else grouped.set(classId, [entryPoint])
-    }
-
-    return [...grouped.entries()]
-  }, [entryPoints, classIdOfMethod, t])
+  const byController = useMemo(
+    () => groupByController(entryPoints, classIdOfMethod, t('side.unknownClass')),
+    [entryPoints, classIdOfMethod, t])
 
   return (
     <div className="side-list">

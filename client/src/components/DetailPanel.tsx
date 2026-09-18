@@ -269,6 +269,34 @@ function MethodDetail({
   const callees = graph.edges.filter((edge) => edge.from === nodeId).map((edge) => edge.to)
   const callers = graph.edges.filter((edge) => edge.to === nodeId).map((edge) => edge.from)
 
+  // 이 메서드에 도달하는 HTTP 진입점이 하나라도 있는지. 없으면 호출 흐름에 그릴 자리가 없다.
+  // "호출자가 없다 → 삭제해도 안전"이 아니다. 배치·컨슈머처럼 다른 경로로 실행될 수 있다(T29의 후보 집계).
+  const reachedByEntryPoint = useMemo(() => {
+    if (!node) return true
+    const entryIds = new Set(entryPoints.map((item) => item.nodeId))
+    if (entryIds.has(nodeId)) return true
+    const incoming = new Map<string, string[]>()
+    for (const edge of graph.edges) {
+      const list = incoming.get(edge.to)
+      if (list) list.push(edge.from)
+      else incoming.set(edge.to, [edge.from])
+    }
+
+    const seen = new Set([nodeId])
+    const queue = [nodeId]
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      if (entryIds.has(current)) return true
+      for (const from of incoming.get(current) ?? []) {
+        if (seen.has(from)) continue
+        seen.add(from)
+        queue.push(from)
+      }
+    }
+
+    return false
+  }, [graph.edges, entryPoints, nodeId, node])
+
   // 호출 근거: 이 노드가 부르거나 이 노드를 부르는 확정 엣지의 실제 호출 줄.
   const evidence = graph.callSites.filter(
     (site) => site.to.length > 0 && (site.from === nodeId || site.to === nodeId))
@@ -329,6 +357,9 @@ function MethodDetail({
       </dl>
       {entry && entry.notes.length > 0 && (
         <div className="detail-hint"><b>{t('detail.entryPointNotes')}:</b> {entry.notes.join(' ')}</div>
+      )}
+      {!reachedByEntryPoint && (
+        <div className="detail-hint warn">{t('detail.noEntryPointReaches')}</div>
       )}
 
       <PillSection
