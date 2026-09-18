@@ -757,3 +757,15 @@ table.findings .conf { color: #8a97a9; font-size: 10.5px; white-space: nowrap; }
 .side-group.toggle:hover { color: var(--text); }
 .side-item.nested.deep { padding-left: 34px; }
 .detail-hint.warn { color: #ffc68e; }
+
+/* T39 — 화면의 모든 `파일:줄`은 눌린다. 안내 문구가 그렇게 말하기 때문이다. */
+.source-link { background: transparent; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.source-link code { color: var(--dim); border-bottom: 1px dotted var(--border-2); }
+.source-link:hover code { color: #a9e7ff; border-bottom-color: #3e7695; }
+.source-view { position: relative; }
+.tracelens-callsite { background: rgba(96, 200, 255, .10); }
+.tracelens-callsite-glyph::after { content: '→'; color: #60c8ff; font-size: 11px; }
+.marker-choice {
+  position: absolute; z-index: 5; top: 6px; right: 6px; display: flex; flex-direction: column; gap: 4px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 11.5px;
+}

@@ -17,9 +17,13 @@ import type {
 import type { SourceTarget } from './CodePanel'
 import { confidenceLabel } from '../i18n/labels'
 import { HelpLink, type GlossaryTerm } from './HelpDialog'
+import { SourceLink, type SourceLocation } from './SourceLink'
 import { kindColors } from './kindColors'
 
 const SourceView = lazy(() => import('./CodePanel').then((module) => ({ default: module.SourceView })))
+
+/** `파일:줄`로 온 위치 주변에 함께 보여 줄 줄 수. 호출 한 줄만 보면 문맥을 알 수 없다. */
+const callContextLines = 15
 
 export interface DetailActions {
   onSelect: (selection: Selection) => void
@@ -30,10 +34,16 @@ export interface DetailActions {
   onGoToNamespace: (namespace: string) => void
   /** 용어집으로 보내는 `?` 링크. */
   onExplain: (term: GlossaryTerm) => void
+  /** `파일:줄`을 누르면 코드 보기를 그 위치로 옮긴다. */
+  onOpenSource: (location: SourceLocation) => void
+  /** Shift+클릭·컨텍스트 메뉴로 에디터에서 연다. */
+  onOpenInEditor: (location: SourceLocation) => void
 }
 
 interface DetailPanelProps {
   graph: GraphDocument | null
+  /** `파일:줄`을 눌러 연 위치. 없으면 선택한 항목의 선언 위치를 보여 준다. */
+  sourceTarget?: SourceLocation | null
   selection: Selection | null
   relations: ClassRelation[]
   namespaces: GraphNamespaceSummary[]
@@ -44,6 +54,7 @@ interface DetailPanelProps {
 
 export function DetailPanel({
   graph,
+  sourceTarget = null,
   selection,
   relations,
   namespaces,
@@ -68,7 +79,13 @@ export function DetailPanel({
         />
       )}
       {selection.type === 'method' && (
-        <MethodDetail graph={graph} nodeId={selection.key} entryPoints={entryPoints} actions={actions} />
+        <MethodDetail
+          graph={graph}
+          nodeId={selection.key}
+          entryPoints={entryPoints}
+          sourceTarget={sourceTarget}
+          actions={actions}
+        />
       )}
       {selection.type === 'namespace' && (
         <NamespaceDetail
@@ -245,11 +262,13 @@ function MethodDetail({
   graph,
   nodeId,
   entryPoints,
+  sourceTarget,
   actions,
 }: {
   graph: GraphDocument
   nodeId: string
   entryPoints: EntryPoint[]
+  sourceTarget: SourceLocation | null
   actions: DetailActions
 }) {
   const { t } = useI18n()
@@ -314,13 +333,47 @@ function MethodDetail({
   const signature = member?.member.signature ?? node?.displayName ?? nodeId
   const returnType = member?.member.type || node?.returnType || ''
 
+  /**
+   * `파일:줄`을 눌러 온 위치가 있으면 그 구간(±15줄)을 보여 준다.
+   * 없으면 선택한 항목의 선언 구간이다.
+   */
+  const sourceView: SourceTarget = sourceTarget
+    ? {
+      file: sourceTarget.file,
+      startLine: Math.max(1, sourceTarget.line - callContextLines),
+      endLine: (sourceTarget.endLine ?? sourceTarget.line) + callContextLines,
+    }
+    : target
+
+  // 선언 줄만 강조한다. 예전에는 1행부터 끝까지 전체를 칠해 강조의 의미가 없었다.
+  const highlightLines = sourceTarget ? [sourceTarget.line] : [target.startLine]
+
+  // 지금 보는 파일 안의 호출 지점. 여백 표시를 누르면 그 호출의 대상 노드로 간다.
+  const callMarkers = useMemo(
+    () => evidence
+      .filter((site) => site.from === nodeId && site.to.length > 0 && site.file === sourceView.file)
+      .map((site) => ({
+        line: site.line,
+        targetNodeId: site.to,
+        label: nodeNameById.get(site.to) ?? site.to,
+      })),
+    [evidence, nodeId, sourceView.file, nodeNameById])
+
   return (
     <>
       <div className="detail-title">
         <span className="dg-kind" style={{ background: kindColors[graphClass?.kind ?? 'Method'] }} />
         <h3>{node?.displayName ?? `${graphClass?.name ?? ''}.${member?.member.name ?? ''}`}</h3>
       </div>
-      <div className="detail-path">{target.file}:{target.startLine}-{target.endLine}</div>
+      <div className="detail-path">
+        <SourceLink
+          file={target.file}
+          line={target.startLine}
+          endLine={target.endLine}
+          onOpen={actions.onOpenSource}
+          onOpenInEditor={actions.onOpenInEditor}
+        />
+      </div>
       <dl className="kv">
         <dt>{t('detail.signature')}</dt>
         <dd>
@@ -378,12 +431,21 @@ function MethodDetail({
         nodeId={nodeId}
         nodeNameById={nodeNameById}
         onExplain={actions.onExplain}
+        onOpenSource={actions.onOpenSource}
+        onOpenInEditor={actions.onOpenInEditor}
       />
 
       <div className="detail-section">
         <h4>{t('detail.source')}</h4>
         <Suspense fallback={<div className="panel-message">{t('detail.loadingSource')}</div>}>
-          <SourceView target={target} height={240} emptyMessage={t('detail.loadingSource')} />
+          <SourceView
+            target={sourceView}
+            height={240}
+            emptyMessage={t('detail.loadingSource')}
+            highlightLines={highlightLines}
+            markers={callMarkers}
+            onSelectMarker={(marker) => actions.onSelect({ type: 'method', key: marker.targetNodeId })}
+          />
         </Suspense>
       </div>
 
@@ -410,6 +472,8 @@ function CallEvidenceSection({
   nodeId,
   nodeNameById,
   onExplain,
+  onOpenSource,
+  onOpenInEditor,
 }: {
   evidence: CallSite[]
   boundaries: CallSite[]
@@ -417,6 +481,8 @@ function CallEvidenceSection({
   nodeId: string
   nodeNameById: Map<string, string>
   onExplain: (term: GlossaryTerm) => void
+  onOpenSource: (location: SourceLocation) => void
+  onOpenInEditor: (location: SourceLocation) => void
 }) {
   const { t } = useI18n()
   const resolutionKeys: Record<CallResolution, TranslationKey> = {
@@ -446,7 +512,7 @@ function CallEvidenceSection({
           <li key={`${site.from}-${site.to}-${site.file}-${site.line}-${index}`}>
             <span className="evidence-dir">{site.from === nodeId ? '→' : '←'}</span>
             <b>{nodeNameById.get(site.from === nodeId ? site.to : site.from) ?? (site.from === nodeId ? site.to : site.from)}</b>
-            <code>{site.file}:{site.line}</code>
+            <SourceLink file={site.file} line={site.line} onOpen={onOpenSource} onOpenInEditor={onOpenInEditor} />
             <span className={`chip small${site.confidence === 'Estimated' ? ' warn' : ''}`}>
               {t(resolutionKeys[site.resolution])}
             </span>
@@ -462,7 +528,7 @@ function CallEvidenceSection({
         {boundaries.map((site, index) => (
           <li key={`${site.file}-${site.line}-${index}`}>
             <b>{site.declaredTarget}</b>
-            <code>{site.file}:{site.line}</code>
+            <SourceLink file={site.file} line={site.line} onOpen={onOpenSource} onOpenInEditor={onOpenInEditor} />
             <span className="chip small warn">{t(resolutionKeys[site.resolution])}</span>
             {site.viaLambda && <span className="chip small warn">{t('detail.viaLambda')}</span>}
             {site.note && <div className="detail-hint">{site.note}</div>}

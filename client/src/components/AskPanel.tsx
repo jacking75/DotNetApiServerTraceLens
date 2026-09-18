@@ -8,6 +8,7 @@ import type { AskMode } from '../types/graph'
 import { ContextPreview } from './ContextPreview'
 import { HelpLink, type GlossaryTerm } from './HelpDialog'
 import { McpSetupDialog } from './McpSetupDialog'
+import type { SourceLocation } from './SourceLink'
 import { ShareReportDialog } from './ShareReportDialog'
 
 /** 질문 패널이 다루는 선택. 실행 가능한 노드가 없어도 문맥은 만들 수 있다. */
@@ -28,6 +29,8 @@ interface AskPanelProps {
   onContextCopied?: () => void
   /** 용어집으로 보내는 `?` 링크. */
   onExplain: (term: GlossaryTerm) => void
+  /** 문맥 미리보기의 `파일:줄`을 누르면 코드 보기를 그 위치로 옮긴다. */
+  onOpenSource?: (location: SourceLocation) => void
 }
 
 const modeKeys: Record<AskMode, TranslationKey> = {
@@ -63,7 +66,7 @@ interface RecentAnswer {
  * 선택한 위치를 "작업 문맥"으로 바꿔 AI에 전달한다.
  * 문맥은 서버의 `POST /api/context` 하나에서 나오므로 클립보드·인앱 실행·MCP가 같은 내용을 쓴다.
  */
-export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied, onExplain }: AskPanelProps) {
+export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied, onExplain, onOpenSource }: AskPanelProps) {
   const { t, lang } = useI18n()
   const [mode, setMode] = useState<AskMode>('context')
   const [intent, setIntent] = useState<ContextIntent>('Explain')
@@ -428,6 +431,7 @@ export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied,
         {mode !== 'editor' && preview && (
           <ContextPreview
             context={preview}
+            onOpenSource={onOpenSource}
             excludedFiles={excludedFiles}
             onToggleFile={(file, include) => setExcludedFiles((current) =>
               include ? current.filter((item) => item !== file) : [...current, file])}

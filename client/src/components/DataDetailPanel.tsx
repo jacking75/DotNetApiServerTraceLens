@@ -1,6 +1,7 @@
 import { compensationLabelKeys, dataSourceTone, severityLabelKeys } from '../graph/dataView'
 import { useI18n } from '../i18n/I18nProvider'
 import { ruleText } from '../i18n/ruleText'
+import { SourceLink, type SourceLocation } from './SourceLink'
 import type {
   DataAccessDocument,
   Finding,
@@ -14,13 +15,15 @@ interface DataDetailPanelProps {
   selection: Selection
   onSelect: (selection: Selection) => void
   onShowFlow: (nodeId: string) => void
+  /** `파일:줄`을 누르면 코드 보기를 그 위치로 옮긴다. */
+  onOpenSource: (location: SourceLocation) => void
 }
 
 /**
  * DB·캐시와 미들웨어 보기에서 고른 항목의 상세.
  * 점검 항목은 "무엇이 걸렸나 → 판정 근거 → 왜 문제인가 → 제안" 순서로 보여준다.
  */
-export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: DataDetailPanelProps) {
+export function DataDetailPanel({ graph, selection, onSelect, onShowFlow, onOpenSource }: DataDetailPanelProps) {
   const { t, lang } = useI18n()
   const data = graph.dataAccess
   const pipeline = graph.middleware
@@ -28,7 +31,16 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: Data
   if (selection.type === 'finding') {
     const finding = findFinding(data, pipeline, selection.key)
     if (!finding) return <div className="panel-message">{t('dd.findingMissing')}</div>
-    return <FindingDetail finding={finding} data={data} pipeline={pipeline} onSelect={onSelect} onShowFlow={onShowFlow} />
+    return (
+      <FindingDetail
+        finding={finding}
+        data={data}
+        pipeline={pipeline}
+        onSelect={onSelect}
+        onShowFlow={onShowFlow}
+        onOpenSource={onOpenSource}
+      />
+    )
   }
 
   if (selection.type === 'writePath') {
@@ -170,7 +182,7 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow }: Data
           {hits.map((finding) => (
             <div key={finding.id} style={{ marginBottom: 6 }}>
               <button type="button" className="btn sm" onClick={() => onSelect({ type: 'finding', key: finding.id })}>
-                {finding.file}:{finding.line}
+                <SourceLink file={finding.file} line={finding.line} onOpen={onOpenSource} />
               </button>
             </div>
           ))}
@@ -258,12 +270,14 @@ function FindingDetail({
   pipeline,
   onSelect,
   onShowFlow,
+  onOpenSource,
 }: {
   finding: Finding
   data: DataAccessDocument | null
   pipeline: MiddlewarePipelineDocument | null
   onSelect: (selection: Selection) => void
   onShowFlow: (nodeId: string) => void
+  onOpenSource: (location: SourceLocation) => void
 }) {
   const { t } = useI18n()
   const rule = [...(data?.rules ?? []), ...(pipeline?.rules ?? [])].find((item) => item.id === finding.ruleId)
@@ -273,7 +287,10 @@ function FindingDetail({
         <span className={`sev ${finding.severity.toLowerCase()}`}>{t(severityLabelKeys[finding.severity])}</span>
         <h3>{rule?.name ?? finding.ruleId}</h3>
       </div>
-      <div className="detail-path">{finding.symbol}<br />{finding.file}:{finding.line}</div>
+      <div className="detail-path">
+        {finding.symbol}<br />
+        <SourceLink file={finding.file} line={finding.line} onOpen={onOpenSource} />
+      </div>
 
       <Section title={t('dd.whatFlagged')}><p>{finding.what}</p></Section>
       <Section title={t('dd.evidence', { confidence: finding.confidence === 'Certain' ? t('data.certain') : t('data.estimated') })}>

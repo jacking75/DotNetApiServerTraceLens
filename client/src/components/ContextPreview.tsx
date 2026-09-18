@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
 import { confidenceLabel, freshnessLabel, resolutionLabel, selectionKindLabel } from '../i18n/labels'
+import { SourceLink, type SourceLocation } from './SourceLink'
 import type { ContextDocument } from '../types/context'
 
 interface ContextPreviewProps {
   context: ContextDocument
+  /** `파일:줄`을 누르면 코드 보기를 그 위치로 옮긴다. 없으면 평문으로 그린다. */
+  onOpenSource?: (location: SourceLocation) => void
   /** 문맥에서 뺀 파일. 체크를 끄면 그 파일의 소스가 문맥에 들어가지 않는다. */
   excludedFiles?: readonly string[]
   onToggleFile?: (file: string, include: boolean) => void
@@ -15,7 +18,7 @@ interface ContextPreviewProps {
  * 포함한 파일, 소스 포함 여부, 길이, 제외 항목을 먼저 보여 준다 —
  * 외부 AI로 보내면 그 내용이 전송되므로 사용자가 미리 확인할 수 있어야 한다.
  */
-export function ContextPreview({ context, excludedFiles = [], onToggleFile }: ContextPreviewProps) {
+export function ContextPreview({ context, excludedFiles = [], onToggleFile, onOpenSource }: ContextPreviewProps) {
   const { t, formatPercent } = useI18n()
   const [showMarkdown, setShowMarkdown] = useState(false)
 
@@ -85,7 +88,10 @@ export function ContextPreview({ context, excludedFiles = [], onToggleFile }: Co
                 <ol>
                   {path.steps.map((step) => (
                     <li key={step.nodeId}>
-                      {step.displayName} <code>{step.file}:{step.startLine}</code>
+                      {step.displayName}{' '}
+                      {onOpenSource
+                        ? <SourceLink file={step.file} line={step.startLine} onOpen={onOpenSource} />
+                        : <code>{step.file}:{step.startLine}</code>}
                       <span className="chip small">
                         {resolutionLabel(step.resolution, t)} · {confidenceLabel(step.confidence, t)}
                       </span>
@@ -104,7 +110,10 @@ export function ContextPreview({ context, excludedFiles = [], onToggleFile }: Co
           <ul className="context-evidence">
             {context.evidence.map((item) => (
               <li key={item.id}>
-                <code>{item.id}</code> {selectionKindLabel(item.kind, t)} · <code>{item.file}:{item.startLine}</code>
+                <code>{item.id}</code> {selectionKindLabel(item.kind, t)} ·{' '}
+                {onOpenSource
+                  ? <SourceLink file={item.file} line={item.startLine} onOpen={onOpenSource} />
+                  : <code>{item.file}:{item.startLine}</code>}
                 <span className="chip small">
                   {resolutionLabel(item.resolution, t)} · {confidenceLabel(item.confidence, t)}
                 </span>

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { getImpact, ApiError } from '../api/client'
 import { translateError, useI18n } from '../i18n/I18nProvider'
 import { confidenceLabel, resolutionLabel } from '../i18n/labels'
+import { SourceLink, type SourceLocation } from './SourceLink'
 import type { ImpactResult } from '../types/context'
 
 interface ImpactPanelProps {
@@ -9,13 +10,15 @@ interface ImpactPanelProps {
   snapshotId: string
   /** 진입점을 고르면 기존 호출 흐름 보기로 이동한다. 여러 진입점을 한 그래프로 펼치지 않는다. */
   onOpenEntryPoint: (handlerNodeId: string, targetNodeId: string) => void
+  /** `파일:줄`을 누르면 코드 보기를 그 위치로 옮긴다. */
+  onOpenSource: (location: SourceLocation) => void
 }
 
 /**
  * 선택한 메서드를 바꾸기 전에 영향을 받을 수 있는 API를 찾는다.
  * 결과는 호출 관계에서 도출한 <b>후보</b>이며, 호출자가 없다고 삭제해도 안전하다는 뜻이 아니다.
  */
-export function ImpactPanel({ nodeId, snapshotId, onOpenEntryPoint }: ImpactPanelProps) {
+export function ImpactPanel({ nodeId, snapshotId, onOpenEntryPoint, onOpenSource }: ImpactPanelProps) {
   const { t } = useI18n()
   const [result, setResult] = useState<ImpactResult | null>(null)
   const [busy, setBusy] = useState(false)
@@ -74,7 +77,7 @@ export function ImpactPanel({ nodeId, snapshotId, onOpenEntryPoint }: ImpactPane
                 <ol className="impact-path">
                   {endpoint.path.map((step) => (
                     <li key={step.nodeId}>
-                      {step.displayName} <code>{step.file}:{step.startLine}</code>
+                      {step.displayName} <SourceLink file={step.file} line={step.startLine} onOpen={onOpenSource} />
                       <span className="chip small">{resolutionLabel(step.resolution, t)}</span>
                     </li>
                   ))}
@@ -89,7 +92,7 @@ export function ImpactPanel({ nodeId, snapshotId, onOpenEntryPoint }: ImpactPane
               <ul>
                 {result.testCandidates.map((item) => (
                   <li key={item.nodeId}>
-                    {item.displayName} <code>{item.file}:{item.startLine}</code>
+                    {item.displayName} <SourceLink file={item.file} line={item.startLine} onOpen={onOpenSource} />
                     <span className="chip small">
                       {item.evidence === 'reached' ? t('impact.testEvidenceReached') : t('impact.testEvidenceName')}
                     </span>

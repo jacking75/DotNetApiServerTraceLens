@@ -10,6 +10,7 @@ import {
   adoptImportedGraph,
   importGraph,
   loadSavedGraph,
+  openInEditor,
   getSamples,
   prepareSample,
   startAnalysisJob,
@@ -32,6 +33,7 @@ import { FlowDiagram } from './components/FlowDiagram'
 import { FreshnessBadge } from './components/FreshnessBadge'
 import { PathPicker } from './components/PathPicker'
 import { QuickFind } from './components/QuickFind'
+import type { SourceLocation } from './components/SourceLink'
 import { EntryPointList, FlowSidePanel, NamespacePanel, StartupFlowSidePanel } from './components/SidePanels'
 import { SnapshotDiffPanel } from './components/SnapshotDiffPanel'
 import { Splitter } from './components/Splitter'
@@ -156,6 +158,8 @@ export default function App() {
   const [help, setHelp] = useState<{ tab: HelpTab; term: GlossaryTerm | null } | null>(null)
   /** Ctrl+K 통합 찾기. 입력칸에 포커스가 없을 때만 열린다. */
   const [findOpen, setFindOpen] = useState(false)
+  /** `파일:줄`을 눌러 연 코드 위치. 상세 패널의 소스 보기가 이 위치를 연다. */
+  const [sourceTarget, setSourceTarget] = useState<SourceLocation | null>(null)
   const openGlossary = useCallback((term: GlossaryTerm) => setHelp({ tab: 'glossary', term }), [])
   const [diagnostics, setDiagnostics] = useState<DiagnosticsReport | null>(null)
   const [samples, setSamples] = useState<SampleView[]>([])
@@ -795,6 +799,17 @@ export default function App() {
     setSelection({ type: 'method', key: targetNodeId })
   }, [entryPoints, findPath])
 
+  /**
+   * 에디터에서 연다. 노드 ID 기준 API를 쓰므로 그 위치를 담은 노드를 먼저 찾는다.
+   * 찾지 못하면 아무 일도 하지 않는다 — 엉뚱한 파일을 여는 것보다 낫다.
+   */
+  const openLocationInEditor = useCallback((location: SourceLocation) => {
+    const node = (graph?.nodes ?? []).find((item) =>
+      item.file === location.file && item.startLine <= location.line && location.line <= item.endLine)
+    if (!node) return
+    void openInEditor(node.id)
+  }, [graph])
+
   const detailActions: DetailActions = useMemo(() => ({
     onSelect: setSelection,
     onShowFlow: openFlow,
@@ -806,7 +821,9 @@ export default function App() {
     },
     onGoToNamespace: goToNamespace,
     onExplain: openGlossary,
-  }), [openFlow, showInDiagram, goToNamespace, openGlossary])
+    onOpenSource: setSourceTarget,
+    onOpenInEditor: openLocationInEditor,
+  }), [openFlow, showInDiagram, goToNamespace, openGlossary, openLocationInEditor])
 
   const selectMember = useCallback((graphClass: GraphClass, member: GraphClassMember) => {
     setSelection({ type: 'method', key: memberKey(graphClass.id, member) })
@@ -1852,10 +1869,12 @@ export default function App() {
                 selection={selection!}
                 onSelect={setSelection}
                 onShowFlow={openFlow}
+                onOpenSource={setSourceTarget}
               />
             ) : (
               <DetailPanel
                 graph={graph}
+                sourceTarget={sourceTarget}
                 selection={selection}
                 relations={relations}
                 namespaces={namespaces}
@@ -1869,6 +1888,7 @@ export default function App() {
             nodeId={selectedNodeIdForImpact}
             snapshotId={graph?.snapshotId ?? ''}
             onOpenEntryPoint={openEntryPointFromImpact}
+            onOpenSource={setSourceTarget}
           />
           <AskPanel
             context={askContext}
@@ -1876,6 +1896,7 @@ export default function App() {
             presetQuestion={presetQuestion}
             onContextCopied={() => completeStep('context')}
             onExplain={openGlossary}
+            onOpenSource={setSourceTarget}
           />
         </div>
       </section>
