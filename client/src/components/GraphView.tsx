@@ -107,7 +107,9 @@ export function GraphView({
       const currentNode = nodeMap.get(event.target.id())
       if (!currentNode) return
       handlersRef.current.onSelectNode(currentNode)
-      if (graphWindow.branchNodeIds.has(currentNode.id)) {
+      // Shift+클릭은 파고들지 않고 선택만 한다. 상세만 보고 싶은데 창이 바뀌면 되돌아오기 번거롭다.
+      const shiftHeld = (event.originalEvent as MouseEvent | undefined)?.shiftKey === true
+      if (!shiftHeld && graphWindow.branchNodeIds.has(currentNode.id)) {
         handlersRef.current.onDrilldown(currentNode)
       }
     })

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { defaultState, loadState, saveState } from './viewState'
+import { addRecentTarget, defaultState, loadState, maxRecentTargets, saveState } from './viewState'
 
 /** localStorage가 없는 환경(vitest 기본)에서도 돌도록 최소 구현을 끼운다. */
 function installStorage(initial: Record<string, string> = {}) {
@@ -59,6 +59,23 @@ describe('viewState', () => {
     installStorage({ 'tracelens.view': JSON.stringify({ guide: { seen: true, completed: ['pick', 'nope'] } }) })
 
     expect(loadState().guide).toEqual({ seen: true, completed: ['pick'] })
+  })
+
+  it('최근 대상은 최신이 먼저이고 중복을 지운다', () => {
+    const list = addRecentTarget(addRecentTarget(['C:\\a.sln'], 'C:\\b.sln'), 'C:\\A.SLN')
+
+    // 대소문자만 다른 같은 경로를 두 줄로 보여 주지 않는다(Windows 경로).
+    expect(list).toEqual(['C:\\A.SLN', 'C:\\b.sln'])
+  })
+
+  it('최근 대상은 상한을 넘지 않는다', () => {
+    let list: string[] = []
+    for (let index = 0; index < maxRecentTargets + 3; index += 1) {
+      list = addRecentTarget(list, `C:\\p${index}.sln`)
+    }
+
+    expect(list).toHaveLength(maxRecentTargets)
+    expect(list[0]).toBe(`C:\\p${maxRecentTargets + 2}.sln`)
   })
 
   it('없는 키는 기본값으로 채운다', () => {

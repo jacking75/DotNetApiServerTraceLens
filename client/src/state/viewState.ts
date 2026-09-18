@@ -64,6 +64,22 @@ export interface PersistedState {
   flowEntryId: string | null
   /** 첫 사용 안내의 진행. */
   guide: GuideState
+  /** 최근에 분석한 대상(최신 우선, 최대 5개). 매번 드라이브부터 고르지 않게 한다. */
+  recentTargets: string[]
+}
+
+/** 보관하는 최근 대상 수. 더 늘리면 목록이 길어져 고르기 어렵다. */
+export const maxRecentTargets = 5
+
+/**
+ * 최근 대상 목록에 경로를 더한다. 같은 경로는 위로 올리고 상한을 넘으면 오래된 것부터 버린다.
+ * 대소문자만 다른 같은 경로를 두 줄로 보여 주지 않는다(Windows 경로).
+ */
+export function addRecentTarget(current: readonly string[], path: string): string[] {
+  const trimmed = path.trim()
+  if (trimmed.length === 0) return [...current]
+  const rest = current.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())
+  return [trimmed, ...rest].slice(0, maxRecentTargets)
 }
 
 export const defaultColumns = { left: 272, right: 392 }
@@ -100,6 +116,7 @@ export const defaultState: PersistedState = {
   focusStack: [],
   flowEntryId: null,
   guide: { seen: false, completed: [] },
+  recentTargets: [],
 }
 
 /** 저장값에서 읽은 안내 진행. 알 수 없는 단계 ID는 버린다(단계가 바뀌어도 깨지지 않게). */
@@ -130,6 +147,9 @@ export function loadState(): PersistedState {
       middlewareView: { ...defaultState.middlewareView, ...parsed.middlewareView },
       focusStack: Array.isArray(parsed.focusStack) ? parsed.focusStack : [],
       guide: normalizeGuide(parsed.guide),
+      recentTargets: Array.isArray(parsed.recentTargets)
+        ? parsed.recentTargets.filter((item): item is string => typeof item === 'string').slice(0, maxRecentTargets)
+        : [],
     }
   } catch {
     return defaultState

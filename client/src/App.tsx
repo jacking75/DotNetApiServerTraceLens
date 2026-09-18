@@ -57,6 +57,7 @@ import { getDrilldownWindow, getInitialWindow, getPathWindow } from './graph/win
 import { translateError, useI18n, type Language } from './i18n/I18nProvider'
 import type { TranslationKey } from './i18n/ko'
 import {
+  addRecentTarget,
   defaultColumns,
   loadState,
   saveState,
@@ -65,6 +66,7 @@ import {
   type MiddlewareViewState,
   type PersistedState,
 } from './state/viewState'
+import { parse as parseUrlState, serialize as serializeUrlState } from './state/urlState'
 import type { DiagnosticsReport, SampleView, SelectionKind } from './types/context'
 import type {
   AnalyzeSummary,
@@ -160,6 +162,8 @@ export default function App() {
   const [findOpen, setFindOpen] = useState(false)
   /** `파일:줄`을 눌러 연 코드 위치. 상세 패널의 소스 보기가 이 위치를 연다. */
   const [sourceTarget, setSourceTarget] = useState<SourceLocation | null>(null)
+  /** 최근에 분석한 대상. 경로 입력칸 옆 드롭다운으로 고른다. */
+  const [recentTargets, setRecentTargets] = useState<string[]>(initial.recentTargets)
   const openGlossary = useCallback((term: GlossaryTerm) => setHelp({ tab: 'glossary', term }), [])
   const [diagnostics, setDiagnostics] = useState<DiagnosticsReport | null>(null)
   const [samples, setSamples] = useState<SampleView[]>([])
@@ -315,11 +319,52 @@ export default function App() {
       focusStack,
       flowEntryId,
       guide: { seen: true, completed: [...walkthroughDone] },
+      recentTargets,
     })
   }, [
     viewMode, classMap, depth, selection, columns, solutionPath, dataView, middlewareView,
-    callFlowEntry, focusStack, flowEntryId, walkthroughDone,
+    callFlowEntry, focusStack, flowEntryId, walkthroughDone, recentTargets,
   ])
+
+  /* ---------------------------------------------------------------- URL 해시 동기화 */
+
+  /** popstate로 되돌린 직후에는 그 상태를 다시 push하지 않는다. 뒤로 가기가 제자리를 맴돌게 된다. */
+  const restoringFromHistory = useRef(false)
+
+  useEffect(() => {
+    if (!graph) return
+    if (restoringFromHistory.current) {
+      restoringFromHistory.current = false
+      return
+    }
+
+    const hash = serializeUrlState({
+      view: viewMode,
+      entry: callFlowEntry?.endpointId ?? null,
+      focus: focusStack,
+      selection,
+    })
+    if (hash === window.location.hash) return
+    window.history.pushState(null, '', hash)
+  }, [graph, viewMode, callFlowEntry, focusStack, selection])
+
+  useEffect(() => {
+    const onPopState = () => {
+      const parsed = parseUrlState(window.location.hash)
+      restoringFromHistory.current = true
+      if (parsed.view) setViewMode(parsed.view)
+      if (parsed.entry !== undefined) {
+        // 재분석으로 사라진 진입점은 조용히 버린다.
+        setCallFlowEntry(entryPoints.find((item) => item.endpointId === parsed.entry) ?? null)
+      }
+
+      setFocusStack(parsed.focus ?? [])
+      setSelection(parsed.selection ?? null)
+    }
+
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [entryPoints])
 
   /**
    * 새로고침 뒤 호출 흐름·전체 흐름도의 위치를 되살린다.
@@ -577,6 +622,7 @@ export default function App() {
 
       const nextGraph = await loadGraphData()
       applyAnalyzedGraph(nextGraph, await summarizeFrom(nextGraph))
+      setRecentTargets((current) => addRecentTarget(current, target))
     } catch (reason) {
       // 작업 API 자체가 없는 환경(구버전 서버)에서만 호환 경로로 다시 시도한다.
       // 그 밖의 실패(같은 대상이 이미 돌고 있음·잘못된 경로 등)에 전체 분석을 한 번 더 돌리면 안 된다.
@@ -931,7 +977,9 @@ export default function App() {
     }
 
     if (viewMode === 'classmap') {
-      const crumbs: BreadcrumbItem[] = [{ key: 'all', label: t('view.classmap') }]
+      // 포커스나 네임스페이스 선택이 있을 때만 "전체"로 돌아갈 자리가 있다.
+      const canReset = classMap.focusOnly || selection?.type === 'namespace'
+      const crumbs: BreadcrumbItem[] = [{ key: 'all', label: t('view.classmap'), navigable: canReset }]
       if (classMap.focusOnly && selectedClassId) {
         crumbs.push({
           key: selectedClassId,
@@ -945,7 +993,8 @@ export default function App() {
     }
 
     if (viewMode === 'startup') {
-      return [{ key: 'startup', label: t('view.startup') }]
+      // 단계를 고른 상태에서만 "선택 해제"로 되돌아갈 자리가 있다.
+      return [{ key: 'startup', label: t('view.startup'), navigable: selection?.type === 'startupStep' }]
     }
 
     if (viewMode === 'data') {
@@ -957,7 +1006,7 @@ export default function App() {
         check: 'sub.check',
       }
       const crumbs: BreadcrumbItem[] = [
-        { key: 'data', label: t('view.data') },
+        { key: 'data', label: t('view.data'), navigable: dataView.pathId !== null || dataView.entryNodeId !== null },
         { key: dataView.sub, label: t(labels[dataView.sub]) },
       ]
       if (dataView.sub === 'route' && dataView.entryNodeId) {
@@ -975,7 +1024,7 @@ export default function App() {
         check: 'sub.check',
       }
       return [
-        { key: 'middleware', label: t('view.middleware') },
+        { key: 'middleware', label: t('view.middleware'), navigable: middlewareView.sub !== 'pipe' },
         { key: middlewareView.sub, label: t(labels[middlewareView.sub]) },
       ]
     }
@@ -996,11 +1045,27 @@ export default function App() {
     }
 
     if (viewMode === 'classmap') {
-      if (index === 0) setClassMap((current) => ({ ...current, focusOnly: false }))
+      if (index === 0) {
+        setClassMap((current) => ({ ...current, focusOnly: false }))
+        setSelection((current) => (current?.type === 'namespace' ? null : current))
+      }
+
       return
     }
 
-    if (viewMode === 'startup' || viewMode === 'data' || viewMode === 'middleware') {
+    if (viewMode === 'startup') {
+      if (index === 0) setSelection(null)
+      return
+    }
+
+    if (viewMode === 'data') {
+      // 첫 항목은 실행 경로 선택과 펼친 쓰기 경로를 함께 푼다. 두 번째는 하위 보기 자신이라 비활성이다.
+      if (index === 0) setDataView((current) => ({ ...current, entryNodeId: null, pathId: null }))
+      return
+    }
+
+    if (viewMode === 'middleware') {
+      if (index === 0) setMiddlewareView((current) => ({ ...current, sub: 'pipe' }))
       return
     }
 
@@ -1243,6 +1308,24 @@ export default function App() {
             placeholder={t('app.pathPlaceholder')}
             aria-label={t('app.pathLabel')}
           />
+          {recentTargets.length > 0 && (
+            <select
+              className="recent-targets"
+              value=""
+              aria-label={t('app.recentTargets')}
+              title={t('app.recentTargets')}
+              onChange={(event) => {
+                if (!event.target.value) return
+                setSolutionPath(event.target.value)
+                setTargetPicked(true)
+              }}
+            >
+              <option value="">{t('app.recentTargets')}</option>
+              {recentTargets.map((path) => (
+                <option key={path} value={path}>{path}</option>
+              ))}
+            </select>
+          )}
           <button type="button" className="browse" onClick={() => setPickerOpen(true)} disabled={busy}>
             {t('app.browse')}
           </button>
@@ -1336,7 +1419,7 @@ export default function App() {
 
       {pickerOpen && (
         <PathPicker
-          initialPath={solutionPath}
+          initialPath={solutionPath || recentTargets[0] || ''}
           onSelect={(path) => {
             setSolutionPath(path)
             setPickerOpen(false)

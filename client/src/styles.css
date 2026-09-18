@@ -769,3 +769,9 @@ table.findings .conf { color: #8a97a9; font-size: 10.5px; white-space: nowrap; }
   position: absolute; z-index: 5; top: 6px; right: 6px; display: flex; flex-direction: column; gap: 4px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 11.5px;
 }
+
+/* T40 — 최근 대상 드롭다운 */
+.recent-targets {
+  max-width: 180px; color: var(--dim); background: #0c1320;
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 11.5px;
+}

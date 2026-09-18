@@ -14,6 +14,7 @@ export const ko = {
   'app.title': 'TraceLens',
   'app.pathPlaceholder': 'C:\\repos\\MyApp\\MyApp.sln 또는 MyApp.Api.csproj',
   'app.pathLabel': '솔루션 또는 프로젝트 경로',
+  'app.recentTargets': '최근 대상',
   'app.browse': '찾아보기…',
   'app.import': '불러오기',
   'app.importTitle': '저장해 둔 분석 결과 파일을 골라 불러온다(다시 분석하지 않는다).',

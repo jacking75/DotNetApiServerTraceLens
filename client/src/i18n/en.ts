@@ -14,6 +14,7 @@ export const en: Dictionary = {
   'app.title': 'TraceLens',
   'app.pathPlaceholder': 'C:\\repos\\MyApp\\MyApp.sln or MyApp.Api.csproj',
   'app.pathLabel': 'Solution or project path',
+  'app.recentTargets': 'Recent targets',
   'app.browse': 'Browse…',
   'app.import': 'Open file',
   'app.importTitle': 'Open a saved analysis file. This does not re-analyze anything.',
