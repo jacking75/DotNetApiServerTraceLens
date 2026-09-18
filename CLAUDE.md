@@ -45,7 +45,9 @@ tracelens/
 ├── TraceLens.sln
 ├── docs/
 │   ├── data-contract.md          # graph.json 스키마(v7), API·MCP 계약, 이행 규칙
-│   ├── next-tasks_kr.md          # 목표 대비 점검 결과와 다음 태스크(체크리스트). 다음 세션은 여기서 시작한다
+│   ├── tracelens.config.schema.json  # 설정 JSON Schema. 코드와 어긋나면 테스트가 실패한다
+│   ├── next-tasks_kr.md          # 1차 점검 결과와 태스크(T1~T19, 완료)
+│   ├── next-tasks-2_kr.md        # 2차 점검 결과와 태스크(T20~T42, 완료)
 │   ├── manual.html / manual_kr.html
 │   └── mcp-setup.md / mcp-setup_kr.md
 ├── samples/                      # 배포물에 함께 넣는 예제(분석 대상). 도구 코드가 아니다
@@ -54,7 +56,10 @@ tracelens/
 ├── src/
 │   ├── TraceLens.Analyzer/       # Roslyn 기반 분석 라이브러리 (UI/서버에 대한 의존성 없음)
 │   │   ├── SolutionLoader.cs             # 워크스페이스 로드 + 프로젝트별 진단 수집
-│   │   ├── EntryPointScanner.cs          # 컨트롤러 특성 + Minimal API 결과 합치기
+│   │   ├── EntryPointScanner.cs          # 컨트롤러 특성 + Minimal API 합치기(기반 클래스 액션·[ApiVersion])
+│   │   ├── EntryPointCandidateScanner.cs # HTTP 밖 실행 단위를 세기만 한다(진입점·엣지를 만들지 않는다)
+│   │   ├── HostDocuments.cs              # Program.cs + Startup.cs(클래식 구조)를 함께 찾는다
+│   │   ├── UnreadFrameworks.cs           # 인식했지만 해석하지 않은 프레임워크를 한계 문장으로
 │   │   ├── MinimalApiEntryPointScanner.cs# Map*/MapGroup/MapMethods, 람다·로컬 함수 핸들러
 │   │   ├── EndpointIdentity.cs           # 라우트 정규화와 endpointId 생성
 │   │   ├── AnalysisCallable.cs           # 메서드·생성자·람다·로컬 함수의 공통 표현 + 본문 경계 순회
@@ -99,33 +104,42 @@ tracelens/
 │   │   ├── Program.cs · GraphStore.cs · GraphFreshnessService.cs
 │   │   ├── AnalysisJobService.cs         # 진행 상태(SSE)·취소
 │   │   ├── AgentRunner.cs                # 외부 CLI 의존을 분리한 IAgentRunner
-│   │   ├── McpConfigWriter.cs            # mcp.json 생성 + 호스트별 설정 미리보기
+│   │   ├── McpConfigWriter.cs            # mcp.json 생성 + 호스트별 설정·원라이너·에이전트 안내문
 │   │   ├── ApiResults.cs                 # { code, message, details } 오류 형태
 │   │   ├── Endpoints/
 │   │   │   ├── AnalyzeEndpoints.cs · AnalysisJobEndpoints.cs
 │   │   │   ├── BrowseEndpoints.cs · GraphEndpoints.cs · SourceEndpoints.cs
 │   │   │   ├── FreshnessEndpoints.cs · DiagnosticsEndpoints.cs
 │   │   │   ├── ContextEndpoints.cs · ImpactEndpoints.cs · SnapshotEndpoints.cs
-│   │   │   └── AskEndpoints.cs
+│   │   │   ├── ManualEndpoints.cs        # /manual/ko · /manual/en 정적 서빙
+│   │   │   └── AskEndpoints.cs           # 허용 도구 목록은 [McpServerTool]에서 리플렉션으로 만든다
 │   │   └── wwwroot/                      # client 빌드 결과물이 빌드 시 여기로 복사됨
 │   ├── TraceLens.Mcp/            # 로컬 전용 stdio MCP 서버
 │   │   ├── McpHost.cs · Program.cs · GraphFileStore.cs · TraceLensTools.cs
-│   └── TraceLens.Cli/            # tracelens doctor|analyze|serve|mcp|demo (.NET tool)
+│   └── TraceLens.Cli/            # tracelens doctor|analyze|serve|mcp|demo|init|config (.NET tool)
 │       ├── CommandRouter.cs · DemoSamples.cs
 ├── tests/
 │   ├── TraceLens.Analyzer.Tests/
 │   │   ├── Fixtures/                     # 컨트롤러·DI 해석용 미니 솔루션
 │   │   ├── FixturesData/                 # DB·캐시·미들웨어용 미니 솔루션
-│   │   └── FixturesMinimalApi/           # Minimal API 등록 패턴 회귀용
+│   │   ├── FixturesMinimalApi/           # Minimal API 등록 패턴 회귀용
+│   │   ├── FixturesClassic/              # Program.cs + Startup.cs, 기반 클래스 액션·[ApiVersion]
+│   │   └── FixturesExternal/             # 외부 호출 집계·HTTP 밖 실행 단위 회귀용
 │   ├── TraceLens.Server.Tests/
 │   └── TraceLens.Mcp.Tests/
 └── client/                               # React + TypeScript (Vite)
     └── src/
-        ├── i18n/                         # ko.ts(원본) · en.ts(키로 타입 제한) · I18nProvider.tsx
+        ├── i18n/                         # ko.ts(원본) · en.ts(키로 타입 제한) · I18nProvider.tsx · labels.ts
         ├── content/recipes.ts            # 앱과 매뉴얼이 공유하는 실무 절차
         ├── components/
         │   ├── WelcomePanel.tsx          # 분석 전 첫 화면(예제·내 프로젝트·지원 범위·레시피)
-        │   ├── GuidedWalkthrough.tsx     # 첫 성공 경로 안내(실제 완료 이벤트로 진행)
+        │   ├── GuidedWalkthrough.tsx     # 첫 성공 경로 안내(workspace 밖, 분석 전에도 보인다)
+        │   ├── HelpDialog.tsx            # 용어집·단축키·실무 절차 + 용어 옆 `?` 링크
+        │   ├── DiagnosticsCard.tsx       # 환경 점검(첫 화면·헤더 모달 공용)
+        │   ├── DiagnosticsPanel.tsx      # 분석 진단(무엇을 보고 무엇을 못 봤나)
+        │   ├── McpSetupDialog.tsx        # MCP 등록(호스트 탭·원라이너·에이전트 안내문)
+        │   ├── QuickFind.tsx             # Ctrl+K 통합 찾기
+        │   ├── SourceLink.tsx            # 화면의 모든 `파일:줄`
         │   ├── ContextPreview.tsx        # 전달할 문맥 미리보기
         │   ├── ImpactPanel.tsx           # 변경 영향(후보 목록)
         │   ├── SnapshotDiffPanel.tsx     # 기준 저장 → 재분석 → 비교
@@ -136,8 +150,8 @@ tracelens/
         │   ├── GraphView.tsx · DiagramCanvas.tsx · UmlClassBox.tsx
         │   ├── ClassDiagram.tsx · FlowDiagram.tsx
         │   ├── Splitter.tsx · CodePanel.tsx · PathPicker.tsx · FreshnessBadge.tsx
-        ├── graph/                        # 순수 배치·파생 계산(React 비의존)
-        ├── state/viewState.ts
+        ├── graph/                        # 순수 배치·파생 계산(React 비의존). search.ts 포함
+        ├── state/viewState.ts · state/urlState.ts
         ├── api/client.ts
         └── types/graph.ts · types/context.ts
 ```
@@ -201,7 +215,8 @@ npm run build      # Server의 wwwroot로 산출물 복사
 2026-09-17에 README·CLAUDE.md의 목표와 실제 코드·실제 프로젝트 분석 결과를 대조한 점검 문서
 [`docs/next-tasks_kr.md`](docs/next-tasks_kr.md)가 있다(T1~T19, 모두 완료).
 같은 날 "신입 개발자가 혼자 쓸 수 있는가"를 기준으로 다시 점검한 2차 문서
-[`docs/next-tasks-2_kr.md`](docs/next-tasks-2_kr.md)가 있다(T20~T42). **다음 세션은 여기서 시작한다.**
+[`docs/next-tasks-2_kr.md`](docs/next-tasks-2_kr.md)가 있다(T20~T42, 2026-09-18에 모두 완료).
+두 문서의 태스크는 전부 끝났다. 다음 작업은 `git log`와 코드를 직접 확인해서 정한다.
 상단 태스크 목록을 하나 끝낼 때마다 즉시 체크한다.
 
 로드맵에서 **아직 하지 않은 것**은 사람이 해야 하는 일이다: 소규모 사용자 관찰(§16.1), 공개 게시와 홍보(§16.2),

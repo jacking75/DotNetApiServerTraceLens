@@ -25,6 +25,8 @@
 *.user
 /tests/TraceLens.Analyzer.Tests/Fixtures/**/.tracelens/
 /tests/TraceLens.Analyzer.Tests/FixturesMinimalApi/**/.tracelens/
+/tests/TraceLens.Analyzer.Tests/FixturesClassic/**/.tracelens/
+/tests/TraceLens.Analyzer.Tests/FixturesExternal/**/.tracelens/
 # 이 저장소 자체를 분석 대상으로 삼아 성능을 잴 때 생기는 산출물
 /.tracelens/
 # 배포용 예제를 분석했을 때 생기는 산출물

@@ -328,6 +328,24 @@ function MethodDetail({
   // 경계: 확정하지 못해 엣지를 만들지 않은 호출. 목록이 비었다고 "호출 없음"이 아니다.
   const boundaries = graph.callSites.filter((site) => site.to.length === 0 && site.from === nodeId)
 
+  /**
+   * 지금 보는 파일 안의 호출 지점. 여백 표시를 누르면 그 호출의 대상 노드로 간다.
+   * 훅은 조건부 return보다 앞에 있어야 하므로 여기서 계산한다 —
+   * 보여 줄 파일은 `파일:줄`로 온 위치가 있으면 그 파일, 없으면 선택한 항목의 파일이다.
+   */
+  const shownFile = sourceTarget?.file ?? node?.file ?? graphClass?.file ?? null
+  const callMarkers = useMemo(
+    () => shownFile === null
+      ? []
+      : graph.callSites
+        .filter((site) => site.from === nodeId && site.to.length > 0 && site.file === shownFile)
+        .map((site) => ({
+          line: site.line,
+          targetNodeId: site.to,
+          label: nodeNameById.get(site.to) ?? site.to,
+        })),
+    [graph.callSites, nodeId, shownFile, nodeNameById])
+
   // 노드가 없으면(인터페이스 선언 등) 멤버 선언 줄을 대신 보여준다.
   const target: SourceTarget | null = node
     ? { file: node.file, startLine: node.startLine, endLine: node.endLine }
@@ -353,17 +371,6 @@ function MethodDetail({
 
   // 선언 줄만 강조한다. 예전에는 1행부터 끝까지 전체를 칠해 강조의 의미가 없었다.
   const highlightLines = sourceTarget ? [sourceTarget.line] : [target.startLine]
-
-  // 지금 보는 파일 안의 호출 지점. 여백 표시를 누르면 그 호출의 대상 노드로 간다.
-  const callMarkers = useMemo(
-    () => evidence
-      .filter((site) => site.from === nodeId && site.to.length > 0 && site.file === sourceView.file)
-      .map((site) => ({
-        line: site.line,
-        targetNodeId: site.to,
-        label: nodeNameById.get(site.to) ?? site.to,
-      })),
-    [evidence, nodeId, sourceView.file, nodeNameById])
 
   return (
     <>

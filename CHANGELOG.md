@@ -2,6 +2,92 @@
 
 수동으로 갱신한다. 실제로 확인한 것만 적고, 확인하지 않은 지원 범위는 넣지 않는다.
 
+## 0.9.0 (Unreleased) — 신입 사용성 2차 (schema v7, 부가 필드만)
+
+[docs/next-tasks-2_kr.md](docs/next-tasks-2_kr.md)의 T20~T42를 모두 구현했다.
+기준은 "신입 개발자가 혼자 설치하고, 분석하고, 결과를 읽고, AI 에이전트에게 도움을 받을 수 있는가"다.
+스키마 번호는 올리지 않았다 — 아래 필드는 모두 **추가 필드**이고 옛 그래프는 빈 값으로 읽는다.
+
+### 바뀐 동작
+
+- **기반 클래스에 선언한 액션이 파생 컨트롤러마다 진입점으로 나온다.** 예전에는 `/api/CrudControllerBase/{id}`
+  같은 **존재하지 않는 라우트**가 "확실"로 하나 나왔다. 파생이 없으면 진입점을 만들지 않고 `notes`에 사유를 남긴다.
+- **`[ApiVersion]`을 읽는다.** 라우트에 `{version:apiVersion}` 토큰이 있으면 버전마다 진입점이 하나씩 나온다.
+  토큰이 없으면(헤더·쿼리 버전) 라우트는 같고 `endpointId`로만 구분된다.
+- **Minimal API의 표시 라우트가 소스의 대소문자를 유지한다.** `{customerId}`가 `{customerid}`로 바뀌어
+  소스와 대조할 수 없던 문제를 고쳤다. ID와 비교에 쓰는 정규화 라우트는 그대로다.
+- **`new TransactionScope(...)`를 트랜잭션 경계로 잡는다.** 호출식이 아니라 객체 생성이라 예전에는 경계가 통째로
+  빠져 그 안의 쓰기가 "트랜잭션 없는 쓰기"로 COMP-001/002에 **확실하게 오탐**했다.
+- **저장 프로시저를 Read로 단정하지 않는다.** `commandType: CommandType.StoredProcedure`가 있으면 대상은 프로시저
+  이름, 연산은 `Unknown`(근거 포함)이다. Dapper `Execute*`는 쓰기 후보로 남기되 확실도를 추정으로 낮춘다.
+- **클래식 `Startup.cs`(.NET Core 3.1~5)를 읽는다.** `Program.cs`와 함께 한 타임라인으로 합쳐
+  시작 흐름·미들웨어 두 보기가 채워진다. 호스트를 하나도 못 찾으면 `limitations`에 사유가 남는다.
+- **솔루션 안 미들웨어 확장 메서드를 펼친다.** `app.UseCompanyAuth()`는 `Extension`으로 분류하고 본문의 등록을
+  하위 단계로 펼친다(깊이 2). "본문은 어셈블리 안에 있어 열어 볼 수 없다"는 실제로 솔루션 밖일 때만 쓴다.
+- **`tracelens demo`의 기본 복사 위치가 `%LOCALAPPDATA%\TraceLens\samples`다.** 설치 폴더에서 실행해도
+  권한 오류가 나지 않는다. `--dir`은 그대로 존중한다.
+- **DB·캐시 보기의 기본 하위 탭이 "실행 경로"다**(예전에는 가장 어려운 "보상 처리"였다).
+  이미 저장해 둔 사용자의 선택은 그대로 둔다.
+- **진단이 실제 바인딩 포트를 검사한다.** `--port 25099`로 띄운 서버가 25011에 대해 `PORT_IN_USE`를 말하던
+  틀린 정보를 고쳤다.
+
+### 추가 — 결과에 없는 것을 말한다
+
+- `diagnostics.calls.externalByNamespace` — 솔루션 밖 호출을 네임스페이스로 묶은 상위 20개. 알려진
+  프레임워크(EF Core·MediatR·Mongo·NHibernate·MassTransit·Kafka·Hangfire·Quartz·gRPC·SignalR·System.Transactions)는
+  `limitations`에 한 줄씩 승격된다. 엣지·해석률 분모는 바뀌지 않는다.
+- `diagnostics.entryPointCandidates` — HTTP 밖 실행 단위(HostedService·MessageConsumer·SignalRHub·GrpcService·
+  ScheduledJob·AzureFunction·HealthCheck·ConventionalRouting)를 종류별 개수와 이름 3개로. 진입점·엣지를 만들지 않는다.
+- `dataAccess.notes` — 접근 0건인데 ORM 타입이 있거나 `db.queryApis`가 기본값일 때 그 사실. 규칙 결과는 바꾸지 않는다.
+- 해석률 문장을 UI·CLI·문맥·MCP에서 "해석 N/M · 외부 호출 K는 분모에서 뺌"으로 통일했다.
+
+### 추가 — 화면
+
+- **분석 진단 패널.** 프로젝트별 로드 결과·컴파일 오류 첫 3건·호출 해석 내역·범위·한계·분석 중 변경을 한 화면에.
+  분석 뒤 빈 보기는 "분석하면 보인다"가 아니라 "찾지 못했다 + 다음 행동"을 말한다.
+- **도움말(`?`).** 용어집 12항목·단축키·실무 절차. 헤더의 "사용 설명서"는 `/manual/ko`·`/manual/en`을 연다
+  (배포물에도 들어간다). 해석률·신선도·호출 근거·경계·보상 처리·단락·MCP 옆에 `?` 링크가 있다.
+- **첫 사용 안내가 분석 전에도 열린다.** 첫 방문에 자동으로 열리고, localStorage 복원만으로는 단계가 완료되지 않는다.
+- **실패에 다음 행동이 있다.** 분석 실패를 `SDK_NOT_FOUND`·`RESTORE_FAILED`·`FILE_LOCKED`·`TARGET_NOT_FOUND`로
+  분류해 한 줄 요약·환경 점검·대상 다시 고르기를 붙이고 원문은 접는다. AI CLI가 없으면 보내기 전에 안다.
+- **질문 패널.** 목적별 프리셋 질문 칩, 목적·길이 설명, 답변 복사, 최근 답변 5개 보관(새로고침에는 남기지 않는다).
+- **MCP 설정.** 호스트 4개(Claude Code·Codex CLI·VS Code·Cursor) 탭, 복사 버튼, 붙여넣기용 원라이너(경로를 항상
+  따옴표로 감싼다), 검증 질문, 대상 저장소 `CLAUDE.md`/`AGENTS.md`에 붙일 에이전트 안내문.
+- **`Ctrl+K` 통합 찾기**와 메서드 이름 검색. 진입점 목록은 컨트롤러별로 묶이고 20개를 넘으면 접힌다.
+- **화면의 모든 `파일:줄`이 눌린다.** 코드 보기가 그 구간으로 이동하고, 호출 지점 줄에 여백 표시가 찍힌다.
+  표시를 누르면 그 호출의 대상 노드로 간다. Shift+클릭은 에디터에서 연다.
+- **라이트 테마·글꼴 3단계·좌우 패널 접기.** 배너는 한 스택(최대 30vh)으로 묶여 작업 영역을 밀지 않는다.
+- **브레드크럼이 모두 동작한다**(되돌아갈 자리가 없으면 비활성). URL 해시로 화면을 재현하고 뒤로 가기가 그래프 창을
+  되돌린다. 최근 대상 5개를 드롭다운으로 고른다.
+
+### 추가 — CLI·설정
+
+- `tracelens init` — `$schema`가 붙은 기본 설정을 만든다. 이미 있으면 덮어쓰지 않고 모르는 키와 기본값과 다른 키만 알린다.
+- `tracelens config --show` — 기본값과 파일을 합친 유효 설정 전체. `doctor --json`에도 `effectiveConfig`로 들어간다.
+- `docs/tracelens.config.schema.json` — 편집기 자동완성용. 코드의 키 집합과 어긋나면 테스트가 실패한다.
+- `excludeProjectNamePatterns` — 테스트 프로젝트를 로드에서 뺀다. 뺀 프로젝트는 진단에 `Loaded=false`로 남는다.
+- `doctor` 새 코드: `SDK_TOO_OLD`·`TFM_NOT_INSTALLED`·`MSBUILD_REGISTERED`·`OS_UNVERIFIED`·`NUGET_UNREACHABLE`.
+- `run.ps1 -Port`와 서버 `--port`를 이었다. `analyze`는 `.gitignore` 팁과 테스트로 보이는 프로젝트 수를 알린다.
+
+### MCP
+
+- 도구 열두 개의 설명에 "언제 이걸 쓰고 언제 다른 걸 쓰나"를 한 문장씩(한·영 병기) 붙였다.
+- `get_analysis_status`에 `suggestedNextTools`와 `dataAccessNotes`를 넣었다. `suggestedNextTools`는 **제안이지 보장이 아니다**.
+- 인앱 실행의 허용 도구 목록을 `[McpServerTool]` 특성에서 리플렉션으로 만든다. 불일치는 테스트가 잡는다.
+
+### 문서
+
+- README가 **존재하지 않는 배포 채널을 전제하지 않는다.** 내려받을 곳이 없다는 사실을 먼저 적고 `pack.ps1`이나
+  소스 실행을 안내한다. 퀵스타트는 `tracelens`가 배포물인지 소스인지 밝힌다.
+- README·매뉴얼·첫 화면의 지원 범위에 **"지금 읽지 않는 것"**을 이름으로 적고, 그것이 진단에 어떻게 남는지 함께 적었다.
+- 같은 대상을 두 인스턴스에서 동시에 분석하지 말라는 주의와 종료 방법, `pack.ps1` 검증 절차의 공백·한글 경로 단계를 추가했다.
+
+### 확인한 것
+
+빌드 경고 0. .NET 테스트 210개(Analyzer 89 · Server 112 · Mcp 9), 클라이언트 테스트 96개 통과.
+새 픽스처 두 개(`FixturesExternal`·`FixturesClassic`)로 외부 호출 집계·HTTP 밖 실행 단위·클래식 호스트·
+기반 클래스 액션·`[ApiVersion]`의 회귀를 막는다. macOS·Linux는 여전히 확인하지 않았다.
+
 ## 0.8.0 (Unreleased) — 실제 프로젝트 점검 반영 (schema v7)
 
 버전은 `Directory.Build.props`의 `<Version>` 한 곳에서 바꾼다(`pack.ps1 -Version`이 덮어쓴다).
