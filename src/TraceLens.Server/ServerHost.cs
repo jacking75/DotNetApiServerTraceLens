@@ -33,6 +33,13 @@ public static class ServerHost
     /// <summary>이번 실행이 쓰는 로그 파일 경로. doctor와 진단 API가 알려 준다.</summary>
     public static string? LogFilePath { get; private set; }
 
+    /// <summary>
+    /// 이번 실행이 실제로 바인딩한 포트.
+    /// 진단이 항상 <see cref="DefaultPort"/>를 검사하면 <c>--port 25099</c>로 띄운 서버가
+    /// 쓰지도 않는 25011에 대해 PORT_IN_USE를 말한다 — 틀린 정보다.
+    /// </summary>
+    public static int BoundPort { get; private set; } = DefaultPort;
+
     /// <summary>최근 오류 요약. 전체 로그를 붙이지 않고도 무엇이 났는지 보이게 한다.</summary>
     public static IReadOnlyList<string> RecentErrors => fileLogger?.RecentErrors ?? [];
 
@@ -49,6 +56,7 @@ public static class ServerHost
             WebRootPath = "wwwroot"
         });
 
+        BoundPort = serverOptions.Port;
         builder.WebHost.UseUrls($"http://127.0.0.1:{serverOptions.Port}");
         builder.Services.AddCors(options => options.AddPolicy("ViteLocal", policy =>
             policy.WithOrigins($"http://localhost:{ViteDevPort}").AllowAnyHeader().AllowAnyMethod()));

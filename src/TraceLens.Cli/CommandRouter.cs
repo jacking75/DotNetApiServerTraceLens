@@ -336,7 +336,10 @@ public static class CommandRouter
         }
 
         Console.WriteLine($"TraceLens {report.ToolVersion}");
-        Console.WriteLine($"  로그: {report.Log?.LogFilePath}");
+        // 서버가 아직 안 떴으면 LogFilePath가 없고 폴더만 안다. 파일처럼 보여 주면 찾으러 갔다 헛걸음한다.
+        Console.WriteLine(ServerHost.LogFilePath is { Length: > 0 } logFile
+            ? $"  로그 파일: {logFile}"
+            : $"  로그 폴더: {FileLoggerOptions.DefaultDirectory}");
         Console.WriteLine($"  런타임: {report.RuntimeVersion}");
         Console.WriteLine($"  운영체제: {report.OperatingSystem}");
         Console.WriteLine($"  지원 대상: {string.Join(", ", report.SupportedTargets)}");

@@ -630,6 +630,17 @@ export default function App() {
     }
   }
 
+  // 헤더의 버전 표시와 오류 배너의 로그 경로에 쓴다. 실패하면 조용히 넘어간다(분석과 무관하다).
+  useEffect(() => {
+    void (async () => {
+      try {
+        setDiagnostics(await getDiagnostics())
+      } catch {
+        // 서버가 아직 안 떴거나 구버전이다. 버전 표시는 없어도 분석은 그대로 동작한다.
+      }
+    })()
+  }, [])
+
   // 첫 화면의 "예제 분석" 버튼이 쓰는 목록. 실패하면 빈 목록으로 두고 버튼 대신 사유를 보여 준다.
   useEffect(() => {
     void (async () => {
@@ -1195,6 +1206,11 @@ export default function App() {
           )}
         </form>
         <div className="header-tools">
+          {diagnostics && (
+            <span className="app-version" title={`${t('diagnostics.title')}: ${diagnostics.runtimeVersion}`}>
+              {diagnostics.toolVersion}
+            </span>
+          )}
           <label className="lang-switch">
             <span className="visually-hidden">{t('lang.label')}</span>
             <select value={lang} onChange={(event) => setLang(event.target.value as Language)} aria-label={t('lang.label')}>
@@ -1309,7 +1325,12 @@ export default function App() {
               <pre>{error.detail}</pre>
             </details>
           )}
-          {errorId && <span className="hint">{t('error.errorId', { id: errorId })}</span>}
+          {errorId && (
+            <span className="hint">
+              {t('error.errorId', { id: errorId })}
+              {diagnostics?.log?.logFilePath && ` · ${t('diagnostics.logFile')}: ${diagnostics.log.logFilePath}`}
+            </span>
+          )}
         </div>
       )}
       {progress && <div className="analysis-progress" aria-live="polite">{progress}</div>}
@@ -1425,7 +1446,7 @@ export default function App() {
               </button>
             </header>
             {diagnostics
-              ? <DiagnosticsCard report={diagnostics} className="diagnostics-modal-body" />
+              ? <DiagnosticsCard report={diagnostics} className="diagnostics-modal-body" errorId={errorId} />
               : <div className="panel-message">{t('freshness.checking')}</div>}
           </div>
         </div>

@@ -118,11 +118,54 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
                 if (instance is not null)
                 {
                     MSBuildLocator.RegisterInstance(instance);
+                    RegisteredMsBuildDescription = $"{instance.Name} {instance.Version} ({instance.MSBuildPath})";
                     return;
                 }
 
-                MSBuildLocator.RegisterMSBuildPath(FindLatestSdkDirectory());
+                var sdkDirectory = FindLatestSdkDirectory();
+                MSBuildLocator.RegisterMSBuildPath(sdkDirectory);
+                RegisteredMsBuildDescription = $".NET SDK ({sdkDirectory})";
             }
+        }
+    }
+
+    /// <summary>
+    /// 분석에 필요한 최소 SDK 메이저 버전. 이보다 낮으면 net8.0 프로젝트를 열지 못한다.
+    /// doctor가 <c>SDK_TOO_OLD</c>를 판정할 때 쓴다.
+    /// </summary>
+    public const int MinimumSdkMajor = 8;
+
+    /// <summary>
+    /// 마지막으로 등록한 MSBuild 인스턴스 설명(이름·버전·경로).
+    /// 어느 MSBuild를 골랐는지 doctor가 말할 수 있어야 "분석은 되는데 결과가 다르다"를 추적할 수 있다.
+    /// </summary>
+    public static string? RegisteredMsBuildDescription { get; private set; }
+
+    /// <summary>폴더 이름에서 SDK 버전을 읽는다. doctor가 설치된 SDK 목록을 만들 때 함께 쓴다.</summary>
+    public static Version? ReadSdkVersion(string directoryName) => ParseSdkVersion(directoryName);
+
+    /// <summary>설치된 SDK 디렉터리 전부(버전 내림차순). 하나도 없으면 빈 목록이다.</summary>
+    public static IReadOnlyList<string> ListSdkDirectories()
+    {
+        try
+        {
+            var runtimeDirectory = new DirectoryInfo(System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory());
+            var sdkRoot = Path.Combine(runtimeDirectory.Parent?.Parent?.Parent?.FullName ?? string.Empty, "sdk");
+            if (!Directory.Exists(sdkRoot))
+            {
+                return [];
+            }
+
+            return Directory.EnumerateDirectories(sdkRoot)
+                .Select(path => new { Path = path, Version = ParseSdkVersion(Path.GetFileName(path)) })
+                .Where(item => item.Version is not null)
+                .OrderByDescending(item => item.Version)
+                .Select(item => item.Path)
+                .ToArray();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return [];
         }
     }
 

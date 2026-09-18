@@ -284,6 +284,12 @@ export interface DiagnosticItem {
   detail: string
 }
 
+/** 이번 실행의 로그 위치와 최근 오류. 비밀값·환경 변수는 담지 않는다. */
+export interface DiagnosticsLogInfo {
+  logFilePath: string | null
+  recentErrors: string[]
+}
+
 export interface DiagnosticsReport {
   canAnalyze: boolean
   toolVersion: string
@@ -293,6 +299,7 @@ export interface DiagnosticsReport {
   supportedTargets: string[]
   unsupportedTargets: Record<string, string>
   items: DiagnosticItem[]
+  log?: DiagnosticsLogInfo | null
 }
 
 export interface AnalysisCapabilities {

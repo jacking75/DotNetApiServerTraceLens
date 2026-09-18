@@ -27,7 +27,7 @@ public static class DiagnosticsEndpoints
         var report = diagnostics.Run(new DiagnosticsOptions
         {
             TargetPath = targetPath,
-            Port = ServerHost.DefaultPort,
+            Port = ServerHost.BoundPort,
             McpHostCandidates = McpConfigWriter.GetHostCandidates()
         });
         // 500 오류에 붙일 것을 사용자가 알 수 있도록 로그 위치와 최근 오류를 함께 준다(비밀값은 담지 않는다).
