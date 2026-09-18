@@ -308,6 +308,16 @@ function MethodDetail({
             <dd>{entry.httpMethod} {entry.route}</dd>
             <dt>{t('detail.handler')}</dt>
             <dd>{entry.handlerDisplayName}</dd>
+            {(entry.apiVersions ?? []).length > 0 && (
+              <>
+                <dt>{t('detail.apiVersions')}</dt>
+                <dd title={t('detail.apiVersionTitle')}>
+                  {(entry.apiVersions ?? []).map((version) => (
+                    <span key={version} className="chip small">{t('detail.apiVersion', { version })}</span>
+                  ))}
+                </dd>
+              </>
+            )}
             <dt>{t('detail.confidence')}<HelpLink term="confidence" onOpen={actions.onExplain} /></dt>
             <dd>
               <span className={`chip small${entry.confidence === 'Estimated' ? ' warn' : ''}`}>

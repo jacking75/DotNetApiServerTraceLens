@@ -62,4 +62,11 @@ public sealed record EntryPoint(string NodeId, string HttpMethod, string Route)
         get => notes;
         init => notes = value ?? [];
     }
+
+    /// <summary>
+    /// <c>[ApiVersion("1.0")]</c>으로 선언한 버전. 라우트에 <c>{version:apiVersion}</c> 토큰이 있으면
+    /// 버전마다 진입점이 하나씩 나오고, 없으면(헤더·쿼리 버전) 라우트는 같고 endpointId로만 구분된다.
+    /// v7 이전 문서에는 없고, 없으면 빈 목록으로 읽는다.
+    /// </summary>
+    public IReadOnlyList<string> ApiVersions { get; init; } = [];
 }

@@ -73,6 +73,11 @@ export function EntryPointList({
         >
           <span className={`http ${entryPoint.httpMethod.toLowerCase()}`}>{entryPoint.httpMethod}</span>
           <span className="grow">{entryPoint.route}</span>
+          {(entryPoint.apiVersions ?? []).map((version) => (
+            <span key={version} className="chip small" title={t('detail.apiVersionTitle')}>
+              {t('detail.apiVersion', { version })}
+            </span>
+          ))}
           {entryPoint.source === 'MinimalApi' && (
             <span className="chip small" title={t('chip.minimalApiTitle')}>{t('chip.minimalApi')}</span>
           )}

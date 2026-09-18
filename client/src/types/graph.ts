@@ -151,6 +151,8 @@ export interface EntryPoint {
   handlerDisplayName: string
   projectKey: string
   notes: string[]
+  /** `[ApiVersion]`으로 선언한 버전. 옛 그래프에는 없다. */
+  apiVersions?: string[]
 }
 
 /* ------------------------------------------------------------------ 분석 진단·입력 목록 (스키마 v7) */
