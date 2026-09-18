@@ -19,6 +19,8 @@ export interface SourceMarker {
 
 interface SourceViewProps {
   target: SourceTarget | null
+  /** 화면 테마. Monaco는 CSS 변수를 읽지 않으므로 직접 넘긴다. */
+  theme?: 'dark' | 'light'
   height: number | string
   emptyMessage: string
   /**
@@ -34,6 +36,7 @@ interface SourceViewProps {
 /** 지정한 파일 구간을 읽어 Monaco로 보여준다. 상세 패널의 "소스" 절에 끼워 넣어 쓴다. */
 export function SourceView({
   target,
+  theme = 'dark',
   height,
   emptyMessage,
   highlightLines = [],
@@ -139,7 +142,7 @@ export function SourceView({
       <Editor
         height="100%"
         language="csharp"
-        theme="vs-dark"
+        theme={theme === 'light' ? 'vs' : 'vs-dark'}
         value={source.content}
         onMount={handleMount}
         options={{

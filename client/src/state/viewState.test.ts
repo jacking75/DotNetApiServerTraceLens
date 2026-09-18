@@ -78,6 +78,31 @@ describe('viewState', () => {
     expect(list[0]).toBe(`C:\\p${maxRecentTargets + 2}.sln`)
   })
 
+  it('테마·글꼴 배율·패널 접힘을 저장하고 되살린다', () => {
+    saveState({
+      ...defaultState,
+      theme: 'light',
+      fontScale: 1.15,
+      collapsed: { left: true, right: false },
+    })
+
+    const state = loadState()
+
+    expect(state.theme).toBe('light')
+    expect(state.fontScale).toBe(1.15)
+    expect(state.collapsed).toEqual({ left: true, right: false })
+  })
+
+  /** 저장값이 손상돼도 화면이 깨지면 안 된다. 모르는 배율은 1로 돌린다. */
+  it('알 수 없는 테마·배율은 기본값으로 돌린다', () => {
+    installStorage({ 'tracelens.view': JSON.stringify({ theme: 'neon', fontScale: 3 }) })
+
+    const state = loadState()
+
+    expect(state.theme).toBe('system')
+    expect(state.fontScale).toBe(1)
+  })
+
   it('없는 키는 기본값으로 채운다', () => {
     installStorage({ 'tracelens.view': JSON.stringify({ viewMode: 'classmap' }) })
 

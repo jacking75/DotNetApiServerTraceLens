@@ -66,7 +66,18 @@ export interface PersistedState {
   guide: GuideState
   /** 최근에 분석한 대상(최신 우선, 최대 5개). 매번 드라이브부터 고르지 않게 한다. */
   recentTargets: string[]
+  /** 테마. `system`이면 운영체제 설정(prefers-color-scheme)을 따른다. */
+  theme: ThemeSetting
+  /** 글꼴 배율. 모든 font-size가 이 값과 곱해진다. */
+  fontScale: number
+  /** 접어 둔 좌·우 패널. 접히면 세로 띠만 남고 캔버스가 그만큼 넓어진다. */
+  collapsed: { left: boolean; right: boolean }
 }
+
+export type ThemeSetting = 'system' | 'dark' | 'light'
+
+/** 고를 수 있는 글꼴 배율. 저장값이 이 중에 없으면 1로 돌린다. */
+export const fontScales = [0.9, 1, 1.15] as const
 
 /** 보관하는 최근 대상 수. 더 늘리면 목록이 길어져 고르기 어렵다. */
 export const maxRecentTargets = 5
@@ -117,6 +128,9 @@ export const defaultState: PersistedState = {
   flowEntryId: null,
   guide: { seen: false, completed: [] },
   recentTargets: [],
+  theme: 'system',
+  fontScale: 1,
+  collapsed: { left: false, right: false },
 }
 
 /** 저장값에서 읽은 안내 진행. 알 수 없는 단계 ID는 버린다(단계가 바뀌어도 깨지지 않게). */
@@ -150,6 +164,9 @@ export function loadState(): PersistedState {
       recentTargets: Array.isArray(parsed.recentTargets)
         ? parsed.recentTargets.filter((item): item is string => typeof item === 'string').slice(0, maxRecentTargets)
         : [],
+      theme: parsed.theme === 'dark' || parsed.theme === 'light' ? parsed.theme : 'system',
+      fontScale: fontScales.includes(parsed.fontScale as typeof fontScales[number]) ? parsed.fontScale! : 1,
+      collapsed: { ...defaultState.collapsed, ...parsed.collapsed },
     }
   } catch {
     return defaultState

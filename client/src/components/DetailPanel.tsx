@@ -44,6 +44,8 @@ interface DetailPanelProps {
   graph: GraphDocument | null
   /** `파일:줄`을 눌러 연 위치. 없으면 선택한 항목의 선언 위치를 보여 준다. */
   sourceTarget?: SourceLocation | null
+  /** 화면 테마. 코드 보기(Monaco)가 함께 따라야 라이트 테마에서 대비가 유지된다. */
+  theme?: 'dark' | 'light'
   selection: Selection | null
   relations: ClassRelation[]
   namespaces: GraphNamespaceSummary[]
@@ -55,6 +57,7 @@ interface DetailPanelProps {
 export function DetailPanel({
   graph,
   sourceTarget = null,
+  theme = 'dark',
   selection,
   relations,
   namespaces,
@@ -84,6 +87,7 @@ export function DetailPanel({
           nodeId={selection.key}
           entryPoints={entryPoints}
           sourceTarget={sourceTarget}
+          theme={theme}
           actions={actions}
         />
       )}
@@ -263,12 +267,14 @@ function MethodDetail({
   nodeId,
   entryPoints,
   sourceTarget,
+  theme,
   actions,
 }: {
   graph: GraphDocument
   nodeId: string
   entryPoints: EntryPoint[]
   sourceTarget: SourceLocation | null
+  theme: 'dark' | 'light'
   actions: DetailActions
 }) {
   const { t } = useI18n()
@@ -440,6 +446,7 @@ function MethodDetail({
         <Suspense fallback={<div className="panel-message">{t('detail.loadingSource')}</div>}>
           <SourceView
             target={sourceView}
+            theme={theme}
             height={240}
             emptyMessage={t('detail.loadingSource')}
             highlightLines={highlightLines}

@@ -46,6 +46,10 @@ export const en: Dictionary = {
   'viewHint.classmapFocus': 'Draws only the selected class and the classes directly connected to it.',
   'viewHint.classmapPackage': 'Groups every class in the solution into namespace packages.',
   'viewHint.flowmapEntry': 'The full span this entry point runs through, grouped by class with methods as rows.',
+  'view.fontScale': 'Font size',
+  'view.themeTitle': 'Switch between light and dark',
+  'view.collapsePanel': 'Collapse the panel',
+  'view.expandPanel': 'Expand the panel',
   'viewToolbar.label': 'Switch view',
 
   'toolbar.level': 'Level {n}',
@@ -233,6 +237,7 @@ export const en: Dictionary = {
   'context.sendWarning': 'Sending this to an external AI transfers the content to that service.',
 
   'impact.title': 'Change impact',
+  'impact.needMethod': 'Select a method to find the APIs it affects.',
   'impact.run': 'Find affected APIs',
   'impact.running': 'Searching…',
   'impact.empty':

@@ -46,6 +46,10 @@ export const ko = {
   'viewHint.classmapFocus': '선택한 클래스와 직접 이어진 클래스만 그린다.',
   'viewHint.classmapPackage': '솔루션 전체 클래스를 네임스페이스 패키지로 묶어 그린다.',
   'viewHint.flowmapEntry': '이 진입점이 타는 전 구간이다. 클래스로 묶고 메서드는 줄로 보여준다.',
+  'view.fontScale': '글꼴 크기',
+  'view.themeTitle': '밝게 / 어둡게 전환',
+  'view.collapsePanel': '패널 접기',
+  'view.expandPanel': '패널 펼치기',
   'viewToolbar.label': '보기 전환',
 
   'toolbar.level': '레벨 {n}',
@@ -232,6 +236,7 @@ export const ko = {
   'context.sendWarning': '외부 AI에 보내면 이 내용이 그 서비스로 전송된다.',
 
   'impact.title': '변경 영향',
+  'impact.needMethod': '메서드를 고르면 영향받는 API를 찾을 수 있다.',
   'impact.run': '영향받는 API 찾기',
   'impact.running': '찾는 중…',
   'impact.empty': '도달하는 HTTP 진입점을 찾지 못했다. 배치·메시지 소비자처럼 다른 경로로 실행될 수 있다.',

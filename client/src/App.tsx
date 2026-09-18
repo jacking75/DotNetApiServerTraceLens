@@ -59,12 +59,14 @@ import type { TranslationKey } from './i18n/ko'
 import {
   addRecentTarget,
   defaultColumns,
+  fontScales,
   loadState,
   saveState,
   type ClassMapState,
   type DataViewState,
   type MiddlewareViewState,
   type PersistedState,
+  type ThemeSetting,
 } from './state/viewState'
 import { parse as parseUrlState, serialize as serializeUrlState } from './state/urlState'
 import type { DiagnosticsReport, SampleView, SelectionKind } from './types/context'
@@ -164,6 +166,9 @@ export default function App() {
   const [sourceTarget, setSourceTarget] = useState<SourceLocation | null>(null)
   /** 최근에 분석한 대상. 경로 입력칸 옆 드롭다운으로 고른다. */
   const [recentTargets, setRecentTargets] = useState<string[]>(initial.recentTargets)
+  const [theme, setTheme] = useState<ThemeSetting>(initial.theme)
+  const [fontScale, setFontScale] = useState(initial.fontScale)
+  const [collapsed, setCollapsed] = useState(initial.collapsed)
   const openGlossary = useCallback((term: GlossaryTerm) => setHelp({ tab: 'glossary', term }), [])
   const [diagnostics, setDiagnostics] = useState<DiagnosticsReport | null>(null)
   const [samples, setSamples] = useState<SampleView[]>([])
@@ -186,6 +191,8 @@ export default function App() {
   const [presetQuestion, setPresetQuestion] = useState<{ text: string; token: number } | null>(null)
 
   const workspaceRef = useRef<HTMLElement>(null)
+  /** applyColumns가 최신 접힘 상태를 읽도록 ref로 들고 있는다(콜백을 다시 만들지 않기 위해서다). */
+  const collapsedRef = useRef(initial.collapsed)
   const shellRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -320,11 +327,41 @@ export default function App() {
       flowEntryId,
       guide: { seen: true, completed: [...walkthroughDone] },
       recentTargets,
+      theme,
+      fontScale,
+      collapsed,
     })
   }, [
     viewMode, classMap, depth, selection, columns, solutionPath, dataView, middlewareView,
-    callFlowEntry, focusStack, flowEntryId, walkthroughDone, recentTargets,
+    callFlowEntry, focusStack, flowEntryId, walkthroughDone, recentTargets, theme, fontScale, collapsed,
   ])
+
+  /* ---------------------------------------------------------------- 테마·글꼴 */
+
+  /**
+   * 테마와 글꼴 배율을 문서 루트에 반영한다.
+   * `system`이면 운영체제 설정을 따르고, 그 설정이 바뀌면 함께 바뀐다.
+   */
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: light)')
+    const apply = () => {
+      const resolved = theme === 'system' ? (media.matches ? 'light' : 'dark') : theme
+      document.documentElement.dataset.theme = resolved
+    }
+
+    apply()
+    media.addEventListener('change', apply)
+    return () => media.removeEventListener('change', apply)
+  }, [theme])
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--fs-scale', String(fontScale))
+  }, [fontScale])
+
+  /** Monaco와 Cytoscape가 읽는 실제 테마. `system`을 그대로 넘기면 안 된다. */
+  const resolvedTheme = theme === 'system'
+    ? (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+    : theme
 
   /* ---------------------------------------------------------------- URL 해시 동기화 */
 
@@ -415,8 +452,9 @@ export default function App() {
     const left = Math.min(Math.max(next.left, minLeft), maxLeft)
     const maxRight = Math.max(minRight, total - minCenter - left - 16)
     const right = Math.min(Math.max(next.right, minRight), maxRight)
-    workspace?.style.setProperty('--col-left', `${left}px`)
-    workspace?.style.setProperty('--col-right', `${right}px`)
+    // 접힌 패널은 세로 띠(32px)만 남긴다. 저장한 폭은 그대로 두어 펼치면 되돌아온다.
+    workspace?.style.setProperty('--col-left', collapsedRef.current.left ? '32px' : `${left}px`)
+    workspace?.style.setProperty('--col-right', collapsedRef.current.right ? '32px' : `${right}px`)
     return { left, right }
   }, [])
 
@@ -426,9 +464,10 @@ export default function App() {
 
   // 폭이 바뀌면 CSS 변수에 반영한다. 리스너 등록과 분리해야 폭을 바꿀 때마다 리스너를 다시 달지 않는다.
   useEffect(() => {
+    collapsedRef.current = collapsed
     applyColumns(columns)
     measureShell()
-  }, [columns, applyColumns, measureShell])
+  }, [columns, collapsed, applyColumns, measureShell])
 
   // 창이 줄어들 때도 같은 클램프를 다시 돌리고, 배치는 디바운스해서 다시 계산한다.
   useEffect(() => {
@@ -1380,6 +1419,28 @@ export default function App() {
               {diagnostics.toolVersion}
             </span>
           )}
+          <div className="font-scale" role="group" aria-label={t('view.fontScale')}>
+            {fontScales.map((scale, index) => (
+              <button
+                key={scale}
+                type="button"
+                className={fontScale === scale ? 'chipbtn active' : 'chipbtn'}
+                title={t('view.fontScale')}
+                onClick={() => setFontScale(scale)}
+              >
+                {index === 0 ? 'A-' : index === 1 ? 'A' : 'A+'}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="chipbtn"
+            title={t('view.themeTitle')}
+            aria-label={t('view.themeTitle')}
+            onClick={() => setTheme(resolvedTheme === 'light' ? 'dark' : 'light')}
+          >
+            {resolvedTheme === 'light' ? '🌙' : '☀'}
+          </button>
           <label className="lang-switch">
             <span className="visually-hidden">{t('lang.label')}</span>
             <select value={lang} onChange={(event) => setLang(event.target.value as Language)} aria-label={t('lang.label')}>
@@ -1466,6 +1527,7 @@ export default function App() {
         shardingEnabled={dataAccess?.shardingEnabled ?? false}
       />
 
+      <div className="banner-stack">
       {error && (
         <div className="global-error" role="alert">
           <div className="error-head">
@@ -1598,6 +1660,7 @@ export default function App() {
           {recipeCopied && <div className="hint">{recipeCopied}</div>}
         </div>
       )}
+      </div>
 
       {analysisDiagnosticsOpen && (
         <DiagnosticsPanel
@@ -1677,8 +1740,17 @@ export default function App() {
         />
       ) : (
       <section className="workspace" ref={workspaceRef}>
-        <aside className="panel side-panel" id="tracelens-side-panel">
+        <aside className={`panel side-panel${collapsed.left ? ' collapsed' : ''}`} id="tracelens-side-panel">
           <header>
+            <button
+              type="button"
+              className="panel-collapse"
+              aria-expanded={!collapsed.left}
+              title={collapsed.left ? t('view.expandPanel') : t('view.collapsePanel')}
+              onClick={() => setCollapsed((current) => ({ ...current, left: !current.left }))}
+            >
+              {collapsed.left ? '›' : '‹'}
+            </button>
             <span>
               {viewMode === 'classmap'
                 ? t('panel.namespaces')
@@ -1910,7 +1982,20 @@ export default function App() {
           columns={columns}
         />
 
-        <div className="right-column">
+        <div className={`right-column${collapsed.right ? ' collapsed' : ''}`}>
+          <div className="right-column-tools">
+            <button
+              type="button"
+              className="panel-collapse"
+              aria-expanded={!collapsed.right}
+              title={collapsed.right ? t('view.expandPanel') : t('view.collapsePanel')}
+              onClick={() => setCollapsed((current) => ({ ...current, right: !current.right }))}
+            >
+              {collapsed.right ? '‹' : '›'}
+            </button>
+          </div>
+          {!collapsed.right && (
+          <>
           {diffOpen && (
             <SnapshotDiffPanel
               snapshotId={graph?.snapshotId ?? ''}
@@ -1958,6 +2043,7 @@ export default function App() {
               <DetailPanel
                 graph={graph}
                 sourceTarget={sourceTarget}
+                theme={resolvedTheme}
                 selection={selection}
                 relations={relations}
                 namespaces={namespaces}
@@ -1981,6 +2067,8 @@ export default function App() {
             onExplain={openGlossary}
             onOpenSource={setSourceTarget}
           />
+          </>
+          )}
         </div>
       </section>
       )}

@@ -13,6 +13,13 @@ interface GraphViewProps {
   onDrilldown: (node: GraphNode) => void
 }
 
+/** 문서 루트의 CSS 변수 값을 읽는다. Cytoscape는 CSS를 모르므로 색을 직접 넘겨야 한다. */
+function cssVariable(name: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return value.length > 0 ? value : fallback
+}
+
 export function GraphView({
   graphWindow,
   selectedNodeId,
@@ -59,7 +66,8 @@ export function GraphView({
           selector: 'node',
           style: {
             'background-color': 'data(color)',
-            color: '#f8fafc',
+            // 라벨·선 색은 CSS 변수에서 읽는다. 라이트 테마에서 흰 글씨가 남으면 읽을 수 없다.
+            color: cssVariable('--graph-label', '#f8fafc'),
             label: 'data(label)',
             'font-size': 12,
             'font-weight': 600,
@@ -69,7 +77,7 @@ export function GraphView({
             height: 48,
             shape: 'round-rectangle',
             'border-width': 1,
-            'border-color': '#ffffff30',
+            'border-color': cssVariable('--graph-node-border', '#ffffff30'),
           },
         },
         {
@@ -80,8 +88,8 @@ export function GraphView({
           selector: 'edge',
           style: {
             width: 2,
-            'line-color': '#657086',
-            'target-arrow-color': '#657086',
+            'line-color': cssVariable('--canvas-edge', '#657086'),
+            'target-arrow-color': cssVariable('--canvas-edge', '#657086'),
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
           },

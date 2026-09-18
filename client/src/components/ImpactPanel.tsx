@@ -40,20 +40,21 @@ export function ImpactPanel({ nodeId, snapshotId, onOpenEntryPoint, onOpenSource
     }
   }
 
-  if (!nodeId) return null
-
   return (
     <section className="impact-panel" id="tracelens-impact-panel">
       <header>
         <span>{t('impact.title')}</span>
-        <button type="button" onClick={() => void run()} disabled={busy}>
+        <button type="button" onClick={() => void run()} disabled={busy || !nodeId}>
           {busy ? t('impact.running') : t('impact.run')}
         </button>
       </header>
 
+      {/* 패널이 나타났다 사라지면 "있었는데 없다"가 된다. 항상 그리고 비활성 사유를 말한다. */}
+      {!nodeId && <div className="panel-message tight">{t('impact.needMethod')}</div>}
+
       {error && <div className="panel-message tight">{error}</div>}
 
-      {result && (
+      {nodeId && result && (
         <div className="impact-body">
           <div className="hint">{t('impact.count', { count: result.endpoints.length })}</div>
           {result.truncated && <div className="hint warn">{t('impact.truncated')}</div>}
