@@ -636,6 +636,20 @@ cd tracelens
         failing obscurely. Support is not "added" by loosening an extension check.
       </div>
 
+      <div class="callout warn">
+        <strong>What is not read today.</strong> The items below are absent from the results, but they do not
+        vanish silently — their counts and names stay under <b>analysis diagnostics</b>, in
+        "input seen but not interpreted" and "execution units outside HTTP".
+        <ul>
+          <li>EF Core / MongoDB / NHibernate storage access &rarr; 0 data access entries plus the reason in <code>dataAccess.notes</code></li>
+          <li>MediatR <code>Send()</code>&rarr;handler, delegate and event dispatch &rarr; no call edge</li>
+          <li>gRPC, SignalR, <code>BackgroundService</code>, message consumers, Hangfire/Quartz, Azure Functions &rarr; not counted as entry points</li>
+          <li>MVC action and exception filters, <code>[Authorize]</code> policies &rarr; not shown as middleware steps</li>
+          <li>Conventional routing (<code>MapControllerRoute</code>) &rarr; counted only in the <code>ConventionalRouting</code> candidate group</li>
+        </ul>
+        The classic <code>Startup.cs</code> layout (.NET Core 3.1-5) <b>is</b> read — merged with <code>Program.cs</code> into one timeline.
+      </div>
+
       <h3 class="sub-h" id="build-publish">Deploying and running just the build output, without source</h3>
       <p>
         <code>run.ps1</code> and <code>dotnet run</code> both need the source tree and the .NET
@@ -1543,7 +1557,7 @@ npm run dev</code></pre>
       <h2>Learn more</h2>
       <ul>
         <li><code>README.md</code> — project overview, quick start, supported scope, tech stack.</li>
-        <li><code>docs/mcp-setup.md</code> — registering the MCP server with Claude Code, Codex CLI and VS Code, plus all twelve tools.</li>
+        <li><code>docs/mcp-setup.md</code> — registering the MCP server with Claude Code, Codex CLI, VS Code and Cursor, all twelve tools, and the agent guide.</li>
         <li><code>docs/data-contract.md</code> — the <code>graph.json</code> schema (v7), API and MCP contracts, error codes, and migration rules.</li>
         <li><code>CONTRIBUTING.md</code> — how to report a missed call, the verification commands, and the promises about wording.</li>
         <li><code>CHANGELOG.md</code> — release notes (updated by hand) and known limitations.</li>

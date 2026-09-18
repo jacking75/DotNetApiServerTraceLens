@@ -120,6 +120,8 @@ export function WelcomePanel({
           <li>{t('welcome.scope2')}</li>
           <li>{t('welcome.scope3')}</li>
           <li>{t('welcome.scope4')}</li>
+          <li className="scope-not-read">{t('welcome.scope5')}</li>
+          <li className="scope-not-read">{t('welcome.scope6')}</li>
         </ul>
       </section>
 

@@ -9,6 +9,7 @@ traces or timings — the "Trace" in the name means following call paths through
 tracing.
 
 ```
+# Packaged build: .\tracelens.exe · From source: dotnet run --project src/TraceLens.Cli --
 1) tracelens analyze <your .sln or .csproj>       # analyzes and writes .tracelens/graph.json
 2) tracelens serve   --target <same path>         # opens the UI at http://127.0.0.1:25011
 3) pick an entry point → check the source → copy AI context   # evidence and limits come along
@@ -311,6 +312,10 @@ tracelens mcp     --graph <graph.json path>    The local stdio MCP server.
 tracelens demo    [--dir <destination>]        Copies the example project and explains what to look at.
 tracelens init    [--target <path>] [--force]  Writes tracelens.config.json. Never overwrites an existing one.
 tracelens config  --show [--target <path>]     Prints the effective config (defaults merged with your file).
+
+Do not analyze the same target from two instances (on different ports) at once: both write to the same
+`.tracelens/` and the one that finishes last wins (the 409 rejection only works within a single process).
+Stop with `Ctrl+C`, or `Get-Process tracelens | Stop-Process` if you started it in the background.
 ```
 
 `--no-browser` skips opening a browser (for remote shells and containers). `--profile` prints
@@ -356,6 +361,11 @@ counts — no invented percentage — and can be **canceled**, which keeps the p
 | Codex CLI / VS Code | Only if you want to register the MCP server directly ([docs/mcp-setup.md](docs/mcp-setup.md)). |
 
 ### Start from the build output (no source tree, no Node.js)
+
+> **There is no published distribution yet.** Nothing is on nuget.org or GitHub Releases, so there is
+> nowhere to download from. Build it with `.\pack.ps1` on a machine that has the source (only that
+> machine needs Node.js) and copy the result, or use "Run from source" below. When a publishing channel
+> exists, this paragraph becomes a link to it.
 
 ```powershell
 # Unpack the ZIP produced from this repository, then:
@@ -408,6 +418,22 @@ handy for looking at one slice of a large solution.
 | Database and cache access | Supported (configurable) | Read from SQL literals and cache calls. Point `db.queryApis` at your own wrapper types. |
 | Reflection, event subscriptions, message handlers | Not supported | Never turned into call edges. |
 | Target formats | `.sln`, `.csproj` | `.slnx` is not supported yet — the MSBuildWorkspace in use cannot open it, and `doctor` says so. |
+
+### What is not read today
+
+The items below are **absent from the results** — but they do not vanish silently. Their counts and
+names are recorded under "input seen but not interpreted" and "execution units outside HTTP" in the
+analysis diagnostics, and known frameworks are also promoted to a limitation sentence.
+
+| Not read | How it shows up |
+|---|---|
+| EF Core, MongoDB, NHibernate storage access | 0 data access entries plus the reason in `dataAccess.notes`, and a count in the external-namespace tally |
+| MediatR `Send()`→handler, delegate and event dispatch | No call edge, plus a count in the external-namespace tally |
+| gRPC, SignalR, `BackgroundService`, message consumers, Hangfire/Quartz, Azure Functions | Not counted as entry points; reported as "N execution units outside HTTP" in diagnostics, the entry point list and the impact limitations |
+| MVC action and exception filters, `[Authorize]` policies | Not shown as steps in the middleware view |
+| Conventional routing (`MapControllerRoute`) | Not counted as an entry point; counted only in the `ConventionalRouting` candidate group |
+
+The classic `Startup.cs` layout (.NET Core 3.1-5) **is** read — it is merged with `Program.cs` into one timeline.
 
 Only verified platform combinations are listed:
 

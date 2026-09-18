@@ -628,6 +628,19 @@ cd tracelens
         확장자 검사만 푸는 방식으로 "지원"을 늘리지 않는다.
       </div>
 
+      <div class="callout warn">
+        <strong>지금 읽지 않는 것.</strong> 아래는 결과에서 빠진다. 다만 조용히 사라지지는 않는다 —
+        인식한 개수와 이름이 <b>분석 진단</b>의 "인식했지만 해석하지 않은 입력"과 "HTTP 밖 실행 단위"에 남는다.
+        <ul>
+          <li>EF Core · MongoDB · NHibernate 저장소 접근 → DB·캐시 접근 0건 + <code>dataAccess.notes</code>에 사유</li>
+          <li>MediatR <code>Send()</code>→핸들러, 델리게이트·이벤트 디스패치 → 호출 엣지 없음</li>
+          <li>gRPC · SignalR · <code>BackgroundService</code> · 메시지 컨슈머 · Hangfire/Quartz · Azure Functions → 진입점으로 세지 않음</li>
+          <li>MVC 액션·예외 필터, <code>[Authorize]</code> 정책 → 미들웨어 단계로 나오지 않음</li>
+          <li>전통적 라우팅(<code>MapControllerRoute</code>) → 후보 그룹 <code>ConventionalRouting</code>으로만 센다</li>
+        </ul>
+        클래식 <code>Startup.cs</code>(.NET Core 3.1~5)는 <b>읽는다</b> — <code>Program.cs</code>와 한 타임라인으로 합친다.
+      </div>
+
       <h3 class="sub-h" id="build-publish">소스 없이 빌드 결과만 배포·실행할 때</h3>
       <p>
         <code>run.ps1</code>과 <code>dotnet run</code>은 실행할 때마다 소스 트리와 .NET SDK가 있어야 한다.
@@ -1485,7 +1498,7 @@ npm run dev</code></pre>
       <h2>더 알아보기</h2>
       <ul>
         <li><code>README_kr.md</code> — 프로젝트 개요, 빠른 시작, 지원 범위, 기술 구성.</li>
-        <li><code>docs/mcp-setup_kr.md</code> — Claude Code · Codex CLI · VS Code에 MCP 서버로 등록하는 방법과 도구 열두 가지.</li>
+        <li><code>docs/mcp-setup_kr.md</code> — Claude Code · Codex CLI · VS Code · Cursor에 MCP 서버로 등록하는 방법, 도구 열두 가지, 에이전트 안내문.</li>
         <li><code>docs/data-contract.md</code> — <code>graph.json</code> 스키마(v7), API·MCP 계약, 오류 코드, 버전 이행 규칙.</li>
         <li><code>CONTRIBUTING.md</code> — 분석 누락을 신고하는 방법, 검증 명령, 판정 문구에 대한 약속.</li>
         <li><code>CHANGELOG.md</code> — 릴리스 노트(수동 갱신)와 알려진 제한.</li>

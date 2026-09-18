@@ -288,6 +288,8 @@ export const ko = {
   'welcome.scope2': '메서드·생성자 호출 그래프. DI 등록으로 인터페이스 호출을 구현체까지 연결한다.',
   'welcome.scope3': 'SQL 리터럴과 캐시 호출에서 뽑은 DB·캐시 접근, 트랜잭션 없는 쓰기 경로 판정',
   'welcome.scope4': '동적 라우트·reflection·이벤트 구독은 확정하지 않고 추정이나 미해석으로 남긴다.',
+  'welcome.scope5': '지금 읽지 않는 것: EF Core·MongoDB·NHibernate 접근, MediatR·델리게이트·이벤트 디스패치, gRPC·SignalR·BackgroundService·메시지 컨슈머·Hangfire 진입점, MVC 필터·[Authorize] 정책.',
+  'welcome.scope6': '읽지 않는 것은 결과에서 빠지지만 조용히 사라지지는 않는다 — 인식한 개수와 이름이 [분석 진단]에 남는다.',
   'welcome.recipes': '무엇부터 해 볼지 고르기',
 
   'guide.title': '첫 사용 안내',

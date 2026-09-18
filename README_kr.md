@@ -8,6 +8,7 @@
 분산 추적)은 수집하지 않는다 — 이름의 "Trace"는 코드의 호출 경로를 따라간다는 뜻이다.
 
 ```
+# 배포물: .\tracelens.exe · 소스: dotnet run --project src/TraceLens.Cli --
 1) tracelens analyze <내 .sln 또는 .csproj>       # 분석하고 .tracelens/graph.json에 저장
 2) tracelens serve   --target <같은 경로>          # http://127.0.0.1:25011 에서 UI 열기
 3) 진입점 선택 → 소스 근거 확인 → AI 문맥 복사     # 근거와 한계까지 함께 복사된다
@@ -296,6 +297,10 @@ tracelens mcp     --graph <graph.json 경로>    로컬 stdio MCP 서버를 띄�
 tracelens demo    [--dir <복사할 위치>]         예제를 복사하고 무엇을 볼지 안내한다.
 tracelens init    [--target <경로>] [--force]  tracelens.config.json을 만든다. 이미 있으면 덮어쓰지 않는다.
 tracelens config  --show [--target <경로>]     기본값과 파일을 합친 유효 설정 전체를 출력한다.
+
+같은 대상을 두 인스턴스(다른 포트)에서 동시에 분석하지 않는다. 둘 다 같은 `.tracelens/`에 쓰기 때문에
+나중에 끝난 쪽이 이긴다(409 거절은 한 프로세스 안에서만 동작한다).
+종료는 `Ctrl+C`, 백그라운드로 띄웠다면 `Get-Process tracelens | Stop-Process`.
 ```
 
 `--no-browser`는 브라우저를 자동으로 열지 않는다(원격 셸·컨테이너에서 쓴다). `--profile`은 단계별
@@ -342,6 +347,10 @@ tracelens config  --show [--target <경로>]     기본값과 파일을 합친 �
 | Codex CLI · VS Code | MCP를 직접 등록해 쓸 때만 필요하다([docs/mcp-setup_kr.md](docs/mcp-setup_kr.md)). |
 
 ### 배포물로 시작하기 (소스·Node.js 없이)
+
+> **배포물은 아직 공개 배포하지 않는다.** nuget.org·GitHub Release에 올린 것이 없으므로 내려받을 곳이 없다.
+> 소스가 있는 PC에서 `.\pack.ps1`로 만들어 옮기거나(만드는 PC에만 Node.js가 필요하다),
+> 아래 "소스에서 실행하기"를 쓴다. 게시 채널이 생기면 이 문단을 그 링크로 바꾼다.
 
 ```powershell
 # 저장소에서 만든 ZIP을 풀고
@@ -394,6 +403,21 @@ cd tracelens
 | DB·캐시 접근 | 지원(설정으로 조정) | SQL 리터럴과 캐시 호출에서 읽는다. `db.queryApis`에 사내 래퍼를 적으면 된다. |
 | reflection·이벤트 구독·메시지 핸들러 | 미지원 | 호출 엣지로 만들지 않는다. |
 | 대상 형식 | `.sln`, `.csproj` | `.slnx`는 지금 쓰는 MSBuildWorkspace가 열지 못해 아직 지원하지 않고, `doctor`가 그 이유를 알려 준다. |
+
+### 지금 읽지 않는 것
+
+아래는 **결과에서 빠진다.** 다만 조용히 사라지지는 않는다 — 인식한 개수와 이름이 분석 진단의
+"인식했지만 해석하지 않은 입력"과 "HTTP 밖 실행 단위"에 남고, 알려진 것은 한계 문장으로도 올라온다.
+
+| 읽지 않는 것 | 결과에 어떻게 남나 |
+|---|---|
+| EF Core · MongoDB · NHibernate 저장소 접근 | DB·캐시 접근 0건 + `dataAccess.notes`에 사유, 진단의 외부 네임스페이스 집계에 건수 |
+| MediatR `Send()`→핸들러, 델리게이트·이벤트 디스패치 | 호출 엣지 없음 + 진단의 외부 네임스페이스 집계에 건수 |
+| gRPC · SignalR · `BackgroundService` · 메시지 컨슈머 · Hangfire/Quartz · Azure Functions | 진입점으로 세지 않음 + 진단·진입점 목록·영향 한계에 "HTTP 밖 실행 단위 N개" |
+| MVC 액션·예외 필터, `[Authorize]` 정책 | 미들웨어 보기에 단계로 나오지 않는다 |
+| 전통적 라우팅(`MapControllerRoute`) | 진입점으로 세지 않고 후보 그룹 `ConventionalRouting`으로만 센다 |
+
+클래식 `Startup.cs`(.NET Core 3.1~5)는 **읽는다** — `Program.cs`와 함께 한 타임라인으로 합친다.
 
 지원을 확인한 조합만 적는다.
 

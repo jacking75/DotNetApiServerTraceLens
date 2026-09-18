@@ -172,7 +172,8 @@ $lines += '1. 다른 폴더에 ZIP을 풀고 tracelens doctor --target <대상> 
 $lines += '2. tracelens analyze <대상> 으로 분석하고 .tracelens/graph.json 이 생기는지 확인한다.'
 $lines += '3. tracelens serve --target <대상> 으로 UI를 열어 소스 보기까지 확인한다.'
 $lines += '4. 생성한 MCP 설정으로 AI 도구에서 get_analysis_status 를 호출해 본다.'
-$lines += '5. 위 결과를 이 파일 아래에 날짜와 함께 적는다. 확인하지 않은 운영체제는 지원 표에 넣지 않는다.'
+$lines += '5. 공백·한글이 든 경로(예: C:\테스트 폴더\My App)에 풀어 doctor · analyze · serve · 소스 보기를 확인한다.'
+$lines += '6. 위 결과를 이 파일 아래에 날짜와 함께 적는다. 확인하지 않은 운영체제는 지원 표에 넣지 않는다.'
 $lines += ''
 $lines += "== 만든 것과 지원하는 것은 다르다 =="
 $lines += 'ZIP을 만들었다는 것은 그 RID로 publish가 성공했다는 뜻일 뿐이다.'

@@ -291,6 +291,8 @@ export const en: Dictionary = {
   'welcome.scope2': 'Method and constructor calls. DI registrations resolve interface calls to the implementation.',
   'welcome.scope3': 'Database and cache access read from SQL literals and cache calls, plus write paths without a transaction',
   'welcome.scope4': 'Dynamic routes, reflection and event subscriptions are left as estimated or unresolved, never asserted.',
+  'welcome.scope5': 'Not read today: EF Core / MongoDB / NHibernate access, MediatR / delegate / event dispatch, gRPC / SignalR / BackgroundService / message consumer / Hangfire entry points, MVC filters and [Authorize] policies.',
+  'welcome.scope6': 'What is not read is absent from the results but never vanishes silently - the counts and names stay under [Analysis diagnostics].',
   'welcome.recipes': 'Pick something to try',
 
   'guide.title': 'Getting started',
