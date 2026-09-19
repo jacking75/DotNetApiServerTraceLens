@@ -1,13 +1,17 @@
 using System.Collections.Concurrent;
 using System.Text;
+using Microsoft.Extensions.Logging;
 
-namespace TraceLens.Server;
+namespace TraceLens.Context;
 
 /// <param name="Directory">로그를 쓸 폴더. 분석 루트를 모르는 시작 시점에는 사용자 영역을 쓴다.</param>
 /// <param name="RetentionDays">이 일수가 지난 파일은 시작할 때 지운다.</param>
 /// <param name="MaxFileBytes">한 파일이 이 크기를 넘으면 뒤에 번호를 붙여 새 파일로 넘어간다.</param>
 public sealed record FileLoggerOptions(string Directory, int RetentionDays = 7, long MaxFileBytes = 8L * 1024 * 1024)
 {
+    /// <summary>파일 이름 앞부분. 서버와 MCP 로그를 같은 폴더에서 구분한다.</summary>
+    public string FilePrefix { get; init; } = "tracelens";
+
     /// <summary>분석 루트를 아직 모를 때 쓰는 기본 위치.</summary>
     public static string DefaultDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -16,9 +20,10 @@ public sealed record FileLoggerOptions(string Directory, int RetentionDays = 7, 
 }
 
 /// <summary>
-/// 외부 패키지 없이 날짜별 파일로 쓰는 로거다.
+/// 외부 패키지 없이 날짜별 파일로 쓰는 로거다. 서버와 MCP가 같은 것을 쓴다 —
+/// MCP는 stderr로만 보내서 실패가 아무 데도 남지 않았다(T60).
 /// 500 오류에 붙일 <c>errorId</c>가 로그에도 남아야 사용자가 무엇을 첨부해야 할지 알 수 있다.
-/// 비밀값·환경 변수는 남기지 않는다(로그에 들어가는 것은 이 서버가 만든 문장뿐이다).
+/// 비밀값·환경 변수는 남기지 않는다(로그에 들어가는 것은 이 프로세스가 만든 문장뿐이다).
 /// </summary>
 public sealed class FileLoggerProvider : ILoggerProvider
 {
@@ -37,7 +42,7 @@ public sealed class FileLoggerProvider : ILoggerProvider
     /// <summary>오늘 로그 파일의 전체 경로. doctor가 "어디를 보면 되는지" 알려줄 때 쓴다.</summary>
     public string CurrentFilePath => Path.Combine(
         options.Directory,
-        $"tracelens-{DateTime.Now:yyyyMMdd}.log");
+        $"{options.FilePrefix}-{DateTime.Now:yyyyMMdd}.log");
 
     /// <summary>최근 오류 요약(최대 3건). 전체 로그를 붙이지 않고도 무엇이 났는지 보이게 한다.</summary>
     public IReadOnlyList<string> RecentErrors => recentErrors.ToArray();
@@ -121,7 +126,7 @@ public sealed class FileLoggerProvider : ILoggerProvider
         try
         {
             var cutoff = DateTime.Now.AddDays(-options.RetentionDays);
-            foreach (var file in Directory.EnumerateFiles(options.Directory, "tracelens-*.log"))
+            foreach (var file in Directory.EnumerateFiles(options.Directory, $"{options.FilePrefix}-*.log"))
             {
                 if (File.GetLastWriteTime(file) < cutoff)
                 {

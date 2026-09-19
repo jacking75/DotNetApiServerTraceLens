@@ -56,10 +56,15 @@ public sealed class McpConfigWriter : IMcpConfigWriter
         1. 무엇을 묻든 `get_analysis_status`를 먼저 부른다. 신선도가 `stale`이면 답에 그 사실을 적는다.
         2. "이 API가 뭘 하나" → `get_entrypoints` → `get_entrypoint_flow` → `get_context(intent=explain)`.
         3. "고치면 뭐가 깨지나" → `search_symbol`로 nodeId를 찾고 → `get_impact`.
-        4. "쓰기 경로가 안전한가" → `get_findings(ruleId=COMP-*)` → `get_context(intent=investigateData)`.
-        5. 호출자 목록이 비어 있다고 "호출 없음"으로 읽지 않는다. `boundaries`(확정하지 못한 호출)를 함께 본다.
-        6. 분석 결과가 오래됐어도 도구가 재분석하지 않는다. 사용자에게 `tracelens analyze <대상>` 실행을 요청한다.
-        7. 도구가 준 파일·줄을 근거로 인용하고, 확정하지 못한 것은 추정이라고 적는다.
+        4. "쓰기 경로가 안전한가" → `list_write_paths` → `get_findings(ruleId=COMP-)` → `get_context(intent=investigateData)`.
+        5. "이 요청이 어떤 미들웨어를 지나나" → `get_middleware_pipeline`.
+        6. "이 서비스가 어떻게 등록됐나" → `get_startup_flow`.
+        7. "이 클래스에 뭐가 있나" → `list_classes` → `get_class`(멤버의 노드 ID가 함께 온다).
+        8. "수정 전후 비교" → `list_snapshots`로 기준을 고르고 → `compare_snapshots`.
+        9. 호출자 목록이 비어 있다고 "호출 없음"으로 읽지 않는다. `boundaries`(확정하지 못한 호출)를 함께 본다.
+        10. 분석 결과가 오래됐어도 도구가 재분석하지 않는다. 사용자에게 `tracelens analyze <대상>` 실행을 요청한다.
+        11. 도구가 준 파일·줄을 근거로 인용하고, 확정하지 못한 것은 추정이라고 적는다.
+        12. 실패는 `{ "isError": true, "error": { "code" } }`로 온다. `code`로 분기하고 메시지를 지어내지 않는다.
         """;
 
     /// <summary>연결이 실제로 됐는지 확인하는 질문. 파일·줄을 인용하면 연결된 것이다.</summary>
@@ -237,7 +242,25 @@ public sealed class McpConfigWriter : IMcpConfigWriter
                     Path.Combine(graph.RootDirectory, ".cursor", "mcp.json"),
                     "json",
                     claudeCode,
-                    "Claude Code와 같은 형식이다. 이미 파일이 있으면 mcpServers 아래에 tracelens 항목만 더한다.")
+                    "Claude Code와 같은 형식이다. 이미 파일이 있으면 mcpServers 아래에 tracelens 항목만 더한다."),
+                new McpHostSnippet(
+                    "Claude Desktop",
+                    ClaudeDesktopConfigPath(),
+                    "json",
+                    claudeCode,
+                    "Claude Code와 같은 형식이다. 설정을 고친 뒤 Claude Desktop을 다시 시작해야 반영된다."),
+                new McpHostSnippet(
+                    "Windsurf",
+                    Path.Combine(HomeDirectory(), ".codeium", "windsurf", "mcp_config.json"),
+                    "json",
+                    claudeCode,
+                    "Claude Code와 같은 형식이다. mcpServers 아래에 tracelens 항목만 더한다."),
+                new McpHostSnippet(
+                    "Gemini CLI",
+                    Path.Combine(HomeDirectory(), ".gemini", "settings.json"),
+                    "json",
+                    claudeCode,
+                    "settings.json의 mcpServers 아래에 tracelens 항목만 더한다. 파일 전체를 덮어쓰지 않는다.")
             ],
             File.Exists(graphPath) ? null : $"아직 그래프 파일이 없다: {graphPath}. 먼저 분석해야 한다.")
         {
@@ -257,9 +280,25 @@ public sealed class McpConfigWriter : IMcpConfigWriter
         return
         [
             new McpOneLiner("Claude Code", $"claude mcp add --scope local tracelens -- {quoted}"),
-            new McpOneLiner("Codex CLI", $"codex mcp add tracelens -- {quoted}")
+            new McpOneLiner("Codex CLI", $"codex mcp add tracelens -- {quoted}"),
+            new McpOneLiner("VS Code", $"code --add-mcp {Quote($"{{\"name\":\"tracelens\",\"command\":{Quote(launch.Command)},\"args\":[{string.Join(", ", launch.Args.Select(Quote))}]}}")}"),
+            new McpOneLiner("Cursor", $"cursor --add-mcp {Quote($"{{\"name\":\"tracelens\",\"command\":{Quote(launch.Command)},\"args\":[{string.Join(", ", launch.Args.Select(Quote))}]}}")}")
         ];
     }
+
+    /// <summary>사용자 홈. 호스트 설정 파일 위치를 만들 때 쓴다.</summary>
+    private static string HomeDirectory() =>
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+    /// <summary>Claude Desktop의 설정 파일 위치. 운영체제마다 다르다.</summary>
+    private static string ClaudeDesktopConfigPath() => RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+        ? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Claude",
+            "claude_desktop_config.json")
+        : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+            ? Path.Combine(HomeDirectory(), "Library", "Application Support", "Claude", "claude_desktop_config.json")
+            : Path.Combine(HomeDirectory(), ".config", "Claude", "claude_desktop_config.json");
 
     /// <summary>공백이 없어도 항상 감싼다. "이 예시는 공백에서 깨진다"를 사용자가 판단하게 두지 않는다.</summary>
     private static string Quote(string value) => $"\"{value}\"";

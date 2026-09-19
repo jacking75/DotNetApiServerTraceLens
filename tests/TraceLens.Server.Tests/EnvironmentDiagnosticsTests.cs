@@ -57,6 +57,34 @@ public sealed class EnvironmentDiagnosticsTests
         }
     }
 
+    /// <summary>
+    /// 서버 안에서 부른 환경 점검은 자기 자신이 듣고 있는 포트를 문제로 보고하면 안 된다(T48).
+    /// "이미 실행 중인 TraceLens를 종료하라"는 자기 자신을 가리키는 처방이라 신뢰를 깎는다.
+    /// </summary>
+    [Fact]
+    public void Run_DoesNotReportOwnPortAsInUse()
+    {
+        using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+
+        try
+        {
+            var inServer = new EnvironmentDiagnostics().Run(new DiagnosticsOptions { Port = port, SelfListening = true });
+            var selfItem = Assert.Single(inServer.Items, item => item.Code.StartsWith("PORT_", StringComparison.Ordinal));
+            Assert.Equal("PORT_SELF", selfItem.Code);
+            Assert.Equal(DiagnosticSeverity.Ok, selfItem.Severity);
+
+            // CLI `doctor`는 서버를 띄우기 전이라 기존 경고를 그대로 낸다.
+            var fromCli = new EnvironmentDiagnostics().Run(new DiagnosticsOptions { Port = port });
+            Assert.Contains(fromCli.Items, item => item.Code == "PORT_IN_USE");
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+
     /// <summary>설치된 SDK로 빌드되는 프로젝트에는 경고가 붙으면 안 된다. 이 오탐이 실제로 났었다.</summary>
     [Fact]
     public void Run_DoesNotWarnForAnInstalledTargetFramework()

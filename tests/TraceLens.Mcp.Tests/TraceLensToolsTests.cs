@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
 using TraceLens.Analyzer.Models;
 using TraceLens.Mcp;
 using Xunit;
@@ -11,16 +12,16 @@ public sealed class TraceLensToolsTests
     public async Task Tools_ReadGraphSourceAndRelationships()
     {
         await using var fixture = await ToolFixture.CreateAsync();
-        var tools = new TraceLensTools(new GraphFileStore(fixture.GraphPath));
+        var tools = new TraceLensTools(new GraphFileStore(fixture.GraphPath), NullLogger<TraceLensTools>.Instance);
 
         var node = await tools.GetNodeAsync("Fixture.Controller.Entry()", null, CancellationToken.None);
-        var source = await tools.GetSourceAsync("Controller.cs", 1, 2, null, CancellationToken.None);
+        var source = await tools.GetSourceAsync("Controller.cs", 1, 2, null, null, CancellationToken.None);
         var callers = await tools.GetCallersAsync("Fixture.Service.Run()", null, null, null, CancellationToken.None);
         var callees = await tools.GetCalleesAsync("Fixture.Controller.Entry()", null, null, null, CancellationToken.None);
-        var entryPoints = await tools.GetEntryPointsAsync(null, null, null, null, CancellationToken.None);
+        var entryPoints = await tools.GetEntryPointsAsync(null, null, null, null, null, null, null, CancellationToken.None);
         var search = await tools.SearchSymbolAsync("service", null, null, null, CancellationToken.None);
 
-        Assert.Equal("Controller.Entry", node.Node.DisplayName);
+        Assert.Equal("Controller.Entry", node.Node!.DisplayName);
         Assert.Null(node.Denied);
         Assert.Contains("Entry", Assert.IsType<SourceResult>(node.Source).Content, StringComparison.Ordinal);
         Assert.Equal(2, source.EndLine);

@@ -451,6 +451,14 @@ export interface SourceResponse {
 /** 질문 패널이 고르는 실행 방식. 이름은 실제 동작을 그대로 쓴다. */
 export type AskMode = 'context' | 'mcp' | 'editor'
 
+/** 인앱 실행이 고를 수 있는 에이전트. `doctor`가 찾은 CLI만 화면에 보인다. */
+export interface AgentChoice {
+  id: string
+  label: string
+  /** 실행 파일 이름. doctor의 `CLI_*` 코드와 대응한다. */
+  command: string
+}
+
 export interface AskRequest {
   /** 선택 종류를 함께 보내면 그 종류로 문맥을 만든다. 비우면 nodeId를 노드로 본다. */
   kind?: string
@@ -458,6 +466,10 @@ export interface AskRequest {
   nodeId: string | null
   question: string | null
   mode: 'mcp' | 'editor'
+  /** 쓸 에이전트 러너 id. 비우면 서버가 첫 번째를 쓴다. */
+  agent?: string
+  /** 쓸 모델. 비우면 CLI 기본값이다. */
+  model?: string
   intent?: string
   budget?: string
   expectedSnapshotId?: string

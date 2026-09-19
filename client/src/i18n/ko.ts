@@ -961,6 +961,10 @@ export const ko = {
   'rule.scope.CacheApis': '이 규칙은 설정한 db.cacheApis·cacheWrappers와 알려진 캐시 클라이언트만 본다.',
   'rule.scope.StartupRegistrations': '이 규칙은 시작 흐름에서 읽은 DI 등록만 본다.',
   'rule.scope.MiddlewarePipeline': '이 규칙은 app.UseXxx() 파이프라인과 미들웨어 본문만 본다.',
+  'diag.PORT_SELF': '이 TraceLens가 이 포트로 실행 중이다.',
+  'ask.agent': '에이전트',
+  'ask.model': '모델',
+  'ask.modelDefault': 'CLI 기본값',
 } as const
 
 export type TranslationKey = keyof typeof ko

@@ -32,7 +32,7 @@ public sealed class AskEndpointsTests
             context,
             store,
             runner,
-            new ClaudeCodeAgentRunner(runner),
+            new AgentRunnerRegistry([new ClaudeCodeAgentRunner(runner), new CodexAgentRunner(runner)]),
             new StubMcpConfigWriter("C:\\Fixture\\.tracelens\\mcp.json"),
             new ContextBuilder(new GraphFreshnessEvaluator()),
             CancellationToken.None);
@@ -66,7 +66,7 @@ public sealed class AskEndpointsTests
             context,
             store,
             runner,
-            new ClaudeCodeAgentRunner(runner),
+            new AgentRunnerRegistry([new ClaudeCodeAgentRunner(runner), new CodexAgentRunner(runner)]),
             new StubMcpConfigWriter(@"C:\Fixture\.tracelens\mcp.json"),
             new ContextBuilder(new GraphFreshnessEvaluator()),
             CancellationToken.None);
@@ -93,7 +93,7 @@ public sealed class AskEndpointsTests
             context,
             store,
             runner,
-            new ClaudeCodeAgentRunner(runner),
+            new AgentRunnerRegistry([new ClaudeCodeAgentRunner(runner), new CodexAgentRunner(runner)]),
             new StubMcpConfigWriter(string.Empty),
             new ContextBuilder(new GraphFreshnessEvaluator()),
             CancellationToken.None);
@@ -153,7 +153,7 @@ public sealed class AskEndpointsTests
             context,
             store,
             runner,
-            new ClaudeCodeAgentRunner(runner),
+            new AgentRunnerRegistry([new ClaudeCodeAgentRunner(runner), new CodexAgentRunner(runner)]),
             new StubMcpConfigWriter("C:\\Fixture\\.tracelens\\mcp.json"),
             new ContextBuilder(new GraphFreshnessEvaluator()),
             CancellationToken.None);

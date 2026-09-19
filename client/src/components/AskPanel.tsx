@@ -4,7 +4,7 @@ import { recipes } from '../content/recipes'
 import { translateError, useI18n } from '../i18n/I18nProvider'
 import type { TranslationKey } from '../i18n/ko'
 import type { ContextBudget, ContextDocument, ContextIntent, McpSetupPreview, SelectionKind } from '../types/context'
-import type { AskMode } from '../types/graph'
+import type { AgentChoice, AskMode } from '../types/graph'
 import { ContextPreview } from './ContextPreview'
 import { HelpLink, type GlossaryTerm } from './HelpDialog'
 import { McpSetupDialog } from './McpSetupDialog'
@@ -101,6 +101,11 @@ export function AskPanel({
   const [setup, setSetup] = useState<McpSetupPreview | null>(null)
   /** 미리보기에서 체크를 끈 파일. 문맥 생성과 에이전트 실행 양쪽에 그대로 넘긴다. */
   const [excludedFiles, setExcludedFiles] = useState<string[]>([])
+  /** 고른 에이전트와 모델. 빈 모델은 CLI 기본값이다(T70). */
+  const [agent, setAgent] = useState('')
+  const [model, setModel] = useState('')
+  /** 설치된 AI CLI. doctor 결과에서 만든다 — 없는 것을 고르게 하지 않는다. */
+  const [agents, setAgents] = useState<AgentChoice[]>([])
   const [shareOpen, setShareOpen] = useState(false)
   /** 오류 원문. 번역한 한 줄 아래에 접어서 남긴다. */
   const [rawError, setRawError] = useState<string | null>(null)
@@ -165,8 +170,15 @@ export function AskPanel({
     void (async () => {
       try {
         const report = await getDiagnostics()
-        const claude = report.items.find((item) => item.code.startsWith('CLI_CLAUDE_'))
-        setAgentMissing(claude?.code === 'CLI_CLAUDE_MISSING')
+        // doctor가 찾은 CLI만 고르게 한다. codex를 찾아 놓고도 claude 고정이던 자리다(T70).
+        const installed: AgentChoice[] = [
+          { id: 'claude-code', label: 'Claude Code', command: 'claude' },
+          { id: 'codex', label: 'Codex CLI', command: 'codex' },
+        ].filter((item) => !report.items.some(
+          (check) => check.code === `CLI_${item.command.toUpperCase()}_MISSING`))
+        setAgents(installed)
+        setAgent((current) => current || installed[0]?.id || '')
+        setAgentMissing(installed.length === 0)
       } catch {
         setAgentMissing(null)
       }
@@ -246,6 +258,8 @@ export function AskPanel({
           includeSource,
           excludeFiles: excludedFiles,
           expectedSnapshotId: snapshotId || undefined,
+          agent: agent || undefined,
+          model: model.trim() || undefined,
         },
         (event) => {
           if (event.type === 'run') runIdRef.current = event.text
@@ -411,6 +425,25 @@ export function AskPanel({
                 />
                 {t('context.excludeSource')}
               </label>
+              {mode === 'mcp' && agents.length > 0 && (
+                <>
+                  <label>
+                    {t('ask.agent')}
+                    <select value={agent} onChange={(event) => setAgent(event.target.value)}>
+                      {agents.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    {t('ask.model')}
+                    <input
+                      value={model}
+                      onChange={(event) => setModel(event.target.value)}
+                      placeholder={t('ask.modelDefault')}
+                      aria-label={t('ask.model')}
+                    />
+                  </label>
+                </>
+              )}
             </div>
             <div className="hint">
               {t(intents.find((item) => item.value === intent)?.hintKey ?? 'ask.intentHint.explain')}

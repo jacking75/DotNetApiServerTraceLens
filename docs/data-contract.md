@@ -223,6 +223,8 @@
 | `POST /api/samples/{id}/prepare` | 예제를 `%LOCALAPPDATA%\TraceLens\samples\{id}`에 복사한다. 이미 있으면 그대로 쓴다(`overwrite`로 덮어쓴다). | `404 SAMPLE_NOT_FOUND`, `500 SAMPLE_COPY_FAILED` |
 | `GET /api/browse` | 로컬 디렉터리를 훑어 `.sln`/`.csproj`를 찾는 대상 선택용 API(브라우저 파일 선택창은 절대 경로를 안 주므로). | `400 SOURCE_DENIED`, `400 INVALID_REQUEST` |
 | `GET /api/graph`, `/graph/entrypoints`, `/graph/classes`, `/graph/namespaces` | 현재 메모리 그래프 전체/진입점/클래스 요약/네임스페이스 요약을 돌려준다. 실패 응답은 옛 `error` 필드를 유지하면서 `code`를 함께 담는다. | `404 NO_ANALYSIS` |
+| `GET /api/analysis-jobs` | 진행 중·최근 분석 작업 목록. 새로고침 뒤 진행 중 작업에 다시 붙을 때 쓴다. | — |
+| `GET /manual/{lang}` | `ko`·`en` 설명서를 정적으로 서빙한다. | `404 MANUAL_NOT_FOUND` |
 
 ### 오류 코드
 
@@ -230,7 +232,8 @@
 `ANALYZE_FAILED`, `OFFLINE_SNAPSHOT`, `GRAPH_INVALID`, `GRAPH_TOO_LARGE`, `INPUT_MISMATCH`,
 `BASELINE_NOT_FOUND`, `SNAPSHOT_NOT_FOUND`, `SNAPSHOT_SAVE_FAILED`, `JOB_NOT_FOUND`,
 `JOB_NOT_CANCELABLE`, `JOB_ALREADY_RUNNING`, `RUN_NOT_FOUND`, `AGENT_NOT_FOUND`, `AGENT_TIMEOUT`,
-`SAMPLE_NOT_FOUND`, `SAMPLE_COPY_FAILED`, `MCP_HOST_MISSING`, `FORBIDDEN_ORIGIN`, `UNEXPECTED_ERROR`.
+`SAMPLE_NOT_FOUND`, `SAMPLE_COPY_FAILED`, `MCP_HOST_MISSING`, `MANUAL_NOT_FOUND`, `FORBIDDEN_ORIGIN`,
+`UNEXPECTED_ERROR`.
 
 - `JOB_ALREADY_RUNNING`(409) — 같은 대상의 분석이 이미 돌고 있다. 두 번째 요청은 시작하지 않는다.
 - `FORBIDDEN_ORIGIN`(403) — 상태를 바꾸는 `/api/*` 요청의 `Origin`이 이 서버가 아니다. 루프백 전용 도구라
@@ -241,6 +244,8 @@
 doctor는 별도로 `SDK_NOT_FOUND`, `SDK_MISMATCH`, `TARGET_NOT_FOUND`, `UNSUPPORTED_TARGET_FORMAT`,
 `OUTPUT_NOT_WRITABLE`, `PORT_IN_USE`, `MCP_HOST_MISSING`을 쓴다(정상일 때는 `SDK_FOUND`·`TARGET_FOUND`·
 `OUTPUT_WRITABLE`·`PORT_FREE`·`MCP_HOST_FOUND`처럼 같은 자리에 성공 코드를 넣는다).
+서버 안에서 부른 점검은 자기 자신이 듣고 있는 포트를 `PORT_SELF`(Ok)로 돌려준다 —
+"이미 실행 중인 TraceLens를 종료하라"는 자기 자신을 가리키는 처방이 되기 때문이다.
 
 `graph.json`을 읽을 때 쓰는 코드는 따로다: `E_NOT_FOUND`, `E_EMPTY`, `E_INVALID_JSON`,
 `E_SCHEMA_TOO_NEW`, `E_NO_TARGET`와 경고 `W_DUPLICATE_NODE`·`W_DANGLING_EDGE`·
@@ -275,7 +280,56 @@ question, markdown, characters, estimatedTokens, containsSource, files[]
   남으므로 "어디를 뺐는지"는 보인다. `files[]`는 근거와 소스에 실제로 등장한 파일을 합친 목록이다.
   비밀값을 자동으로 찾아내는 기능에 기대지 않고 **손으로 빼는 수단**을 두는 것이 이 필드의 목적이다.
 
-## 7. `tracelens.config.json`
+## 7. MCP 도구
+
+로컬 stdio MCP 서버(`tracelens mcp`)가 내보내는 도구다. **모두 저장된 분석 결과만 읽고 재분석하지 않는다**
+(CLAUDE.md 제약 3). 모든 도구는 `expectedSnapshotId`를 받고, 응답에 `snapshotId`가 들어간다.
+
+실패는 예외가 아니라 `{ "isError": true, "error": { "code", "message", "details" } }`로 온다.
+코드 표는 §5의 HTTP 오류 코드와 **같은 것**이다(`TraceLens.Context/ContextErrors.cs`가 정본).
+같은 입력에 서버와 MCP가 같은 `code`를 돌려준다.
+
+| 도구 | 주요 파라미터 | 페이징·상한 | 주요 오류 코드 |
+|---|---|---|---|
+| `get_analysis_status` | `expectedSnapshotId` | 변경 파일 30개 | `SNAPSHOT_MISMATCH` |
+| `get_context` | `selectionKind`, `selectionId`, `intent`, `budget`, `question`, `format`, `neighborDepth` | `format` 기본 `markdown`(구조 필드는 `json`·`both`일 때만), 예산은 실제로 돌려주는 바이트 기준 | `SELECTION_NOT_FOUND`, `SELECTION_KIND`, `SNAPSHOT_MISMATCH` |
+| `get_entrypoint_flow` | `endpointId`, `depth`, `maxNodes` | 깊이 기본 4, 노드 기본 80(최대 2000) | `SELECTION_NOT_FOUND` |
+| `get_findings` | `nodeId`, `ruleId`, `limit`, `cursor` | `limit` 기본 50·최대 500 | `SNAPSHOT_MISMATCH` |
+| `get_impact` | `nodeIds`, `maxDepth`, `maxNodes`, `timeoutMs`, `limit`, `cursor` | `limit` 기본 200·최대 2000, `timeoutMs` 기본 5000·최대 60000 | `SELECTION_NOT_FOUND` |
+| `compare_snapshots` | `baselineId`, `currentId`, `limit` | 목록마다 기본 100·최대 2000, `totals`로 전체 수 | `SNAPSHOT_NOT_FOUND` |
+| `get_node` | `nodeId` | — | `SELECTION_NOT_FOUND`, `SOURCE_DENIED` |
+| `get_source` | `file`, `startLine`, `endLine`, `maxLines` | `maxLines` 기본 400·최대 4000, 넘으면 `truncated`와 `nextStartLine` | `SOURCE_DENIED` |
+| `get_callers` / `get_callees` | `nodeId`, `limit`, `cursor` | `limit` 기본 50·최대 500 | `SELECTION_NOT_FOUND` |
+| `get_entrypoints` | `query`, `method`, `pathPrefix`, `projectKey`, `limit`, `cursor` | `limit` 기본 50·최대 500 | — |
+| `search_symbol` | `query`, `limit`, `cursor` | `limit` 기본 50·최대 500 | `INVALID_REQUEST` |
+| `list_snapshots` | — | — | — |
+| `get_middleware_pipeline` | `projectKey`, `limit`, `cursor` | `limit` 기본 50·최대 500 | `SELECTION_NOT_FOUND` |
+| `get_startup_flow` | `projectKey`, `limit`, `cursor` | `limit` 기본 50·최대 500 | `SELECTION_NOT_FOUND` |
+| `get_class` | `classId` | — | `SELECTION_NOT_FOUND` |
+| `list_classes` | `query`, `namespace`, `limit`, `cursor` | `limit` 기본 50·최대 500 | — |
+| `list_write_paths` | `entryPointId`, `limit`, `cursor` | `limit` 기본 50·최대 500 | `SELECTION_NOT_FOUND` |
+
+**절삭 규칙.** 결과를 잘랐으면 응답에 반드시 그 사실이 있어야 한다 —
+목록은 `totalCount`(또는 `totals`)와 `nextCursor`, 소스는 `truncated`·`nextStartLine`,
+문맥은 `truncated`와 `omitted.counts`로 남긴다. 상한 때문에 뺀 것을 조용히 버리지 않는다.
+
+**`selectionKind`와 발견 도구.** `get_context`가 받는 8종은 각각 id를 찾을 도구가 있다.
+
+| selectionKind | id를 찾는 도구 |
+|---|---|
+| `node` | `search_symbol`, `get_class`, `get_callers`/`get_callees` |
+| `endpoint` | `get_entrypoints` |
+| `class` | `list_classes` |
+| `namespace` | `list_classes`(`namespace` 필터) |
+| `finding` | `get_findings` |
+| `writePath` | `list_write_paths` |
+| `middlewareStep` | `get_middleware_pipeline` |
+| `startupStep` | `get_startup_flow` |
+
+이 표는 `McpToolContractTests`가 `[McpServerTool]` 리플렉션과 대조한다. 도구를 더하거나 파라미터를 바꾸면
+이 표도 함께 고쳐야 테스트가 통과한다.
+
+## 8. `tracelens.config.json`
 
 분석 루트에 두면 읽는다. 없어도 동작한다.
 
@@ -314,7 +368,7 @@ question, markdown, characters, estimatedTokens, containsSource, files[]
 
 예제 설정은 [`samples/OrderApi/tracelens.config.json`](../samples/OrderApi/tracelens.config.json)에 있다.
 
-## 8. 스키마를 바꿀 때
+## 9. 스키마를 바꿀 때
 
 1. Analyzer의 `Models/`를 바꾼다(새 필드는 `init` 프로퍼티 + 기본값으로 두어 옛 문서도 읽히게 한다).
 2. `GraphDocument.CurrentSchemaVersion`을 올리고 XML 주석에 무엇이 추가됐는지 적는다.

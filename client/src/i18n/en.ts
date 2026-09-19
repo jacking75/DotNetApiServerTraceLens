@@ -966,4 +966,8 @@ export const en: Dictionary = {
   'rule.scope.CacheApis': 'This rule only looks at the configured db.cacheApis, cacheWrappers and known cache clients.',
   'rule.scope.StartupRegistrations': 'This rule only looks at the DI registrations read from the startup flow.',
   'rule.scope.MiddlewarePipeline': 'This rule only looks at the app.UseXxx() pipeline and middleware bodies.',
+  'diag.PORT_SELF': 'This TraceLens is running on this port.',
+  'ask.agent': 'Agent',
+  'ask.model': 'Model',
+  'ask.modelDefault': 'CLI default',
 }

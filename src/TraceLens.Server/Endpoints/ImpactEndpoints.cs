@@ -46,7 +46,9 @@ public static class ImpactEndpoints
             new ImpactRequest(
                 request.NodeIds,
                 request.MaxDepth is > 0 and <= 64 ? request.MaxDepth.Value : 12,
-                request.MaxNodes is > 0 and <= 20000 ? request.MaxNodes.Value : 4000),
+                request.MaxNodes is > 0 and <= 20000 ? request.MaxNodes.Value : 4000,
+                // 5초 고정이면 큰 솔루션에서 늘 잘린 결과만 본다. 상한은 60초다(T64).
+                request.TimeoutMs is > 0 and <= 60000 ? request.TimeoutMs.Value : 5000),
             cancellationToken);
         return Task.FromResult(Results.Ok(result));
     }
@@ -57,6 +59,9 @@ public sealed record ImpactApiRequest(IReadOnlyList<string> NodeIds)
     public int? MaxDepth { get; init; }
 
     public int? MaxNodes { get; init; }
+
+    /// <summary>시간 제한(ms). 비우면 5000, 상한은 60000이다.</summary>
+    public int? TimeoutMs { get; init; }
 
     public string? ExpectedSnapshotId { get; init; }
 }

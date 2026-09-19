@@ -60,7 +60,7 @@ public static class AskEndpoints
         HttpContext context,
         IGraphStore store,
         IProcessRunner processRunner,
-        IAgentRunner agentRunner,
+        IAgentRunnerRegistry agentRunners,
         IMcpConfigWriter mcpConfigWriter,
         ContextBuilder contextBuilder,
         CancellationToken cancellationToken)
@@ -125,8 +125,22 @@ public static class AskEndpoints
             return;
         }
 
+        var agentRunner = agentRunners.Resolve(request.Agent);
+        if (agentRunner is null)
+        {
+            await ExecuteResultAsync(
+                ApiResults.Error(
+                    StatusCodes.Status400BadRequest,
+                    ApiResults.InvalidRequest,
+                    $"등록하지 않은 에이전트다: {request.Agent}. 쓸 수 있는 값: " +
+                    string.Join(", ", agentRunners.Runners.Select(runner => runner.Id))),
+                context);
+            return;
+        }
+
         await StreamAgentResponseAsync(
-            document, graph, context, agentRunner, mcpConfigWriter, request.TimeoutSeconds, cancellationToken);
+            document, graph, context, agentRunner, mcpConfigWriter,
+            request.TimeoutSeconds, request.Model, cancellationToken);
     }
 
     /// <summary>실행 중인 에이전트를 끊는다. SSE 연결을 닫는 것 말고도 명시적인 취소 수단이 필요하다.</summary>
@@ -169,6 +183,7 @@ public static class AskEndpoints
         IAgentRunner agentRunner,
         IMcpConfigWriter mcpConfigWriter,
         int? timeoutSeconds,
+        string? model,
         CancellationToken cancellationToken)
     {
         context.Response.StatusCode = StatusCodes.Status200OK;
@@ -189,7 +204,10 @@ public static class AskEndpoints
                 FormatPrompt(document),
                 graph.RootDirectory,
                 configPath,
-                AllowedMcpTools);
+                AllowedMcpTools)
+            {
+                Model = string.IsNullOrWhiteSpace(model) ? null : model.Trim()
+            };
 
             await foreach (var output in agentRunner.RunAsync(request, linked.Token))
             {
@@ -334,6 +352,11 @@ public sealed record AskRequest(string? NodeId, string? Question, string Mode)
     /// <summary>이 시간을 넘으면 에이전트 프로세스를 끝낸다. 비우면 600초, 1~3600초까지 받는다.</summary>
     public int? TimeoutSeconds { get; init; }
 
+    /// <summary>쓸 에이전트 러너 id(claude-code·codex). 비우면 첫 번째를 쓴다.</summary>
+    public string? Agent { get; init; }
+
+    /// <summary>쓸 모델. 비우면 CLI 기본값이다.</summary>
+    public string? Model { get; init; }
 }
 
 /// <param name="Code">오류 이벤트의 분류 코드. UI가 이 값으로 번역하므로 텍스트 접두사를 파싱하지 않아도 된다.</param>

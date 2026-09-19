@@ -76,7 +76,10 @@ public static class ServerHost
         builder.Services.AddSingleton<IGraphStore, GraphStore>();
         builder.Services.AddSingleton<IGraphFreshnessService, GraphFreshnessService>();
         builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
+        // 러너는 이름 있는 집합이다. doctor가 찾은 CLI만 화면의 드롭다운에 보인다(T70).
         builder.Services.AddSingleton<IAgentRunner, ClaudeCodeAgentRunner>();
+        builder.Services.AddSingleton<IAgentRunner, CodexAgentRunner>();
+        builder.Services.AddSingleton<IAgentRunnerRegistry, AgentRunnerRegistry>();
         builder.Services.AddSingleton<IMcpConfigWriter, McpConfigWriter>();
         builder.Services.AddSingleton<IAnalysisJobService, AnalysisJobService>();
         builder.Services.AddTraceLensAnalyzer();

@@ -36,6 +36,20 @@ public sealed record SnapshotDiff(
     IReadOnlyList<DiffEntry> RenameCandidates,
     IReadOnlyList<string> Limitations)
 {
+    /// <summary>미들웨어 순서·단락 변화. 예전에는 비교하지 않아 순서를 바꿔도 "차이 없음"이었다(T64).</summary>
+    public IReadOnlyList<DiffEntry> Middleware { get; init; } = [];
+
+    /// <summary>시작 흐름(DI 등록) 변화.</summary>
+    public IReadOnlyList<DiffEntry> StartupFlow { get; init; } = [];
+
+    /// <summary>쓰기 경로 변화(트랜잭션 유무 포함).</summary>
+    public IReadOnlyList<DiffEntry> WritePaths { get; init; } = [];
+
+    /// <summary>
+    /// 이 비교가 <b>보지 않는</b> 것. "차이 없음"을 안전으로 읽지 않게 한다.
+    /// </summary>
+    public IReadOnlyList<string> NotCompared { get; init; } = [];
+
     public DiffCounts Counts => new(
         Endpoints.Count(item => item.Kind == DiffKind.Added),
         Endpoints.Count(item => item.Kind == DiffKind.Removed),
@@ -93,7 +107,162 @@ public sealed class SnapshotComparer
             dataAccess,
             findings,
             renameCandidates,
-            limitations);
+            limitations)
+        {
+            Middleware = CompareMiddleware(baseline, current),
+            StartupFlow = CompareStartupFlow(baseline, current),
+            WritePaths = CompareWritePaths(baseline, current),
+            NotCompared =
+            [
+                "클래스 구조(상속·구현·연관)는 비교하지 않는다.",
+                "설정 파일의 값 변경은 비교하지 않는다(입력 지문으로만 확인한다).",
+                "진단 수치(해석률·한계 문장)는 비교하지 않는다."
+            ]
+        };
+    }
+
+    /// <summary>
+    /// 미들웨어 순서와 단락 지점의 변화.
+    /// 순서를 바꾸면 인증·인가가 적용되지 않을 수 있는데 예전에는 "차이 없음"으로 읽혔다(T64).
+    /// </summary>
+    private static IReadOnlyList<DiffEntry> CompareMiddleware(GraphDocument baseline, GraphDocument current)
+    {
+        var before = (baseline.Middleware?.Steps ?? []).Where(step => step.ParentId is null).ToArray();
+        var after = (current.Middleware?.Steps ?? []).Where(step => step.ParentId is null).ToArray();
+        var entries = new List<DiffEntry>();
+
+        var beforeByName = before.ToDictionary(step => step.Name, step => step, StringComparer.Ordinal);
+        var afterByName = after.ToDictionary(step => step.Name, step => step, StringComparer.Ordinal);
+
+        foreach (var step in after.Where(item => !beforeByName.ContainsKey(item.Name)))
+        {
+            entries.Add(new DiffEntry(step.Id, step.Name, DiffKind.Added, $"{step.Order}번째로 추가됐다.")
+            {
+                File = step.RegistrationFile,
+                Line = step.RegistrationLine
+            });
+        }
+
+        foreach (var step in before.Where(item => !afterByName.ContainsKey(item.Name)))
+        {
+            entries.Add(new DiffEntry(step.Id, step.Name, DiffKind.Removed, "파이프라인에서 빠졌다.")
+            {
+                File = step.RegistrationFile,
+                Line = step.RegistrationLine
+            });
+        }
+
+        foreach (var (name, afterStep) in afterByName)
+        {
+            if (!beforeByName.TryGetValue(name, out var beforeStep))
+            {
+                continue;
+            }
+
+            var changes = new List<string>();
+            if (beforeStep.Order != afterStep.Order)
+            {
+                changes.Add($"순서 {beforeStep.Order} → {afterStep.Order}");
+            }
+
+            var beforeStatus = beforeStep.ShortCircuit?.StatusCode ?? "-";
+            var afterStatus = afterStep.ShortCircuit?.StatusCode ?? "-";
+            if (!string.Equals(beforeStatus, afterStatus, StringComparison.Ordinal))
+            {
+                changes.Add($"단락 {beforeStatus} → {afterStatus}");
+            }
+
+            if (changes.Count > 0)
+            {
+                entries.Add(new DiffEntry(afterStep.Id, name, DiffKind.Changed, string.Join(" · ", changes))
+                {
+                    File = afterStep.RegistrationFile,
+                    Line = afterStep.RegistrationLine
+                });
+            }
+        }
+
+        return entries
+            .OrderBy(item => item.Label, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    /// <summary>시작 흐름의 DI 등록 변화. 라벨(등록 한 줄)로 비교한다.</summary>
+    private static IReadOnlyList<DiffEntry> CompareStartupFlow(GraphDocument baseline, GraphDocument current)
+    {
+        var before = (baseline.StartupFlow?.ServiceSteps ?? []).Select(step => step.Label).ToHashSet(StringComparer.Ordinal);
+        var after = current.StartupFlow?.ServiceSteps ?? [];
+        var entries = new List<DiffEntry>();
+
+        foreach (var step in after.Where(item => !before.Contains(item.Label)))
+        {
+            entries.Add(new DiffEntry(step.Label, step.Label, DiffKind.Added, "등록이 추가됐다.")
+            {
+                File = step.File,
+                Line = step.Line
+            });
+        }
+
+        var afterLabels = after.Select(step => step.Label).ToHashSet(StringComparer.Ordinal);
+        foreach (var step in (baseline.StartupFlow?.ServiceSteps ?? []).Where(item => !afterLabels.Contains(item.Label)))
+        {
+            entries.Add(new DiffEntry(step.Label, step.Label, DiffKind.Removed, "등록이 빠졌다.")
+            {
+                File = step.File,
+                Line = step.Line
+            });
+        }
+
+        return entries.OrderBy(item => item.Label, StringComparer.Ordinal).ToArray();
+    }
+
+    /// <summary>쓰기 경로 변화. 트랜잭션 유무가 바뀐 것도 변경으로 본다.</summary>
+    private static IReadOnlyList<DiffEntry> CompareWritePaths(GraphDocument baseline, GraphDocument current)
+    {
+        var before = (baseline.DataAccess?.WritePaths ?? []).ToDictionary(path => path.Id, path => path, StringComparer.Ordinal);
+        var after = (current.DataAccess?.WritePaths ?? []).ToDictionary(path => path.Id, path => path, StringComparer.Ordinal);
+        var entries = new List<DiffEntry>();
+
+        foreach (var (id, path) in after.Where(item => !before.ContainsKey(item.Key)))
+        {
+            entries.Add(new DiffEntry(id, path.MethodDisplayName, DiffKind.Added, $"쓰기 {path.Steps.Count}단계가 생겼다.")
+            {
+                File = path.File,
+                Line = path.StartLine
+            });
+        }
+
+        foreach (var (id, path) in before.Where(item => !after.ContainsKey(item.Key)))
+        {
+            entries.Add(new DiffEntry(id, path.MethodDisplayName, DiffKind.Removed, "쓰기 경로가 사라졌다.")
+            {
+                File = path.File,
+                Line = path.StartLine
+            });
+        }
+
+        foreach (var (id, afterPath) in after)
+        {
+            if (!before.TryGetValue(id, out var beforePath))
+            {
+                continue;
+            }
+
+            if (beforePath.InTransaction != afterPath.InTransaction || beforePath.Steps.Count != afterPath.Steps.Count)
+            {
+                entries.Add(new DiffEntry(
+                    id,
+                    afterPath.MethodDisplayName,
+                    DiffKind.Changed,
+                    $"트랜잭션 {beforePath.InTransaction} → {afterPath.InTransaction} · 단계 {beforePath.Steps.Count} → {afterPath.Steps.Count}")
+                {
+                    File = afterPath.File,
+                    Line = afterPath.StartLine
+                });
+            }
+        }
+
+        return entries.OrderBy(item => item.Label, StringComparer.Ordinal).ToArray();
     }
 
     /// <summary>같은 대상·설정·분석기·규칙·분석 범위인지 확인한다. 다르면 비교 조건이 다르다고 표시한다.</summary>

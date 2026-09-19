@@ -166,6 +166,41 @@ public static class ContextMarkdown
             builder.AppendLine();
         }
 
+        // (5-2) 저장소 접근과 요청 경로의 미들웨어(T64)
+        if (document.Accesses.Count > 0)
+        {
+            builder.AppendLine("## 저장소 접근");
+            builder.AppendLine();
+            builder.AppendLine("대상에서 호출을 따라가며 도달하는 접근이다. 읽지 않은 ORM은 한계 절에 적혀 있다.");
+            foreach (var access in document.Accesses)
+            {
+                var target = string.IsNullOrEmpty(access.Target) ? access.DataSource : access.Target;
+                builder.AppendLine(
+                    $"- `{target}` {access.Operation} ({access.Storage}/{access.Confidence}) — {access.File}:{access.Line}");
+            }
+
+            builder.AppendLine();
+        }
+
+        if (document.Middleware.Count > 0)
+        {
+            builder.AppendLine("## 요청 경로의 미들웨어");
+            builder.AppendLine();
+            foreach (var step in document.Middleware)
+            {
+                var shortCircuit = string.IsNullOrEmpty(step.ShortCircuit)
+                    ? string.Empty
+                    : $" · 단락 {step.ShortCircuit}";
+                builder.AppendLine($"{step.Order}. **{step.Name}** ({step.Kind}) — {step.File}:{step.Line}{shortCircuit}");
+                if (!string.IsNullOrWhiteSpace(step.Pre))
+                {
+                    builder.AppendLine($"   - {step.Pre}");
+                }
+            }
+
+            builder.AppendLine();
+        }
+
         // (6) 테스트 후보
         if (document.TestCandidates.Count > 0)
         {
@@ -201,6 +236,28 @@ public static class ContextMarkdown
         foreach (var section in document.Omitted.Sections)
         {
             builder.AppendLine($"- 항목 생략: {section}");
+        }
+
+        // 이름만 남기면 "없다"와 "뺐다"가 구분되지 않는다. 몇 개를 뺐는지 적는다(T64).
+        var counts = document.Omitted.Counts;
+        if (counts.Callers > 0)
+        {
+            builder.AppendLine($"- 호출자 {counts.Callers}개를 길이 제한으로 생략했다.");
+        }
+
+        if (counts.Callees > 0)
+        {
+            builder.AppendLine($"- 피호출자 {counts.Callees}개를 길이 제한으로 생략했다.");
+        }
+
+        if (counts.Accesses > 0)
+        {
+            builder.AppendLine($"- 저장소 접근 {counts.Accesses}곳을 길이 제한으로 생략했다.");
+        }
+
+        if (counts.MiddlewareSteps > 0)
+        {
+            builder.AppendLine($"- 미들웨어 단계 {counts.MiddlewareSteps}개를 길이 제한으로 생략했다.");
         }
 
         builder.AppendLine("- 더 필요한 근거는 TraceLens MCP의 `get_context`·`get_node`·`get_source`·`get_findings`로 스냅샷을 지정해 조회하면 된다.");

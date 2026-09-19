@@ -7,7 +7,14 @@ public sealed record ImpactRequest(
     IReadOnlyList<string> NodeIds,
     int MaxDepth = 12,
     int MaxNodes = 4000,
-    int TimeoutMs = 5000);
+    int TimeoutMs = 5000)
+{
+    /// <summary>한 번에 돌려줄 진입점 수. 상한 없는 결과는 에이전트 문맥을 통째로 먹는다(T61).</summary>
+    public int Limit { get; init; } = 200;
+
+    /// <summary>이어 볼 위치(앞선 응답의 nextCursor).</summary>
+    public int Cursor { get; init; }
+}
 
 /// <param name="Resolution">이 단계의 호출 근거. 근거가 없으면 <c>unknown</c>이다.</param>
 public sealed record ImpactPathStep(
@@ -28,6 +35,16 @@ public sealed record ImpactEndpoint(
     string Confidence,
     IReadOnlyList<ImpactPathStep> Path);
 
+/// <param name="Evidence">이 접근을 읽은 자리.</param>
+public sealed record ImpactDataWrite(
+    string NodeId,
+    string DataSource,
+    string Target,
+    string Operation,
+    string File,
+    int Line,
+    string Confidence);
+
 /// <param name="TestCandidates">그래프에 들어 있는 테스트 메서드에서 도달한 경우만 담는다.</param>
 public sealed record ImpactResult(
     string SnapshotId,
@@ -38,7 +55,20 @@ public sealed record ImpactResult(
     bool Truncated,
     IReadOnlyList<string> TruncationReasons,
     IReadOnlyList<string> Limitations,
-    int VisitedNodes);
+    int VisitedNodes)
+{
+    /// <summary>
+    /// 대상에서 <b>전방으로</b> 도달하는 저장소 쓰기.
+    /// "이 메서드를 고치면 어느 테이블이 바뀌나"는 영향 판단에 꼭 필요한데 예전에는 없었다(T64).
+    /// </summary>
+    public IReadOnlyList<ImpactDataWrite> DataWrites { get; init; } = [];
+
+    /// <summary>진입점 전체 수. <see cref="Endpoints"/>는 페이지 하나다.</summary>
+    public int TotalEndpoints { get; init; }
+
+    /// <summary>이어 볼 위치. null이면 끝이다.</summary>
+    public int? NextCursor { get; init; }
+}
 
 /// <param name="Evidence">reached면 그래프에서 도달했다는 뜻이고, nameMatch면 이름만 비슷하다는 뜻이다.</param>
 public sealed record ImpactTestCandidate(string NodeId, string DisplayName, string File, int StartLine, string Evidence);
@@ -161,20 +191,77 @@ public sealed class ImpactAnalyzer
         }
 
         var limitations = BuildLimitations(index, unreachable.Count > 0, testCandidates.Count == 0);
+        var ordered = endpoints.Values
+            .OrderBy(item => item.Distance)
+            .ThenBy(item => item.Route, StringComparer.Ordinal)
+            .ThenBy(item => item.HttpMethod, StringComparer.Ordinal)
+            .ToArray();
+        var start = Math.Max(0, request.Cursor);
+        var page = ordered.Skip(start).Take(Math.Clamp(request.Limit, 1, 2000)).ToArray();
+        var next = start + page.Length;
+
         return new ImpactResult(
             index.SnapshotId,
             targets,
-            endpoints.Values
-                .OrderBy(item => item.Distance)
-                .ThenBy(item => item.Route, StringComparer.Ordinal)
-                .ThenBy(item => item.HttpMethod, StringComparer.Ordinal)
-                .ToArray(),
+            page,
             unreachable,
             testCandidates.Values.OrderBy(item => item.DisplayName, StringComparer.Ordinal).ToArray(),
             truncated,
             truncationReasons,
             limitations,
-            visited.Count);
+            visited.Count)
+        {
+            DataWrites = BuildDataWrites(index, targets),
+            TotalEndpoints = ordered.Length,
+            NextCursor = next < ordered.Length ? next : null
+        };
+    }
+
+    /// <summary>문맥에 담는 쓰기 접근 상한.</summary>
+    private const int MaxDataWrites = 50;
+
+    /// <summary>
+    /// 대상에서 전방으로 도달하는 저장소 쓰기.
+    /// 호출 그래프 도달로 계산한다 — 분석기를 다시 돌리지 않는다.
+    /// </summary>
+    private static IReadOnlyList<ImpactDataWrite> BuildDataWrites(GraphIndex index, IReadOnlyList<string> targets)
+    {
+        var data = index.Graph.DataAccess;
+        if (data is null || data.Accesses.Count == 0 || targets.Count == 0)
+        {
+            return [];
+        }
+
+        var reachable = new HashSet<string>(targets, StringComparer.Ordinal);
+        var queue = new Queue<string>(targets);
+        var visited = 0;
+        while (queue.Count > 0 && visited < 4000)
+        {
+            var current = queue.Dequeue();
+            visited++;
+            foreach (var callee in index.GetCallees(current))
+            {
+                if (reachable.Add(callee))
+                {
+                    queue.Enqueue(callee);
+                }
+            }
+        }
+
+        return data.Accesses
+            .Where(access => access.Operation is AccessOperation.Write or AccessOperation.Delete)
+            .Where(access => reachable.Contains(access.MethodNodeId))
+            .OrderBy(access => access.Target, StringComparer.Ordinal)
+            .Take(MaxDataWrites)
+            .Select(access => new ImpactDataWrite(
+                access.MethodNodeId,
+                access.DataSource,
+                access.Target,
+                access.Operation.ToString(),
+                access.File,
+                access.Line,
+                access.Confidence.ToString()))
+            .ToArray();
     }
 
     private static IReadOnlyList<ImpactPathStep> BuildPath(

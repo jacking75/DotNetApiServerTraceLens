@@ -23,10 +23,13 @@ public sealed class McpToolAllowListTests
         Assert.Equal(declared.OrderBy(name => name, StringComparer.Ordinal), AskEndpoints.AllowedMcpTools);
     }
 
-    /// <summary>문서와 README가 "도구 열두 개"라고 적는다. 수가 바뀌면 문서도 함께 고쳐야 한다.</summary>
+    /// <summary>
+    /// 문서와 README가 "도구 열여덟 개"라고 적는다. 수가 바뀌면 문서도 함께 고쳐야 한다.
+    /// 목록 자체의 정합성은 `McpToolContractTests`가 계약 문서와 대조한다.
+    /// </summary>
     [Fact]
-    public void AllowedMcpTools_HasTwelveTools()
+    public void AllowedMcpTools_HasEighteenTools()
     {
-        Assert.Equal(12, AskEndpoints.AllowedMcpTools.Count);
+        Assert.Equal(18, AskEndpoints.AllowedMcpTools.Count);
     }
 }

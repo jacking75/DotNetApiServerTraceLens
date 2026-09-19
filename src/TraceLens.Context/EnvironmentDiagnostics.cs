@@ -55,6 +55,14 @@ public sealed record DiagnosticsOptions
 
     /// <summary>있으면 좋은 외부 CLI(에디터·AI). 없어도 분석 실패로 보지 않는다.</summary>
     public IReadOnlyList<string> OptionalCommands { get; init; } = ["code", "claude", "codex"];
+
+    /// <summary>
+    /// 이 포트를 지금 <b>자기 자신이</b> 듣고 있는지.
+    /// 서버 안에서 점검을 부르면 리스너는 서버 자신이라 <c>PORT_IN_USE</c>가 항상 뜬다 —
+    /// "이미 실행 중인 TraceLens를 종료하라"는 자기 자신을 문제로 보고하는 진단이다(T48).
+    /// CLI `doctor`는 아직 서버를 띄우기 전이라 false로 둔다.
+    /// </summary>
+    public bool SelfListening { get; init; }
 }
 
 /// <summary>
@@ -471,17 +479,26 @@ public sealed class EnvironmentDiagnostics
             var inUse = IPGlobalProperties.GetIPGlobalProperties()
                 .GetActiveTcpListeners()
                 .Any(endpoint => endpoint.Port == options.Port);
-            items.Add(inUse
-                ? new DiagnosticItem(
+            items.Add((inUse, options.SelfListening) switch
+            {
+                // 서버 안에서 부른 점검이다. 그 리스너는 이 프로세스 자신이다.
+                (true, true) => new DiagnosticItem(
+                    "PORT_SELF",
+                    DiagnosticSeverity.Ok,
+                    $"이 TraceLens가 포트 {options.Port}으로 실행 중이다.",
+                    string.Empty) { Detail = options.Port.ToString() },
+                (true, false) => new DiagnosticItem(
                     "PORT_IN_USE",
                     DiagnosticSeverity.Warning,
                     $"포트 {options.Port}을(를) 이미 쓰고 있다.",
                     "실행 중인 TraceLens를 끝내거나(Windows: `Get-Process tracelens | Stop-Process`) " +
-                    "`--port <다른 번호>`로 띄워야 한다.") { Detail = options.Port.ToString() }
-                : new DiagnosticItem("PORT_FREE", DiagnosticSeverity.Ok, $"포트 {options.Port}을(를) 쓸 수 있다.", string.Empty)
+                    "`--port <다른 번호>`로 띄워야 한다.") { Detail = options.Port.ToString() },
+                _ => new DiagnosticItem(
+                    "PORT_FREE", DiagnosticSeverity.Ok, $"포트 {options.Port}을(를) 쓸 수 있다.", string.Empty)
                 {
                     Detail = options.Port.ToString()
-                });
+                }
+            });
         }
         catch (NetworkInformationException exception)
         {

@@ -154,6 +154,28 @@ public sealed class ContextBuilder(GraphFreshnessEvaluator freshnessEvaluator)
             limitations.Add($"선택 범위의 메서드 {omittedNodes}개는 길이 제한으로 생략했다. 필요한 노드는 get_node/get_context로 따로 조회하면 된다.");
         }
 
+        // "이 API가 어느 테이블을 읽고 쓰는가"와 "어떤 미들웨어를 지나는가"는 문맥에 꼭 있어야 하는데
+        // 예전에는 해당 노드의 Finding만 담고 접근·파이프라인은 통째로 빠졌다(T64).
+        var (accesses, omittedAccesses) = BuildAccesses(index, resolved.Nodes, MaxAccesses);
+        var (middleware, omittedMiddleware) = request.Selection.Kind == SelectionKind.Endpoint
+            ? BuildMiddleware(graph, MaxMiddlewareSteps)
+            : ([], 0);
+        if (omittedAccesses > 0)
+        {
+            limitations.Add($"저장소 접근 {omittedAccesses}곳은 길이 제한으로 생략했다(총 {accesses.Count + omittedAccesses}곳).");
+        }
+
+        if (omittedMiddleware > 0)
+        {
+            limitations.Add($"미들웨어 단계 {omittedMiddleware}개는 길이 제한으로 생략했다. 전체는 get_middleware_pipeline으로 본다.");
+        }
+
+        // stale이면 소스를 뺀다. 대안이 없으면 "왜 소스가 없지"로 끝난다.
+        if (freshnessReport.Status == FreshnessStatus.Stale)
+        {
+            limitations.Add("재분석 후 다시 요청하면 소스가 포함된다. 재분석은 사용자가 화면이나 CLI에서 실행한다.");
+        }
+
         findings.AddRange(resolved.Findings.Where(item => findings.All(existing => existing.Id != item.Id)));
         limitations.AddRange(resolved.Limitations);
         limitations.AddRange(BuildAnalysisLimitations(graph));
@@ -178,9 +200,19 @@ public sealed class ContextBuilder(GraphFreshnessEvaluator freshnessEvaluator)
             Distinct(tests).Take(10).ToArray(),
             limitations.Distinct(StringComparer.Ordinal).ToArray(),
             false,
-            new ContextOmission(omittedNodes, omittedRanges, omittedSections))
+            new ContextOmission(omittedNodes, omittedRanges, omittedSections)
+            {
+                Counts = new ContextOmissionCounts(
+                    Math.Max(0, Distinct(callers).Count() - limits.MaxNodes),
+                    Math.Max(0, Distinct(callees).Count() - limits.MaxNodes),
+                    0,
+                    omittedAccesses,
+                    omittedMiddleware)
+            })
         {
-            Question = request.Question
+            Question = request.Question,
+            Accesses = accesses,
+            Middleware = middleware
         };
 
         return ApplyBudget(document, limits);
@@ -227,7 +259,11 @@ public sealed class ContextBuilder(GraphFreshnessEvaluator freshnessEvaluator)
             {
                 SourceSnippets = snippets.ToArray(),
                 Truncated = true,
-                Omitted = current.Omitted with { SourceRanges = omittedRanges.ToArray() }
+                Omitted = current.Omitted with
+                {
+                    SourceRanges = omittedRanges.ToArray(),
+                    Counts = current.Omitted.Counts with { Snippets = omittedRanges.Count }
+                }
             };
             current = current with { Markdown = ContextMarkdown.Render(current) };
         }
@@ -237,9 +273,17 @@ public sealed class ContextBuilder(GraphFreshnessEvaluator freshnessEvaluator)
             omittedSections.Add("callees");
             current = current with
             {
+                // 통째로 비우면서 몇 개를 뺐는지 남긴다. 이름만 남기면 "피호출자 없음"과 구분되지 않는다(T64).
                 Callees = [],
                 Truncated = true,
-                Omitted = current.Omitted with { Sections = omittedSections.ToArray() }
+                Omitted = current.Omitted with
+                {
+                    Sections = omittedSections.ToArray(),
+                    Counts = current.Omitted.Counts with
+                    {
+                        Callees = current.Omitted.Counts.Callees + current.Callees.Count
+                    }
+                }
             };
             current = current with { Markdown = ContextMarkdown.Render(current) };
         }
@@ -251,12 +295,113 @@ public sealed class ContextBuilder(GraphFreshnessEvaluator freshnessEvaluator)
             {
                 Callers = [],
                 Truncated = true,
-                Omitted = current.Omitted with { Sections = omittedSections.ToArray() }
+                Omitted = current.Omitted with
+                {
+                    Sections = omittedSections.ToArray(),
+                    Counts = current.Omitted.Counts with
+                    {
+                        Callers = current.Omitted.Counts.Callers + current.Callers.Count
+                    }
+                }
             };
             current = current with { Markdown = ContextMarkdown.Render(current) };
         }
 
         return current;
+    }
+
+    /// <summary>문맥에 담는 저장소 접근 상한. 넘치면 개수만 남긴다.</summary>
+    private const int MaxAccesses = 20;
+
+    /// <summary>문맥에 담는 미들웨어 단계 상한.</summary>
+    private const int MaxMiddlewareSteps = 10;
+
+    /// <summary>
+    /// 대상에서 <b>전방으로 도달하는</b> 저장소 접근을 모은다.
+    /// 접근 요약 전파(CompensationAnalyzer)가 아니라 그래프 도달로 계산한다 —
+    /// 문맥은 Context 라이브러리에서만 만들고 분석기를 다시 돌리지 않는다.
+    /// </summary>
+    private static (IReadOnlyList<ContextAccess> Items, int Omitted) BuildAccesses(
+        GraphIndex index,
+        IReadOnlyList<GraphNode> targets,
+        int max)
+    {
+        var data = index.Graph.DataAccess;
+        if (data is null || data.Accesses.Count == 0 || targets.Count == 0)
+        {
+            return ([], 0);
+        }
+
+        var reachable = new HashSet<string>(StringComparer.Ordinal);
+        var queue = new Queue<string>();
+        foreach (var target in targets)
+        {
+            if (reachable.Add(target.Id))
+            {
+                queue.Enqueue(target.Id);
+            }
+        }
+
+        // 넓게 퍼지는 그래프에서 무한히 돌지 않도록 방문 수에 상한을 둔다.
+        var visited = 0;
+        while (queue.Count > 0 && visited < 4000)
+        {
+            var current = queue.Dequeue();
+            visited++;
+            foreach (var callee in index.GetCallees(current))
+            {
+                if (reachable.Add(callee))
+                {
+                    queue.Enqueue(callee);
+                }
+            }
+        }
+
+        var matched = data.Accesses
+            .Where(access => reachable.Contains(access.MethodNodeId))
+            .OrderBy(access => access.Operation == AccessOperation.Read ? 1 : 0)
+            .ThenBy(access => access.Target, StringComparer.Ordinal)
+            .ToArray();
+
+        var items = matched.Take(max)
+            .Select(access => new ContextAccess(
+                access.MethodNodeId,
+                access.DataSource,
+                access.Target,
+                access.Operation.ToString(),
+                access.Storage.ToString(),
+                access.File,
+                access.Line,
+                access.Confidence.ToString()))
+            .ToArray();
+        return (items, Math.Max(0, matched.Length - items.Length));
+    }
+
+    /// <summary>요청이 지나는 미들웨어 순서와 단락 지점. 엔드포인트 문맥에만 넣는다.</summary>
+    private static (IReadOnlyList<ContextMiddlewareStep> Items, int Omitted) BuildMiddleware(
+        GraphDocument graph, int max)
+    {
+        var pipeline = graph.Middleware;
+        if (pipeline is null || pipeline.Steps.Count == 0)
+        {
+            return ([], 0);
+        }
+
+        var steps = pipeline.Steps
+            .Where(step => step.ParentId is null)
+            .OrderBy(step => step.Order)
+            .ToArray();
+        var items = steps.Take(max)
+            .Select(step => new ContextMiddlewareStep(
+                step.Order,
+                step.Name,
+                step.Kind.ToString(),
+                step.RegistrationFile,
+                step.RegistrationLine,
+                step.Pre ?? string.Empty,
+                step.ShortCircuit?.StatusCode ?? string.Empty))
+            .ToArray();
+        return (items, Math.Max(0, steps.Length - items.Length));
     }
 
     private static async Task<ContextSourceSnippet?> ReadSnippetAsync(

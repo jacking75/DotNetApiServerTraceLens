@@ -61,6 +61,12 @@ public sealed record ContextRequest(
 
     /// <summary>문맥에서 뺄 파일 경로(접두사 일치). 비밀값 자동 탐지에 기대지 않고 수동 제외를 제공한다.</summary>
     public IReadOnlyList<string> ExcludeFiles { get; init; } = [];
+
+    /// <summary>
+    /// 인접 호출을 몇 홉까지 담을지(1 또는 2). 기본은 1홉이다 —
+    /// 2홉이면 "이 메서드가 결국 무엇을 부르는가"까지 보이지만 문맥이 커진다(T64).
+    /// </summary>
+    public int NeighborDepth { get; init; } = 1;
 }
 
 public sealed record ContextFreshness(string Status, IReadOnlyList<string> Reasons)
@@ -130,7 +136,57 @@ public sealed record ContextFinding(
     string File,
     int Line);
 
-public sealed record ContextOmission(int Nodes, IReadOnlyList<string> SourceRanges, IReadOnlyList<string> Sections);
+/// <param name="Nodes">길이 제한으로 생략한 메서드 수.</param>
+public sealed record ContextOmission(int Nodes, IReadOnlyList<string> SourceRanges, IReadOnlyList<string> Sections)
+{
+    /// <summary>
+    /// 절 이름만으로는 "없다"와 "뺐다"를 구분할 수 없다.
+    /// 몇 개를 뺐는지 함께 남겨야 에이전트가 "호출자 없음"으로 오독하지 않는다(T64).
+    /// </summary>
+    public ContextOmissionCounts Counts { get; init; } = ContextOmissionCounts.None;
+}
+
+/// <param name="Callers">뺀 호출자 수.</param>
+/// <param name="Callees">뺀 피호출자 수.</param>
+/// <param name="Snippets">뺀 소스 구간 수.</param>
+/// <param name="Accesses">뺀 저장소 접근 수.</param>
+/// <param name="MiddlewareSteps">뺀 미들웨어 단계 수.</param>
+public sealed record ContextOmissionCounts(
+    int Callers,
+    int Callees,
+    int Snippets,
+    int Accesses,
+    int MiddlewareSteps)
+{
+    public static ContextOmissionCounts None { get; } = new(0, 0, 0, 0, 0);
+}
+
+/// <summary>
+/// 대상에서 도달하는 저장소 접근 한 줄. "이 API가 어느 테이블을 읽고 쓰는가"에 답한다(T64).
+/// </summary>
+/// <param name="Confidence">추정이면 이름 패턴·동적 SQL 등으로 확정하지 못했다는 뜻이다.</param>
+public sealed record ContextAccess(
+    string NodeId,
+    string DataSource,
+    string Target,
+    string Operation,
+    string Storage,
+    string File,
+    int Line,
+    string Confidence);
+
+/// <summary>
+/// 요청이 지나는 미들웨어 한 단계. 엔드포인트 문맥에만 넣는다.
+/// </summary>
+/// <param name="ShortCircuit">여기서 요청이 끊길 수 있으면 그 상태 코드. 없으면 빈 문자열이다.</param>
+public sealed record ContextMiddlewareStep(
+    int Order,
+    string Name,
+    string Kind,
+    string File,
+    int Line,
+    string Pre,
+    string ShortCircuit);
 
 public sealed record ContextAnalysis(
     DateTimeOffset AnalyzedAt,
@@ -168,6 +224,14 @@ public sealed record ContextDocument(
     ContextOmission Omitted)
 {
     public const int Version = 1;
+
+    /// <summary>
+    /// 대상에서 도달하는 저장소 접근(최대 20). "이 API가 어느 테이블을 읽고 쓰는가"에 답한다(T64).
+    /// </summary>
+    public IReadOnlyList<ContextAccess> Accesses { get; init; } = [];
+
+    /// <summary>요청 경로의 미들웨어(최대 10). 엔드포인트 문맥에만 채운다(T64).</summary>
+    public IReadOnlyList<ContextMiddlewareStep> Middleware { get; init; } = [];
 
     /// <summary>사용자가 적은 질문. 그대로 문맥 맨 앞에 들어간다.</summary>
     public string Question { get; init; } = string.Empty;
