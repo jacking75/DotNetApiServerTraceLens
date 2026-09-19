@@ -66,11 +66,11 @@ export function GraphView({
       elements: buildElements(graphWindow, kindColors, entryPointByNode, groupLabel),
       style: buildStyle({
         label: cssVariable('--graph-label', '#f8fafc'),
-        nodeBorder: cssVariable('--graph-node-border', '#ffffff30'),
+        nodeBorder: cssVariable('--graph-node-border', 'rgba(255, 255, 255, 0.19)'),
         surface: cssVariable('--graph-node-bg', '#1b2536'),
         edge: cssVariable('--canvas-edge', '#657086'),
         accent: cssVariable('--accent', '#8ddcff'),
-      }),
+      }, kindColors),
       // 레벨 간 간격을 줄인다. 예전에는 노드 6개가 화면을 다 썼다.
       layout: { name: 'breadthfirst', directed: true, spacingFactor: 0.85, padding: 24 },
       // 맨 휠은 스크롤, Ctrl+휠이 줌이다. 세 캔버스에서 같게 맞춘다.

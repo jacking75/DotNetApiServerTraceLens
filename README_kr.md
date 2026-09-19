@@ -405,6 +405,8 @@ cd tracelens
 클라이언트 검증은 `cd client; npm test`(vitest)와 `npm run build`(타입 검사 포함)다.
 `npm run screenshots`는 떠 있는 서버(기본 <http://127.0.0.1:25011>)에 헤드리스 Chrome으로 붙어
 여섯 보기를 두 테마·두 해상도로 `docs/screenshots/`에 찍는다. 라이트 테마가 깨졌는지 눈으로 확인할 때 쓴다.
+`npm run profile`은 같은 방식으로 붙어 스플리터 드래그·진입점 선택·질문 타이핑의 React 커밋 수와
+`/api/*` 요청 수를 센다(측정값은 CHANGELOG에 적는다).
 
 ### 분석 대상 지정하기
 

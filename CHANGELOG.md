@@ -2,6 +2,39 @@
 
 수동으로 갱신한다. 실제로 확인한 것만 적고, 확인하지 않은 지원 범위는 넣지 않는다.
 
+## 0.9.0 (Unreleased) — 매일 쓰는 개발자 기준 3차 (schema v7, 부가 필드만)
+
+[docs/next-tasks-3_kr.md](docs/next-tasks-3_kr.md)의 T43~T72를 구현했다.
+기준은 "매일 분석하는 개발자가 둘째 주에도 계속 쓰겠는가"다.
+
+### 성능 — 측정값
+
+`client/scripts/profile.mjs`(`npm run profile`)가 헤드리스 Chrome에서 React 커밋 수와 실제 HTTP 요청 수를 센다.
+커밋 수는 React DevTools 훅의 `onCommitFiberRoot` 호출 횟수이고, 요청 수는 브라우저가 보낸 `/api/*` 요청이다.
+
+측정 조건: 1600×950, `samples/OrderApi`(진입점 8 · 노드 30), `tracelens serve --port 25099`, Chrome 헤드리스.
+
+| 조작 | React 커밋 | `/api/*` 요청 |
+|---|---|---|
+| 스플리터 드래그(`pointermove` 20회) | 1회(놓을 때 한 번) | 0건 |
+| 진입점 선택 | 7회 | 2건(`/api/source`, `/api/context`) |
+| 질문 15자 타이핑 | 15회(입력 한 글자당 한 번) | **0건** |
+
+- 드래그는 `pointermove`마다 state를 바꾸지 않는다 — 이동 20번에 커밋이 1회다.
+- 타이핑은 더 이상 문맥을 다시 요청하지 않는다(예전에는 200ms 디바운스로 `POST /api/context`를 보냈다).
+- 고치기 **전** 수치는 재지 않았다(코드를 이미 바꾼 뒤에 측정 도구를 만들었다). 위 값은 고친 뒤의 값이다.
+- 목록은 한 번에 50개까지만 그린다(호출자·피호출자·근거·접근 지도). `DetailPanel.dom.test.tsx`가 상한을 지킨다.
+
+### 고침 — 호출 흐름 캔버스가 통째로 죽던 문제
+
+진입점을 고르는 순간 화면이 빈 채로 멈췄다. Cytoscape 스타일시트에
+`background-gradient-stop-colors: data(color)`를 넣었는데, 값을 여러 개 받는 속성 안에서는 `data()`를
+쓸 수 없어 파싱이 예외를 던졌다(`Cannot read properties of null (reading 'value')`).
+종류별 색은 노드 클래스(`kind-<종류>`)와 리터럴 색 규칙으로 바꿨다.
+CSS 변수에서 읽은 `#rrggbbaa`(번들러가 `rgba()`를 이렇게 줄인다)도 Cytoscape가 못 읽어 테두리 색이
+조용히 사라지고 있었다 — 읽는 쪽에서 `rgba()`로 되돌린다.
+`cytoscapeStyle.test.ts`가 실제 Cytoscape로 스타일을 파싱해 보고 경고가 하나도 없어야 통과한다.
+
 ## 0.9.0 (Unreleased) — 신입 사용성 2차 (schema v7, 부가 필드만)
 
 [docs/next-tasks-2_kr.md](docs/next-tasks-2_kr.md)의 T20~T42를 모두 구현했다.

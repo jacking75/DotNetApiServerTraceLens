@@ -15,7 +15,7 @@
   --canvas-node: #17213a;
   --canvas-edge: #3a4a66;
   --graph-label: #f8fafc;
-  --graph-node-border: #ffffff30;
+  --graph-node-border: rgba(255, 255, 255, 0.19);
   --graph-node-bg: #1b2536;
   --scrim: #000000aa;
   /* 아래는 tools/themeVars.py가 만든 표면·테두리·글자·상태색이다. 값만 테마별로 다르다. */
@@ -1020,7 +1020,7 @@ table.findings .conf { color: var(--ink-13); font-size: calc(10.5px * var(--fs-s
   --canvas-node: #e3eaf5;
   --canvas-edge: #9fb0c8;
   --graph-label: #16202f;
-  --graph-node-border: #00000026;
+  --graph-node-border: rgba(0, 0, 0, 0.15);
   --graph-node-bg: #ffffff;
   --scrim: #1a2434aa;
   --ink-1: #5f7086;

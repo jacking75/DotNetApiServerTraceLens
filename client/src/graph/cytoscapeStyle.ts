@@ -36,6 +36,33 @@ function expandBadge(color: string): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 
+/**
+ * Cytoscape가 읽을 수 있는 색으로 바꾼다.
+ *
+ * CSS 변수에서 읽은 값이 `#rrggbbaa`(알파 포함 8자리)면 Cytoscape가 **색으로 읽지 못하고**
+ * 그 속성을 통째로 버린다(경고만 남고 테두리가 사라진다). 소스에 `rgba()`로 적어도
+ * 번들러가 8자리 hex로 줄여 놓기 때문에 읽는 쪽에서 되돌린다.
+ */
+export function toCytoscapeColor(value: string): string {
+  const text = value.trim()
+  const match = /^#([0-9a-f]{3,8})$/i.exec(text)
+  if (!match) return text
+
+  const digits = match[1]
+  if (digits.length === 4 || digits.length === 8) {
+    const size = digits.length / 4
+    const part = (index: number) => {
+      const raw = digits.slice(index * size, index * size + size)
+      return parseInt(size === 1 ? raw + raw : raw, 16)
+    }
+
+    const alpha = Math.round((part(3) / 255) * 100) / 100
+    return `rgba(${part(0)}, ${part(1)}, ${part(2)}, ${alpha})`
+  }
+
+  return text
+}
+
 export interface StyleColors {
   label: string
   nodeBorder: string
@@ -60,7 +87,10 @@ export function buildElements(
       color: kindColors[node.kind],
       badge: graphWindow.branchNodeIds.has(node.id) ? expandBadge(kindColors[node.kind]) : 'none',
     },
-    classes: graphWindow.branchNodeIds.has(node.id) ? 'branch' : '',
+    // 종류 색은 클래스로 넘긴다 — 여러 값을 받는 속성 안에서는 `data()`를 쓸 수 없다(아래 buildStyle 주석).
+    classes: [`kind-${node.kind}`, graphWindow.branchNodeIds.has(node.id) ? 'branch' : '']
+      .filter(Boolean)
+      .join(' '),
   }))
 
   // 접힌 팬아웃은 요약 노드 하나로 대신한다. 누르면 그 종류만 펼친다.
@@ -71,7 +101,7 @@ export function buildElements(
       color: kindColors[group.kind],
       badge: 'none',
     },
-    classes: 'fanout',
+    classes: `fanout kind-${group.kind}`,
   }))
 
   const groupEdges = graphWindow.groups.map((group) => ({
@@ -96,7 +126,38 @@ export function buildElements(
   return [...nodes, ...groupNodes, ...edges, ...groupEdges]
 }
 
-export function buildStyle(colors: StyleColors): cytoscape.StylesheetStyle[] {
+/**
+ * 종류별 색 띠. 노드마다 색이 다르지만 `data(color)`를 쓸 수 없다 —
+ * Cytoscape는 값을 여러 개 받는 속성(`background-gradient-stop-colors`)을 공백으로 쪼개
+ * 하나씩 파싱하는데, 그 안의 `data(...)`는 색으로 읽히지 않아 **스타일시트 파싱이 예외를 던진다**
+ * (`Cannot read properties of null (reading 'value')`). 그러면 호출 흐름 캔버스가 통째로 죽는다.
+ * 그래서 노드에 `kind-<종류>` 클래스를 주고 종류마다 리터럴 색 규칙을 하나씩 만든다.
+ */
+function kindBandStyles(
+  colors: StyleColors,
+  kindColors: Record<NodeKind, string>,
+): cytoscape.StylesheetStyle[] {
+  return (Object.keys(kindColors) as NodeKind[]).map((kind) => ({
+    selector: `node.kind-${kind}`,
+    style: {
+      'background-gradient-stop-colors':
+        `${kindColors[kind]} ${kindColors[kind]} ${colors.surface} ${colors.surface}` as unknown as string[],
+    },
+  }))
+}
+
+export function buildStyle(
+  input: StyleColors,
+  kindColors: Record<NodeKind, string>,
+): cytoscape.StylesheetStyle[] {
+  const colors: StyleColors = {
+    label: toCytoscapeColor(input.label),
+    nodeBorder: toCytoscapeColor(input.nodeBorder),
+    surface: toCytoscapeColor(input.surface),
+    edge: toCytoscapeColor(input.edge),
+    accent: toCytoscapeColor(input.accent),
+  }
+
   return [
     {
       selector: 'node',
@@ -104,8 +165,9 @@ export function buildStyle(colors: StyleColors): cytoscape.StylesheetStyle[] {
         // 왼쪽 6%를 종류 색으로 칠한다. 상자 전체를 칠하면 글자 대비가 무너진다.
         'background-fill': 'linear-gradient',
         'background-gradient-direction': 'to-right',
+        // 종류 규칙이 덮어쓴다. 정지점 개수를 맞춰 두어야 색과 위치가 어긋나지 않는다.
         'background-gradient-stop-colors':
-          `data(color) data(color) ${colors.surface} ${colors.surface}` as unknown as string[],
+          `${colors.surface} ${colors.surface} ${colors.surface} ${colors.surface}` as unknown as string[],
         'background-gradient-stop-positions': '0% 6% 6% 100%' as unknown as string[],
         'background-image': 'data(badge)',
         'background-image-containment': 'over',
@@ -169,5 +231,7 @@ export function buildStyle(colors: StyleColors): cytoscape.StylesheetStyle[] {
       selector: 'node.on-path',
       style: { 'border-width': 2, 'border-color': colors.accent },
     },
+    // 종류 규칙은 기본 노드 규칙 뒤에 와야 색 띠가 이긴다.
+    ...kindBandStyles(colors, kindColors),
   ]
 }

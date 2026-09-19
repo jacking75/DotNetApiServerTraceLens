@@ -9,7 +9,8 @@
     "test": "vitest run",
     "lint": "oxlint src",
     "measure:layout": "vitest bench --run",
-    "screenshots": "node scripts/screenshot.mjs"
+    "screenshots": "node scripts/screenshot.mjs",
+    "profile": "node scripts/profile.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",

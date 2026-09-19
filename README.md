@@ -421,6 +421,8 @@ Client checks are `cd client; npm test` (vitest) and `npm run build` (includes t
 `npm run screenshots` attaches headless Chrome to a running server (<http://127.0.0.1:25011> by
 default) and captures the six views in both themes and two window sizes into `docs/screenshots/` —
 useful for eyeballing the light theme.
+`npm run profile` attaches the same way and counts React commits and `/api/*` requests for a
+splitter drag, an entry-point selection and typing a question (numbers go in the CHANGELOG).
 
 ### Pointing at a target
 

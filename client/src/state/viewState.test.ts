@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addRecentTarget, defaultState, loadState, maxRecentTargets, saveState } from './viewState'
+import { addBookmark, addRecentTarget, defaultState, loadState, maxBookmarks, maxRecentTargets, saveState } from './viewState'
+import type { Bookmark } from './viewState'
 
 /** localStorage가 없는 환경(vitest 기본)에서도 돌도록 최소 구현을 끼운다. */
 function installStorage(initial: Record<string, string> = {}) {
@@ -101,6 +102,27 @@ describe('viewState', () => {
 
     expect(state.theme).toBe('system')
     expect(state.fontScale).toBe(1)
+  })
+
+  /**
+   * 상한은 대상 하나당이다. 전체를 잘라 버리면 대상을 오가며 쓸 때
+   * 다른 프로젝트의 북마크가 소리 없이 사라진다.
+   */
+  it('북마크 상한은 대상별로 적용되고 다른 대상을 밀어내지 않는다', () => {
+    const bookmark = (target: string, key: string): Bookmark =>
+      ({ target, selection: { type: 'method', key }, label: key, at: '2026-09-19T00:00:00Z' })
+    let list: Bookmark[] = [bookmark('B.sln', 'keep')]
+
+    for (let index = 0; index < maxBookmarks + 5; index += 1) {
+      list = addBookmark(list, bookmark('A.sln', `node-${index}`))
+    }
+
+    expect(list.filter((item) => item.target === 'A.sln')).toHaveLength(maxBookmarks)
+    expect(list.filter((item) => item.target === 'B.sln')).toHaveLength(1)
+    // 같은 선택을 다시 찍으면 늘지 않고 맨 위로 올라온다.
+    const again = addBookmark(list, bookmark('A.sln', 'node-10'))
+    expect(again.filter((item) => item.target === 'A.sln')).toHaveLength(maxBookmarks)
+    expect(again.find((item) => item.target === 'A.sln')!.selection.key).toBe('node-10')
   })
 
   it('없는 키는 기본값으로 채운다', () => {
