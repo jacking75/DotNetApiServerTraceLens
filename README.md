@@ -307,9 +307,16 @@ and the **set** of `.cs` files under the project folders.
 
 ```text
 tracelens doctor  [--target <path>] [--json]   Checks the environment; never installs or changes settings.
-tracelens analyze <path> [--json] [--profile]  One analysis, with a summary of what it did and did not see.
+tracelens analyze <path> [--json] [--profile] [--output <dir>] [--config <file>]
+                                               One analysis, with a summary of what it did and did not see.
 tracelens serve   [--target <path>] [--port n] [--no-browser]
                                                The UI server (loopback only).
+tracelens impact  <target> --node <id|"Class.Method"> [--changed-files a.cs,b.cs] [--json]
+                                               Impact candidate endpoints from the stored result (never re-analyzes).
+tracelens context <target> --node <id> [--kind …] [--intent …] [--budget …] [--json]
+                                               Prints the context for an AI agent to stdout (Markdown by default).
+tracelens compare <target> --baseline <snapshotId|latest> [--list] [--json]
+                                               Compares a saved baseline with the current analysis.
 tracelens mcp     --graph <graph.json path>    The local stdio MCP server.
 tracelens demo    [--dir <destination>]        Copies the example project and explains what to look at.
 tracelens init    [--target <path>] [--force]  Writes tracelens.config.json. Never overwrites an existing one.
@@ -322,6 +329,17 @@ Stop with `Ctrl+C`, or `Get-Process tracelens | Stop-Process` if you started it 
 
 `--no-browser` skips opening a browser (for remote shells and containers). `--profile` prints
 per-stage times and the peak working set alongside the summary.
+
+`impact`, `context` and `compare` read `.tracelens/graph.json` **without starting the server**, so they
+work in CI and PR hooks. They report through exit codes (`tracelens --help` prints the same table).
+
+| Exit code | Meaning | What automation should do |
+| --- | --- | --- |
+| `0` | Success | Use the output as is. |
+| `1` | Failure | No analysis was found, or the file could not be read. Run `tracelens analyze` first. |
+| `2` | Bad arguments | The target or `--node` is missing. Fix the command line. |
+| `3` | Compare preconditions differ | Target, analyzer version, rules version or analysis scope differ. **Do not read "no differences" as safe.** |
+| `4` | Analysis is stale | The output reflects older code. Re-analyze and run again (nothing re-analyzes on its own). |
 
 **Where the result is written.** For a `.sln`, `.tracelens/graph.json` sits next to the solution.
 For a `.csproj` it goes under the **common parent folder that holds the project and everything it
@@ -398,6 +416,11 @@ starts the server. Open <http://127.0.0.1:25011>.
 | `.\run.ps1 -Dev` | API server (25011) + Vite dev server (25012), for client work with HMR. |
 | `.\run.ps1 -SkipBuild` | Skips the build and runs immediately (Node.js is not needed in this mode). |
 | `.\run.ps1 -NoBrowser` | Does not open a browser. |
+
+Client checks are `cd client; npm test` (vitest) and `npm run build` (includes type checking).
+`npm run screenshots` attaches headless Chrome to a running server (<http://127.0.0.1:25011> by
+default) and captures the six views in both themes and two window sizes into `docs/screenshots/` —
+useful for eyeballing the light theme.
 
 ### Pointing at a target
 

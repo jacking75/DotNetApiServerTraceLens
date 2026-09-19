@@ -292,9 +292,16 @@ Code·Codex CLI·VS Code·Cursor용으로 실제 경로가 채워진 설정 조�
 
 ```text
 tracelens doctor  [--target <경로>] [--json]   환경을 점검한다. 설치·설정 변경은 하지 않는다.
-tracelens analyze <경로> [--json] [--profile]  한 번 분석하고 무엇을 봤고 못 봤는지 요약한다.
+tracelens analyze <경로> [--json] [--profile] [--output <폴더>] [--config <파일>]
+                                               한 번 분석하고 무엇을 봤고 못 봤는지 요약한다.
 tracelens serve   [--target <경로>] [--port n] [--no-browser]
                                                UI 서버를 띄운다(루프백 전용).
+tracelens impact  <대상> --node <id|"Class.Method"> [--changed-files a.cs,b.cs] [--json]
+                                               저장된 결과에서 영향 후보 진입점을 찾는다(재분석하지 않는다).
+tracelens context <대상> --node <id> [--kind …] [--intent …] [--budget …] [--json]
+                                               AI에 넘길 문맥을 표준 출력으로 낸다(기본 Markdown).
+tracelens compare <대상> --baseline <snapshotId|latest> [--list] [--json]
+                                               보관한 기준과 현재 분석을 비교한다.
 tracelens mcp     --graph <graph.json 경로>    로컬 stdio MCP 서버를 띄운다.
 tracelens demo    [--dir <복사할 위치>]         예제를 복사하고 무엇을 볼지 안내한다.
 tracelens init    [--target <경로>] [--force]  tracelens.config.json을 만든다. 이미 있으면 덮어쓰지 않는다.
@@ -307,6 +314,17 @@ tracelens config  --show [--target <경로>]     기본값과 파일을 합친 �
 
 `--no-browser`는 브라우저를 자동으로 열지 않는다(원격 셸·컨테이너에서 쓴다). `--profile`은 단계별
 시간과 최대 작업 집합을 함께 출력한다.
+
+`impact`·`context`·`compare`는 **서버를 띄우지 않고** `.tracelens/graph.json`만 읽는다. CI나 PR 훅에서
+쓸 수 있게 종료 코드를 나눠 둔다(`tracelens --help`에도 같은 표가 있다).
+
+| 종료 코드 | 뜻 | 자동화에서 할 일 |
+| --- | --- | --- |
+| `0` | 성공 | 결과를 그대로 쓴다. |
+| `1` | 실패 | 분석 결과를 찾지 못했거나 파일을 읽지 못했다. `tracelens analyze`를 먼저 실행한다. |
+| `2` | 인자 오류 | 대상이나 `--node`가 없다. 명령줄을 고친다. |
+| `3` | 비교 전제 조건 불일치 | 대상·분석기 버전·규칙 버전·분석 범위가 다르다. **"차이 없음"을 안전으로 읽지 않는다.** |
+| `4` | 분석 결과가 현재 소스와 다름(stale) | 출력은 옛 코드 기준이다. 재분석 후 다시 실행한다(자동 재분석은 하지 않는다). |
 
 **분석 결과가 어디에 저장되는가.** `.sln`을 주면 그 솔루션 폴더 아래 `.tracelens/graph.json`이다.
 `.csproj`를 주면 **그 프로젝트와 참조 프로젝트를 모두 담는 공통 상위 폴더** 아래에 만든다 —
@@ -383,6 +401,10 @@ cd tracelens
 | `.\run.ps1 -Dev` | API 서버(25011)와 Vite 개발 서버(25012)를 함께 띄운다. 클라이언트를 고칠 때 쓴다. |
 | `.\run.ps1 -SkipBuild` | 빌드를 건너뛰고 바로 실행한다(이때는 Node.js가 없어도 된다). |
 | `.\run.ps1 -NoBrowser` | 브라우저를 자동으로 열지 않는다. |
+
+클라이언트 검증은 `cd client; npm test`(vitest)와 `npm run build`(타입 검사 포함)다.
+`npm run screenshots`는 떠 있는 서버(기본 <http://127.0.0.1:25011>)에 헤드리스 Chrome으로 붙어
+여섯 보기를 두 테마·두 해상도로 `docs/screenshots/`에 찍는다. 라이트 테마가 깨졌는지 눈으로 확인할 때 쓴다.
 
 ### 분석 대상 지정하기
 

@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using TraceLens.Analyzer;
@@ -204,7 +204,9 @@ public sealed class AnalyzeEndpointsTests
         public Task<AnalysisResult> AnalyzeAsync(
             string solutionPath,
             IProgress<AnalysisProgress>? progress = null,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default,
+            string? outputDirectory = null,
+            string? configPath = null) =>
             Task.FromResult(result);
     }
 }

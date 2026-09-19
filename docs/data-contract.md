@@ -329,7 +329,25 @@ question, markdown, characters, estimatedTokens, containsSource, files[]
 이 표는 `McpToolContractTests`가 `[McpServerTool]` 리플렉션과 대조한다. 도구를 더하거나 파라미터를 바꾸면
 이 표도 함께 고쳐야 테스트가 통과한다.
 
-## 8. `tracelens.config.json`
+## 8. CLI 종료 코드
+
+`tracelens impact`·`context`·`compare`는 서버를 띄우지 않고 저장된 `.tracelens/graph.json`만 읽는다.
+CI·PR 훅이 종료 코드로 분기하므로 이 값들은 계약이다. `tracelens --help`와 README에도 같은 표가 있다.
+
+| 종료 코드 | 상수 | 뜻 |
+|---|---|---|
+| `0` | `GraphCommands.Success` | 성공 |
+| `1` | `GraphCommands.Failure` | 분석 결과를 찾지 못했거나 읽지 못했다 |
+| `2` | `GraphCommands.BadArguments` | 대상·`--node` 같은 필수 인자가 없거나 값이 잘못됐다 |
+| `3` | `GraphCommands.PreconditionMismatch` | 비교 전제 조건 불일치(대상·분석기 버전·규칙 버전·분석 범위) |
+| `4` | `GraphCommands.StaleGraph` | 분석 결과가 현재 소스와 다르다(stale). 출력은 옛 코드 기준이다 |
+
+- `3`은 결과를 냈지만 **비교의 전제가 다르다**는 뜻이다. "차이 없음"을 안전으로 읽으면 안 된다.
+- `4`는 실패가 아니라 경고다. 출력은 정상이지만 기준이 되는 코드가 현재 소스가 아니다.
+  명령이 스스로 재분석하지 않는다(CLAUDE.md 제약 3).
+- 다른 명령(`analyze`·`serve`·`doctor`·`init`·`config`)은 `0`/`1`/`2`만 쓴다.
+
+## 9. `tracelens.config.json`
 
 분석 루트에 두면 읽는다. 없어도 동작한다.
 
@@ -368,7 +386,7 @@ question, markdown, characters, estimatedTokens, containsSource, files[]
 
 예제 설정은 [`samples/OrderApi/tracelens.config.json`](../samples/OrderApi/tracelens.config.json)에 있다.
 
-## 9. 스키마를 바꿀 때
+## 10. 스키마를 바꿀 때
 
 1. Analyzer의 `Models/`를 바꾼다(새 필드는 `init` 프로퍼티 + 기본값으로 두어 옛 문서도 읽히게 한다).
 2. `GraphDocument.CurrentSchemaVersion`을 올리고 XML 주석에 무엇이 추가됐는지 적는다.

@@ -6,6 +6,7 @@ using Xunit;
 
 namespace TraceLens.Analyzer.Tests;
 
+[Collection(FixtureAppCollection.Name)]
 public sealed class AnalyzerIntegrationTests
 {
     [Fact]

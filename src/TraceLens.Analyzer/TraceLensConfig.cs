@@ -217,14 +217,20 @@ public sealed record TraceLensConfig(
         });
 
     /// <summary>설정을 읽는다. 문제가 있어도 예외로 분석을 죽이지 않고 기본값으로 대체한 뒤 사유를 함께 돌려준다.</summary>
+    /// <param name="explicitPath">
+    /// 설정 파일을 직접 지정할 때 쓴다(CLI의 <c>--config</c>). 비우면 대상 폴더의 기본 이름을 찾는다.
+    /// </param>
     public static async Task<ConfigLoadResult> LoadAsync(
         string solutionDirectory,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? explicitPath = null)
     {
-        var path = Path.Combine(solutionDirectory, FileName);
+        var path = explicitPath ?? Path.Combine(solutionDirectory, FileName);
         if (!File.Exists(path))
         {
-            return new ConfigLoadResult(Default, []);
+            return explicitPath is null
+                ? new ConfigLoadResult(Default, [])
+                : new ConfigLoadResult(Default, [new ConfigIssue(ConfigIssueSeverity.Error, $"설정 파일을 찾지 못했다: {path}")]);
         }
 
         JsonDocument document;

@@ -9,6 +9,7 @@ namespace TraceLens.Analyzer.Tests;
 /// T13에서 고친 정확도 버그의 회귀 테스트다.
 /// 제네릭·확장 메서드의 노드 ID, 절대 메서드 라우트, 기반 클래스 <c>[Route]</c>, 설정 파일 검증을 확인한다.
 /// </summary>
+[Collection(FixtureAppCollection.Name)]
 public sealed class AnalyzerAccuracyTests
 {
     [Fact]

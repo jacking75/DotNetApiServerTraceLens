@@ -42,10 +42,16 @@ public interface ITraceLensAnalyzer
 {
     /// <param name="targetPath">분석 대상 .sln 또는 .csproj 경로.</param>
     /// <param name="progress">단계별 진행 상태를 받을 곳. null이면 보고하지 않는다.</param>
+    /// <param name="outputDirectory">
+    /// 결과를 쓸 폴더. 비우면 대상과 참조 프로젝트의 공통 상위 폴더다(CLI의 <c>--output</c>).
+    /// </param>
+    /// <param name="configPath">설정 파일 경로. 비우면 대상 폴더의 기본 이름을 찾는다(CLI의 <c>--config</c>).</param>
     Task<AnalysisResult> AnalyzeAsync(
         string targetPath,
         IProgress<AnalysisProgress>? progress = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        string? outputDirectory = null,
+        string? configPath = null);
 }
 
 public sealed class TraceLensAnalyzer(
@@ -82,7 +88,9 @@ public sealed class TraceLensAnalyzer(
     public async Task<AnalysisResult> AnalyzeAsync(
         string targetPath,
         IProgress<AnalysisProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? outputDirectory = null,
+        string? configPath = null)
     {
         var gate = AnalysisGates.GetOrAdd(Path.GetFullPath(targetPath), _ => new SemaphoreSlim(1, 1));
         if (!await gate.WaitAsync(TimeSpan.Zero, cancellationToken))
@@ -93,7 +101,7 @@ public sealed class TraceLensAnalyzer(
 
         try
         {
-            return await AnalyzeCoreAsync(targetPath, progress, cancellationToken);
+            return await AnalyzeCoreAsync(targetPath, progress, cancellationToken, outputDirectory, configPath);
         }
         finally
         {
@@ -104,7 +112,9 @@ public sealed class TraceLensAnalyzer(
     private async Task<AnalysisResult> AnalyzeCoreAsync(
         string targetPath,
         IProgress<AnalysisProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? requestedOutputDirectory = null,
+        string? configPath = null)
     {
         var stopwatch = Stopwatch.StartNew();
         var stageTimer = new StageTimer();
@@ -122,7 +132,7 @@ public sealed class TraceLensAnalyzer(
             logger.LogInformation("참조 프로젝트까지 포함하도록 분석 루트를 {Root}로 잡았다.", solutionDirectory);
         }
 
-        var configResult = await TraceLensConfig.LoadAsync(solutionDirectory, cancellationToken);
+        var configResult = await TraceLensConfig.LoadAsync(solutionDirectory, cancellationToken, configPath);
         var config = configResult.Config;
         foreach (var issue in configResult.Issues)
         {
@@ -297,7 +307,7 @@ public sealed class TraceLensAnalyzer(
             RulesVersion = RulesVersion
         };
 
-        var outputDirectory = Path.Combine(solutionDirectory, ".tracelens");
+        var outputDirectory = Path.Combine(requestedOutputDirectory ?? solutionDirectory, ".tracelens");
         Directory.CreateDirectory(outputDirectory);
         var outputPath = Path.Combine(outputDirectory, "graph.json");
         var json = JsonSerializer.Serialize(document, GraphDocument.JsonOptions);

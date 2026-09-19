@@ -8,6 +8,7 @@ namespace TraceLens.Analyzer.Tests;
 /// T17에서 넓힌 분석 범위의 회귀 테스트다.
 /// virtual/override 디스패치, <c>[AcceptVerbs]</c>·<c>[NonAction]</c>·버전 토큰, 다중 호스트를 확인한다.
 /// </summary>
+[Collection(FixtureAppCollection.Name)]
 public sealed class AnalyzerScopeTests
 {
     /// <summary>재정의가 하나뿐이면 기반 선언 엣지와 함께 재정의로 가는 추정 엣지도 만든다.</summary>

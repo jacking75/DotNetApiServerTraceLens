@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using TraceLens.Analyzer;
@@ -154,7 +154,9 @@ public sealed class AnalysisJobServiceTests
         public async Task<AnalysisResult> AnalyzeAsync(
             string solutionPath,
             IProgress<AnalysisProgress>? progress = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            string? outputDirectory = null,
+            string? configPath = null)
         {
             Calls++;
             started.TrySetResult();

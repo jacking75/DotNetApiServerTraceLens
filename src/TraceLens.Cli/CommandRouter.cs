@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TraceLens.Analyzer;
 using TraceLens.Analyzer.Models;
+using TraceLens.Cli.Commands;
 using TraceLens.Context;
 using TraceLens.Mcp;
 using TraceLens.Server;
@@ -27,6 +28,9 @@ public static class CommandRouter
             "version" or "--version" => PrintVersion(),
             "serve" => await ServeAsync(rest),
             "analyze" => await AnalyzeAsync(rest),
+            "impact" => await GraphCommands.ImpactAsync(rest, Console.Out, Console.Error),
+            "context" => await GraphCommands.ContextAsync(rest, Console.Out, Console.Error),
+            "compare" => await GraphCommands.CompareAsync(rest, Console.Out, Console.Error),
             "mcp" => await McpAsync(rest),
             "doctor" => await Doctor(rest),
             "demo" => await DemoAsync(rest),
@@ -44,10 +48,18 @@ public static class CommandRouter
             사용법:
               tracelens serve [--target <경로>] [--port <번호>] [--no-browser]
                   UI 서버를 띄운다(기본 http://127.0.0.1:{ServerHost.DefaultPort}, 루프백 전용).
-              tracelens analyze <solution-or-project-path> [--json] [--profile]
+              tracelens analyze <solution-or-project-path> [--json] [--profile] [--output <폴더>] [--config <파일>]
                   한 번 분석하고 결과 요약을 출력한다.
                   결과는 대상과 참조 프로젝트의 공통 상위 폴더의 .tracelens/graph.json에 저장된다(출력 위치는 analyze 결과의 outputPath).
+                  --output을 주면 그 폴더의 .tracelens/graph.json에 쓴다. --config로 설정 파일을 따로 지정한다.
                   --profile을 주면 단계별 시간과 최대 메모리를 함께 출력한다.
+              tracelens impact <대상> --node <id|"Class.Method"> [--changed-files a.cs,b.cs] [--json]
+                  저장된 분석 결과에서 영향 후보 진입점을 찾는다(재분석하지 않는다).
+                  "호출자가 없다 → 삭제해도 안전"이 아니다 — 후보 목록이다.
+              tracelens context <대상> --node <id> [--kind node|endpoint|class|…] [--intent …] [--budget …] [--json]
+                  AI에 넘길 문맥을 표준 출력으로 낸다. 기본은 Markdown이다.
+              tracelens compare <대상> --baseline <snapshotId|latest> [--list] [--json]
+                  보관한 기준과 현재 분석을 비교한다. 전제 조건이 다르면 종료 코드 3이다.
               tracelens mcp --graph <graph-path>
                   로컬 stdio MCP 서버를 띄운다. AI 에이전트가 이 분석 결과를 읽는다.
               tracelens doctor [--target <경로>] [--json]
@@ -58,6 +70,9 @@ public static class CommandRouter
                   대상 폴더에 tracelens.config.json을 만든다. 이미 있으면 덮어쓰지 않고 차이만 알려준다.
               tracelens config --show [--target <경로>]
                   기본값과 설정 파일을 합친 유효 설정 전체를 출력한다("내 설정이 먹었는지" 확인용).
+
+            종료 코드:
+              0 성공 · 1 실패 · 2 인자 오류 · 3 비교 전제 조건 불일치 · 4 분석 결과가 현재 소스와 다름(stale)
 
             지원하는 분석 대상: {string.Join(", ", SolutionLoader.SupportedExtensions)}
             """);
@@ -136,6 +151,14 @@ public static class CommandRouter
         }
 
         var asJson = HasFlag(args, "--json");
+        var outputDirectory = GetOption(args, "--output");
+        var configPath = GetOption(args, "--config");
+        if (configPath is not null && !File.Exists(configPath))
+        {
+            Console.Error.WriteLine($"설정 파일을 찾지 못했다: {configPath}");
+            return 2;
+        }
+
         using var provider = BuildAnalyzerServices(asJson);
         var analyzer = provider.GetRequiredService<ITraceLensAnalyzer>();
         var progress = new Progress<AnalysisProgress>(item =>
@@ -148,7 +171,8 @@ public static class CommandRouter
 
         try
         {
-            var result = await analyzer.AnalyzeAsync(target, progress);
+            var result = await analyzer.AnalyzeAsync(
+                target, progress, outputDirectory: outputDirectory, configPath: configPath);
             if (asJson)
             {
                 Console.WriteLine(JsonSerializer.Serialize(

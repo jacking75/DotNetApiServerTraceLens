@@ -8,6 +8,7 @@ namespace TraceLens.Analyzer.Tests;
 /// 수집기 다섯 개가 같은 문서를 다시 바인딩하지 않도록 구문 트리·시맨틱 모델을 공유하는 캐시.
 /// 여기서 확인하는 것은 "같은 것을 돌려준다"이지 속도가 아니다. 속도 수치는 CHANGELOG에 측정 조건과 함께 적는다.
 /// </summary>
+[Collection(FixtureAppCollection.Name)]
 public sealed class SemanticCacheTests
 {
     [Fact]

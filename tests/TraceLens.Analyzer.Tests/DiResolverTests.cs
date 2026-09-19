@@ -7,6 +7,7 @@ namespace TraceLens.Analyzer.Tests;
 /// <summary>
 /// DI 등록 모양별 판정. 확정할 수 있는 것만 확정하고, 나머지는 사유를 남긴다.
 /// </summary>
+[Collection(FixtureAppCollection.Name)]
 public sealed class DiResolverTests
 {
     [Theory]
