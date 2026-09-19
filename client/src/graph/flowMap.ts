@@ -39,6 +39,21 @@ export interface FlowView {
   hiddenCount: number
 }
 
+/**
+ * 화면에 그대로 나가는 문장. `graph/`는 언어를 모르므로 번역한 문장을 받아서 쓴다.
+ * 호출자가 `t(...)`로 만들어 넘긴다.
+ */
+export interface FlowMapLabels {
+  /** 네임스페이스가 없는 타입의 라벨. */
+  globalNamespace: string
+  /** 컨트롤러가 아닌 박스의 부제(`Service · 메서드 4`). */
+  memberSummary: (kind: string, count: number) => string
+  /** 전체 지도의 요약 줄. */
+  entryMapMeta: (entryPoints: number, classes: number) => string
+  /** 한 진입점 흐름의 요약 줄. */
+  entryFlowMeta: (methods: number, classes: number, hidden: number) => string
+}
+
 const headHeight = 32
 const subtitleHeight = 18
 export const flowRowHeight = 22
@@ -73,6 +88,7 @@ export function buildEntryMap(
   graph: GraphDocument,
   entryPoints: EntryPoint[],
   namespacePrefix: string,
+  labels: FlowMapLabels,
 ): FlowView {
   const classOf = new Map(graph.nodes.map((node) => [node.id, node.classId]))
   const entryByNodeId = new Map(entryPoints.map((entry) => [entry.nodeId, entry]))
@@ -111,8 +127,8 @@ export function buildEntryMap(
       id: item.id,
       title: item.name,
       subtitle: isController
-        ? shortenNamespace(item.namespace, namespacePrefix)
-        : `${item.kind} · 메서드 ${item.methodIds.length}`,
+        ? shortenNamespace(item.namespace, namespacePrefix, labels.globalNamespace)
+        : labels.memberSummary(item.kind, item.methodIds.length),
       kind: item.kind,
       w: isController ? 234 : 200,
       h: flowBoxHeight({ subtitle: 'x', rows }),
@@ -137,7 +153,7 @@ export function buildEntryMap(
   return {
     boxes,
     relations,
-    meta: `진입점 ${entryPoints.length}개 · 클래스 ${boxes.length}개`,
+    meta: labels.entryMapMeta(entryPoints.length, boxes.length),
     hiddenCount: 0,
   }
 }
@@ -153,6 +169,7 @@ export function buildEntryFlow(
   depthLimit: number,
   entryPoints: EntryPoint[],
   namespacePrefix: string,
+  labels: FlowMapLabels,
 ): FlowView {
   const outgoing = buildAdjacency(graph)
   const nodeById = new Map(graph.nodes.map((node) => [node.id, node]))
@@ -203,7 +220,7 @@ export function buildEntryFlow(
     boxes.push({
       id: classId,
       title: graphClass?.name ?? classId,
-      subtitle: shortenNamespace(graphClass?.namespace ?? '', namespacePrefix),
+      subtitle: shortenNamespace(graphClass?.namespace ?? '', namespacePrefix, labels.globalNamespace),
       kind: graphClass?.kind ?? 'Method',
       w: 216,
       h: flowBoxHeight({ subtitle: 'x', rows }),
@@ -229,7 +246,7 @@ export function buildEntryFlow(
     boxes,
     relations,
     fixedLayers,
-    meta: `메서드 ${visible.size}개 · 클래스 ${boxes.length}개${hiddenCount > 0 ? ` · 깊이 밖 ${hiddenCount}개` : ''}`,
+    meta: labels.entryFlowMeta(visible.size, boxes.length, hiddenCount),
     hiddenCount,
   }
 }

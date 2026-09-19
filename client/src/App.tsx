@@ -13,6 +13,7 @@ import {
   openInEditor,
   getSamples,
   prepareSample,
+  listAnalysisJobs,
   startAnalysisJob,
   watchAnalysisJob,
 } from './api/client'
@@ -57,7 +58,7 @@ import {
 import { countBySeverity } from './graph/dataView'
 import type { EntryGroupBy, EntrySort } from './graph/entryGroups'
 import { buildSvg, toDataUriFile, toSvgFile } from './graph/exportSvg'
-import { buildEntryFlow, buildEntryMap } from './graph/flowMap'
+import { buildEntryFlow, buildEntryMap, type FlowMapLabels } from './graph/flowMap'
 import { collapseEdgesToClasses, deriveRelations } from './graph/relations'
 import { findStartupStep } from './graph/startupFlow'
 import { getCallerWindow, getDrilldownWindow, getInitialWindow, getPathWindow } from './graph/windowing'
@@ -80,7 +81,9 @@ import {
   type ThemeSetting,
 } from './state/viewState'
 import { isStructuralChange, parse as parseUrlState, serialize as serializeUrlState } from './state/urlState'
-import type { DiagnosticsReport, ImpactResult, SampleView, SelectionKind } from './types/context'
+import { useCallFlowState } from './hooks/useCallFlowState'
+import { useAnalysisJob } from './hooks/useAnalysisJob'
+import type { AnalysisJob, DiagnosticsReport, ImpactResult, SampleView, SelectionKind } from './types/context'
 import type {
   AnalyzeSummary,
   EntryPoint,
@@ -96,8 +99,6 @@ import type {
 
 const GraphView = lazy(() => import('./components/GraphView').then((module) => ({ default: module.GraphView })))
 
-/** 분석이 이만큼 넘게 걸리면 범위를 좁히는 처방을 띄운다. */
-const longRunningHintMs = 60_000
 /** 토스트가 화면에 남아 있는 시간. */
 const toastMs = 6_000
 
@@ -148,20 +149,30 @@ export default function App() {
 
   const [viewMode, setViewMode] = useState<ViewMode>(initial.viewMode)
   const [classMap, setClassMap] = useState<ClassMapState>(initial.classMap)
-  const [depth, setDepth] = useState(initial.depth)
   const [selection, setSelection] = useState<Selection | null>(initial.selection)
   const [dataView, setDataView] = useState<DataViewState>(initial.dataView)
   const [middlewareView, setMiddlewareView] = useState<MiddlewareViewState>(initial.middlewareView)
   const [search, setSearch] = useState('')
   const [columns, setColumns] = useState(initial.columns)
 
-  const [callFlowEntry, setCallFlowEntry] = useState<EntryPoint | null>(null)
-  const [focusStack, setFocusStack] = useState<string[]>([])
+  // 호출 흐름 보기의 상태 한 벌(진입점·파고든 자리·깊이·방향·펼친 묶음·강조 경로)과 거기서 나오는 창.
+  const callFlow = useCallFlowState(graph, viewMode, initial.depth)
+  const {
+    entry: callFlowEntry,
+    setEntry: setCallFlowEntry,
+    focusStack,
+    setFocusStack,
+    depth,
+    setDepth,
+    direction: windowDirection,
+    setDirection: setWindowDirection,
+    expandedGroups,
+    setExpandedGroups,
+    highlightPath,
+    setHighlightPath,
+    window: callFlowWindow,
+  } = callFlow
   const [flowEntryId, setFlowEntryId] = useState<string | null>(null)
-  /** 호출 흐름 창의 방향. `up`이면 고른 노드를 부르는 쪽으로 자란다. */
-  const [windowDirection, setWindowDirection] = useState<'down' | 'up'>('down')
-  /** 첫 창에서 펼쳐 둔 팬아웃 요약 노드. 창이 바뀌면 비운다. */
-  const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   /** 진입점 목록의 정렬. 세 보기가 같은 값을 쓴다. */
   const [entrySort, setEntrySort] = useState<EntrySort>(initial.entryListSort)
   /** 우측 열의 탭. 접었다 펴도, 탭을 옮겨도 각 탭의 상태는 남는다. */
@@ -188,12 +199,7 @@ export default function App() {
   const [scrollTarget, setScrollTarget] = useState<{ x: number; y: number; token: number } | null>(null)
   const [pendingScrollNamespace, setPendingScrollNamespace] = useState<string | null>(null)
   const [shellWidth, setShellWidth] = useState(900)
-  const [busy, setBusy] = useState(false)
-  const [progress, setProgress] = useState<string | null>(null)
-  const [jobId, setJobId] = useState<string | null>(null)
   /** 분석이 오래 걸릴 때 처방을 띄우기 위한 시작 시각. null이면 분석 중이 아니다. */
-  const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null)
-  const [longRunning, setLongRunning] = useState(false)
   /**
    * 실패 배너. `summary`는 번역한 한 줄, `detail`은 서버·예외 원문(접어 둔다).
    * `code`가 있으면 다음 행동(환경 점검·대상 다시 고르기)을 함께 보여 준다.
@@ -238,7 +244,6 @@ export default function App() {
   /** 예제로 분석했다면 그 예제. 안내에 "이 예제에서 보이는 것"을 함께 띄운다. */
   const [activeSample, setActiveSample] = useState<SampleView | null>(null)
   /** 영향 목록에서 고른 대상까지의 경로. 비어 있으면 평소의 창 규칙을 쓴다. */
-  const [highlightPath, setHighlightPath] = useState<string[]>([])
   /** 저장해 둔 보기 위치를 한 번만 되살린다. */
   const [restoredView, setRestoredView] = useState(false)
   /** 가져온 분석의 원본 루트를 고르는 대화상자. */
@@ -357,28 +362,23 @@ export default function App() {
       : null),
     [graph, viewMode, relations, diagramOptions, classIdOfMethod])
 
+  // 흐름도의 문장은 App이 번역해서 넘긴다. graph/는 언어를 모른다.
+  const flowLabels = useMemo<FlowMapLabels>(() => ({
+    globalNamespace: t('diagram.globalNamespace'),
+    memberSummary: (kind, count) => t('flow.memberSummary', { kind, count }),
+    entryMapMeta: (entryPoints, classes) => t('flow.entryMapMeta', { entryPoints, classes }),
+    entryFlowMeta: (methods, classes, hidden) =>
+      t('flow.entryFlowMeta', { methods, classes }) +
+      (hidden > 0 ? t('flow.entryFlowHidden', { count: hidden }) : ''),
+  }), [t])
+
   const flowView = useMemo(() => {
     if (!graph || viewMode !== 'flowmap') return null
     return flowEntryId
-      ? buildEntryFlow(graph, flowEntryId, depth, entryPoints, namespacePrefix)
-      : buildEntryMap(graph, entryPoints, namespacePrefix)
-  }, [graph, viewMode, flowEntryId, depth, entryPoints, namespacePrefix])
+      ? buildEntryFlow(graph, flowEntryId, depth, entryPoints, namespacePrefix, flowLabels)
+      : buildEntryMap(graph, entryPoints, namespacePrefix, flowLabels)
+  }, [graph, viewMode, flowEntryId, depth, entryPoints, namespacePrefix, flowLabels])
 
-  const callFlowWindow: GraphWindow | null = useMemo(() => {
-    if (!graph || viewMode !== 'callflow' || !callFlowEntry) return null
-    // 호출자 방향 창은 진입점이 아니라 고른 노드에서 위로 자란다.
-    if (windowDirection === 'up') {
-      const target = focusStack.length > 0 ? focusStack[focusStack.length - 1] : callFlowEntry.nodeId
-      return getCallerWindow(graph, target)
-    }
-
-    // 영향 목록에서 온 경우에는 대상까지의 경로를 그대로 펼친다(대상이 창 밖에 있으면 이동한 보람이 없다).
-    if (highlightPath.length > 0) return getPathWindow(graph, callFlowEntry.nodeId, highlightPath)
-    const focus = focusStack.length > 0 ? focusStack[focusStack.length - 1] : callFlowEntry.nodeId
-    return focusStack.length === 0
-      ? getInitialWindow(graph, focus, expandedGroups)
-      : getDrilldownWindow(graph, focus)
-  }, [graph, viewMode, callFlowEntry, focusStack, highlightPath, windowDirection, expandedGroups])
 
   /**
    * 실행 프로젝트가 여럿이면 시작 흐름·미들웨어를 골라 본다.
@@ -800,73 +800,23 @@ export default function App() {
     notice: nextGraph.diagnostics?.entryPointNotes.join(' ') || null,
   }), [summary])
 
-  /**
-   * 분석을 작업으로 실행해서 단계별 진행 상태를 보여 주고 취소도 받는다.
-   * 새 그래프로의 전환은 완료 알림을 받은 뒤 여기서 한 번만 한다.
-   */
-  const analyze = useCallback(async (targetPath?: string) => {
-    const target = (targetPath ?? solutionPath).trim()
-    if (!target) return
-    setBusy(true)
-    setError(null)
-    setProgress(null)
-    setTargetPicked(false)
-    setAnalysisStartedAt(Date.now())
-    setLongRunning(false)
-    try {
-      const job = await startAnalysisJob(target)
-      setJobId(job.id)
-      let failure: { message: string; code: string | null } | null = null
-      let canceled = false
-      await watchAnalysisJob(job.id, (event) => {
-        if (event.kind === 'progress') setProgress(`${event.stage} · ${event.message}${event.count === null ? '' : ` (${event.count})`}`)
-        if (event.kind === 'error') failure = { message: event.message, code: event.code ?? null }
-        if (event.kind === 'canceled') canceled = true
-      })
-      if (canceled) {
-        setToast(t('app.canceledNotice'))
-        return
-      }
-
-      // 서버가 분류한 code로 한 줄 요약을 고르고, 예외 원문은 접어서 보여 준다.
-      if (failure !== null) {
-        const reason = failure as { message: string; code: string | null }
-        setError({
-          summary: reason.code ? translateError(t, reason.code, reason.message) : t('app.analyzeFailed'),
-          detail: reason.message,
-          code: reason.code,
-        })
-        setErrorId(null)
-        return
-      }
-
-      const nextGraph = await loadGraphData()
-      applyAnalyzedGraph(nextGraph, await summarizeFrom(nextGraph))
-      setRecentTargets((current) => addRecentTarget(current, target))
-    } catch (reason) {
-      // 작업 API 자체가 없는 환경(구버전 서버)에서만 호환 경로로 다시 시도한다.
-      // 그 밖의 실패(같은 대상이 이미 돌고 있음·잘못된 경로 등)에 전체 분석을 한 번 더 돌리면 안 된다.
-      const missingJobApi = reason instanceof ApiError && (reason.status === 404 || reason.status === 405)
-      if (!missingJobApi) {
-        setError(describeError(reason, reason instanceof Error ? reason.message : t('app.analyzeFailed')))
-        return
-      }
-
-      try {
-        const nextSummary = await analyzeTarget(target)
-        const nextGraph = await loadGraphData()
-        applyAnalyzedGraph(nextGraph, nextSummary)
-      } catch (fallbackReason) {
-        setError(describeError(fallbackReason, reason instanceof Error ? reason.message : t('app.analyzeFailed')))
-      }
-    } finally {
-      setBusy(false)
-      setProgress(null)
-      setJobId(null)
-      setAnalysisStartedAt(null)
-      setLongRunning(false)
-    }
-  }, [solutionPath, loadGraphData, applyAnalyzedGraph, describeError, summarizeFrom, t])
+  // 분석 작업 하나의 수명(시작·진행·취소·실패·재접속)은 훅이 들고 있다.
+  const {
+    busy, setBusy, progress, jobId, analysisStartedAt, longRunning, analyze, cancelAnalysis,
+  } = useAnalysisJob({
+    solutionPath,
+    loadGraphData,
+    applyAnalyzedGraph,
+    summarizeFrom,
+    describeError,
+    setError,
+    setErrorId,
+    setToast,
+    setTargetPicked,
+    rememberTarget: (target) => setRecentTargets((current) => addRecentTarget(current, target)),
+    setSolutionPath,
+    t,
+  })
 
   // 토스트는 몇 초 뒤 스스로 사라진다. 배너 스택을 영구히 차지하면 안 된다.
   useEffect(() => {
@@ -874,18 +824,6 @@ export default function App() {
     const timer = window.setTimeout(() => setToast(null), toastMs)
     return () => window.clearTimeout(timer)
   }, [toast])
-
-  // 오래 걸리면 "기다리는 것 말고 할 수 있는 일"을 알려 준다. 진행 표시만으로는 알 수 없다.
-  useEffect(() => {
-    if (analysisStartedAt === null) return
-    const timer = window.setTimeout(() => setLongRunning(true), longRunningHintMs)
-    return () => window.clearTimeout(timer)
-  }, [analysisStartedAt])
-
-
-  const cancelAnalysis = async () => {
-    if (jobId) await cancelAnalysisJob(jobId)
-  }
 
   /** 지금 분석 결과를 사용자가 고르는 위치에 파일로 저장한다(브라우저의 "다른 이름으로 저장" 창). */
   const saveGraphAs = () => {
@@ -1339,7 +1277,10 @@ export default function App() {
           label: `${graph?.classes.find((item) => item.id === selectedClassId)?.name ?? selectedClassId} · 1`,
         })
       } else if (selection?.type === 'namespace') {
-        crumbs.push({ key: selection.key, label: shortenNamespace(selection.key, namespacePrefix) })
+        crumbs.push({
+          key: selection.key,
+          label: shortenNamespace(selection.key, namespacePrefix, t('diagram.globalNamespace')),
+        })
       }
 
       return crumbs

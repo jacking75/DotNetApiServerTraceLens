@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { classMembers, memberKey, memberSign, shortenNamespace, stereotypeOf } from '../graph/classDiagram'
-import { relationLabels, type ClassRelation, type RelationType } from '../graph/relations'
+import { relationLabelKeys, type ClassRelation, type RelationType } from '../graph/relations'
 import { findStartupStep } from '../graph/startupFlow'
 import { useI18n } from '../i18n/I18nProvider'
 import type { TranslationKey } from '../i18n/ko'
@@ -217,7 +217,7 @@ function ClassDetail({
         return (
           <PillSection
             key={type}
-            title={`${relationLabels[type]} (${ids.length})`}
+            title={`${t(relationLabelKeys[type])} (${ids.length})`}
             items={ids.map((id) => ({ label: nameById.get(id) ?? id, onClick: () => actions.onSelect({ type: 'class', key: id }) }))}
           />
         )
@@ -247,7 +247,11 @@ function ClassDetail({
           {t('detail.goToPackage')}
         </button>
       </div>
-      <div className="detail-hint">{t('detail.namespaceOf', { name: shortenNamespace(graphClass.namespace, namespacePrefix) })}</div>
+      <div className="detail-hint">
+        {t('detail.namespaceOf', {
+          name: shortenNamespace(graphClass.namespace, namespacePrefix, t('diagram.globalNamespace')),
+        })}
+      </div>
     </>
   )
 }
@@ -580,7 +584,7 @@ function NamespaceDetail({
 
   return (
     <>
-      <div className="detail-title"><h3>{shortenNamespace(namespace, namespacePrefix)}</h3></div>
+      <div className="detail-title"><h3>{shortenNamespace(namespace, namespacePrefix, t('diagram.globalNamespace'))}</h3></div>
       <div className="detail-path">{namespace || t('detail.globalNamespaceFull')}</div>
       <dl className="kv">
         <dt>{t('detail.classes')}</dt><dd>{t('detail.count', { count: classes.length })}</dd>
@@ -613,14 +617,14 @@ function NamespaceDetail({
       <PillSection
         title={t('detail.outbound', { count: outbound.length })}
         items={outbound.map((item) => ({
-          label: shortenNamespace(item, namespacePrefix),
+          label: shortenNamespace(item, namespacePrefix, t('diagram.globalNamespace')),
           onClick: () => actions.onGoToNamespace(item),
         }))}
       />
       <PillSection
         title={t('detail.inbound', { count: inbound.length })}
         items={inbound.map((item) => ({
-          label: shortenNamespace(item, namespacePrefix),
+          label: shortenNamespace(item, namespacePrefix, t('diagram.globalNamespace')),
           onClick: () => actions.onGoToNamespace(item),
         }))}
       />

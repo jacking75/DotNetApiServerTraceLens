@@ -42,7 +42,8 @@ async function readError(response: Response): Promise<ApiError> {
     | { error?: string; code?: string; message?: string; details?: unknown }
     | null
   return new ApiError(
-    body?.message ?? body?.error ?? `요청에 실패했다 (${response.status}).`,
+    // 코드가 있으면 화면이 `error.<code>`로 번역한다. 여기 문장은 그 어느 쪽도 없을 때의 마지막 수단이다.
+    body?.message ?? body?.error ?? `HTTP ${response.status}`,
     body?.code ?? 'unknown',
     response.status,
     body?.details,
@@ -293,6 +294,14 @@ export function startAnalysisJob(targetPath: string): Promise<AnalysisJob> {
   return postJson('/api/analysis-jobs', { solutionPath: targetPath })
 }
 
+/**
+ * 지금 서버가 알고 있는 분석 작업 목록.
+ * 분석 중에 새로고침하면 진행 상태를 잃어버리던 것을 이 목록으로 되살린다(T72).
+ */
+export function listAnalysisJobs(): Promise<AnalysisJob[]> {
+  return request('/api/analysis-jobs')
+}
+
 export async function cancelAnalysisJob(jobId: string): Promise<void> {
   await fetch(`/api/analysis-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' })
 }
@@ -356,7 +365,8 @@ export function parseServerSentEvents(buffer: string): { data: string[]; rest: s
 
 /** SSE 응답을 한 줄씩 읽어 이벤트로 넘긴다. `/api/ask`와 분석 작업이 같은 형식을 쓴다. */
 async function readServerSentEvents<T>(response: Response, onEvent: (event: T) => void): Promise<void> {
-  if (!response.body) throw new ApiError('응답 스트림을 열 수 없다.', 'NETWORK', 0)
+  // 화면은 code(NETWORK)로 번역한다. 메시지는 로그·개발자 도구용이다.
+  if (!response.body) throw new ApiError('response body is not readable', 'NETWORK', 0)
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()

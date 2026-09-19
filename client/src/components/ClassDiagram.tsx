@@ -105,7 +105,7 @@ export function ClassDiagram({
         zoom={zoom}
         paths={paths}
         packages={view.packages}
-        packageLabel={(namespace) => shortenNamespace(namespace, options.namespacePrefix)}
+        packageLabel={(namespace) => shortenNamespace(namespace, options.namespacePrefix, t('diagram.globalNamespace'))}
         emptyMessage={emptyMessage}
         scrollTarget={scrollTarget}
         ariaLabel={t('classmap.aria')}

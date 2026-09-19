@@ -48,7 +48,7 @@ tracelens/
 │   ├── tracelens.config.schema.json  # 설정 JSON Schema. 코드와 어긋나면 테스트가 실패한다
 │   ├── next-tasks_kr.md          # 1차 점검 결과와 태스크(T1~T19, 완료)
 │   ├── next-tasks-2_kr.md        # 2차 점검 결과와 태스크(T20~T42, 완료)
-│   ├── next-tasks-3_kr.md        # 3차 기능·UX 점검과 태스크(T43~T72, 진행 전)
+│   ├── next-tasks-3_kr.md        # 3차 기능·UX 점검과 태스크(T43~T72, 완료)
 │   ├── manual.html / manual_kr.html
 │   └── mcp-setup.md / mcp-setup_kr.md
 ├── samples/                      # 배포물에 함께 넣는 예제(분석 대상). 도구 코드가 아니다
@@ -218,9 +218,10 @@ npm run build      # Server의 wwwroot로 산출물 복사
 같은 날 "신입 개발자가 혼자 쓸 수 있는가"를 기준으로 다시 점검한 2차 문서
 [`docs/next-tasks-2_kr.md`](docs/next-tasks-2_kr.md)가 있다(T20~T42, 2026-09-18에 모두 완료).
 두 문서의 태스크는 전부 끝났다. 2026-09-18 저녁에 "매일 쓰는 개발자가 계속 쓰겠는가"를 기준으로
-실제 실행 스크린샷과 코드 읽기로 다시 점검한 3차 문서 [`docs/next-tasks-3_kr.md`](docs/next-tasks-3_kr.md)가 있다(T43~T72, 아직 시작 전).
-다음 작업은 그 문서의 태스크 목록과 권장 순서를 따른다.
-상단 태스크 목록을 하나 끝낼 때마다 즉시 체크한다.
+실제 실행 스크린샷과 코드 읽기로 다시 점검한 3차 문서 [`docs/next-tasks-3_kr.md`](docs/next-tasks-3_kr.md)가 있다
+(T43~T72, 2026-09-19에 모두 완료).
+세 문서의 태스크가 모두 끝났으므로 다음 작업은 새 점검에서 나온다.
+새 "다음 작업" 문서를 만들면 상단 태스크 목록을 하나 끝낼 때마다 즉시 체크한다.
 
 로드맵에서 **아직 하지 않은 것**은 사람이 해야 하는 일이다: 소규모 사용자 관찰(§16.1), 공개 게시와 홍보(§16.2),
 macOS·Linux 검증. 이것들을 코드로 대신하지 않는다.

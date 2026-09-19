@@ -62,6 +62,9 @@ public static class ServerHost
             policy.WithOrigins($"http://localhost:{ViteDevPort}").AllowAnyHeader().AllowAnyMethod()));
         builder.Services.ConfigureHttpJsonOptions(options =>
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+        // 본문이 JSON이 아니면 ASP.NET이 기본적으로 본문 없는 400을 낸다.
+        // 예외로 올려야 RequestGuards가 다른 오류와 같은 `{code,message}`로 바꿀 수 있다(T72).
+        builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = true);
         // members가 들어가면서 /api/graph 응답이 커졌다. 로컬이라도 수 MB JSON은 파싱 전 전송에서 체감된다.
         builder.Services.AddResponseCompression(options =>
         {
@@ -110,6 +113,12 @@ public static class ServerHost
 
         if (app.Environment.IsProduction())
         {
+            // `/api/*`는 SPA로 떨어뜨리지 않는다. 없는 엔드포인트에 HTML 200을 돌려주면
+            // 스크립트·에이전트가 "성공했는데 응답이 이상하다"로 읽는다.
+            app.MapFallback("/api/{**rest}", () => ApiResults.Error(
+                StatusCodes.Status404NotFound,
+                "ENDPOINT_NOT_FOUND",
+                "그런 API가 없다. docs/data-contract.md의 HTTP API 표를 확인한다."));
             app.MapFallbackToFile("index.html");
         }
 

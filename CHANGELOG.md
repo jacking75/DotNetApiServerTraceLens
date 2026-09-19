@@ -17,13 +17,44 @@
 | 조작 | React 커밋 | `/api/*` 요청 |
 |---|---|---|
 | 스플리터 드래그(`pointermove` 20회) | 1회(놓을 때 한 번) | 0건 |
-| 진입점 선택 | 7회 | 2건(`/api/source`, `/api/context`) |
+| 진입점 선택 | 6~7회(실행마다 다르다) | 2건(`/api/source`, `/api/context`) |
 | 질문 15자 타이핑 | 15회(입력 한 글자당 한 번) | **0건** |
 
 - 드래그는 `pointermove`마다 state를 바꾸지 않는다 — 이동 20번에 커밋이 1회다.
 - 타이핑은 더 이상 문맥을 다시 요청하지 않는다(예전에는 200ms 디바운스로 `POST /api/context`를 보냈다).
 - 고치기 **전** 수치는 재지 않았다(코드를 이미 바꾼 뒤에 측정 도구를 만들었다). 위 값은 고친 뒤의 값이다.
 - 목록은 한 번에 50개까지만 그린다(호출자·피호출자·근거·접근 지도). `DetailPanel.dom.test.tsx`가 상한을 지킨다.
+
+### 정합성 — 버전·오류 형태·죽은 계약
+
+- **버전이 `0.9.0`이다.** `Directory.Build.props`가 `0.8.0`인 채라 `graph.json`의 `analyzerVersion`과
+  스냅샷 비교 전제에 옛 번호가 찍히고 있었다.
+- **모든 400이 `{code,message}`를 갖는다.** 본문이 JSON이 아니면 ASP.NET이 본문 없는 400을 냈다.
+  `ThrowOnBadRequest`를 켜고 `INVALID_REQUEST`로 감싼다(`details.reason`에 바인딩 실패 이유).
+- **`/api/*`의 없는 경로가 SPA HTML 200 대신 `404 ENDPOINT_NOT_FOUND`다.**
+- **지운 엔드포인트.** `GET /api/analysis-status`·`GET /api/graph/classes`는 부르는 쪽이 없었다.
+  같은 내용은 `GET /api/graph` + `GET /api/freshness`, 에이전트는 MCP 도구로 얻는다.
+- **쓰게 된 계약.** `GET /api/analysis-jobs`로 새로고침 뒤 **진행 중이던 분석에 다시 붙는다**(자동 재분석이
+  아니라 이미 도는 작업에 붙을 뿐이다). 미들웨어 단계 상세에 `isTerminal`(종단 표시)과
+  `filters`(`AddEndpointFilter`로 붙은 엔드포인트 필터, 상태 코드 포함)를 그린다.
+- **계약 문서와 코드를 테스트가 대조한다.** `HttpContractTests`가 `Endpoints/*.cs`의 `Map*`과
+  `data-contract.md`의 표를 양방향으로 비교한다(문서에만 있는 것·코드에만 있는 것 둘 다 잡는다).
+- **`pack.ps1`이 `docs/`를 검증한다.** 설명서·설정 스키마가 빠지면 배포물 생성이 실패한다.
+
+### i18n — 검사 범위를 `src/**`로
+
+- `noHardcodedKorean` 검사가 `components`·`content`·`App.tsx`만 봐서 `graph/`·`api/`의 한국어가
+  영어 화면에 그대로 나왔다. 검사를 `src/**`로 넓히고(사전·테스트·벤치 제외)
+  `graph/`는 문장 대신 **호출자가 번역해 넘긴 라벨**을 받는다(`FlowMapLabels`, `relationLabelKeys`).
+- 점검 결과 상세의 규칙 이름이 서버가 준 한국어 원문이었다. 목록과 같은 `ruleText(rule, lang)`을 쓴다.
+
+### 구조 — App.tsx에서 훅 두 개를 떼어 냈다
+
+상태 관리 라이브러리를 도입하지 않는 원칙은 그대로다(App이 상태를 들고 props로 내린다).
+한 보기·한 흐름에 속한 것끼리 묶어 둔 것이다.
+
+- `hooks/useCallFlowState.ts` — 호출 흐름의 진입점·파고든 자리·깊이·방향·펼친 묶음·강조 경로와 그 창.
+- `hooks/useAnalysisJob.ts` — 분석 작업의 시작·진행·취소·실패·재접속.
 
 ### 고침 — 호출 흐름 캔버스가 통째로 죽던 문제
 

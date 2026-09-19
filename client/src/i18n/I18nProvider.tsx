@@ -82,7 +82,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
 export function useI18n(): I18n {
   const value = useContext(I18nContext)
-  if (!value) throw new Error('useI18n는 I18nProvider 안에서만 쓸 수 있다.')
+  if (!value) throw new Error('useI18n must be called inside I18nProvider')
   return value
 }
 

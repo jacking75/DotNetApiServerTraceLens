@@ -42,6 +42,24 @@ public static class RequestGuards
             {
                 await next();
             }
+            catch (BadHttpRequestException exception)
+            {
+                // 본문이 JSON이 아니거나 형식이 맞지 않으면 ASP.NET이 본문 없는 400을 낸다.
+                // 화면·스크립트는 그 400에서 아무 단서를 얻지 못한다 — 다른 오류와 같은 형태로 바꾼다.
+                logger.LogWarning(exception, "잘못된 요청: {Path}", context.Request.Path);
+                if (context.Response.HasStarted)
+                {
+                    throw;
+                }
+
+                context.Response.StatusCode = exception.StatusCode is >= 400 and < 500
+                    ? exception.StatusCode
+                    : (int)HttpStatusCode.BadRequest;
+                await context.Response.WriteAsJsonAsync(new ApiError(
+                    ApiResults.InvalidRequest,
+                    "요청 본문을 읽지 못했다. JSON 형식과 필드 이름을 확인한다.",
+                    new { reason = exception.Message }));
+            }
             catch (Exception exception)
             {
                 var errorId = Guid.NewGuid().ToString("N")[..8];

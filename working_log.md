@@ -1,3 +1,16 @@
+## 2026-09-19 20:27 KST - docs/next-tasks-3_kr.md의 T43~T72를 모두 구현
+
+- 3차 점검 태스크 30개를 빠짐없이 끝냈다(P0 7 · 호출 흐름 3 · 분석기 정직성 7 · MCP·CLI 5 · 편의 8).
+  진입점 목록·라이트 테마·URL 상태·호출 흐름 렌더링·분석기 판정(`base.Method()`·메서드 `[Route]`·COMP 오탐)·
+  MCP 계약과 오류 형태·에이전트 선택(Claude Code·Codex)·접근성·내보내기·다중 프로젝트까지 다뤘다.
+- 이번 구간에서 새로 한 것: 서버 없이 도는 CLI 명령 `impact`·`context`·`compare`와 종료 코드 표(0/1/2/3/4),
+  성능 측정 스크립트(`npm run profile`)로 잰 실제 커밋 수·요청 수를 CHANGELOG에 기록, 버전 0.9.0,
+  모델 바인딩 실패를 `INVALID_REQUEST`로 감싸기, 죽은 엔드포인트 둘 제거와 `GET /api/analysis-jobs`로
+  진행 중 분석 재접속, i18n 검사 범위를 `src/**`로 확대, App.tsx에서 훅 두 개 분리.
+- 측정 중에 **진입점을 고르면 앱이 통째로 죽던 버그**를 찾아 고쳤다(Cytoscape가 여러 값을 받는 속성 안의
+  `data()`와 `#rrggbbaa` 색을 파싱하지 못한다). 실제 Cytoscape로 스타일을 파싱해 보는 테스트를 붙였다.
+- 검증: `dotnet build` 경고 0·오류 0, `dotnet test` 256개 통과, `npm test` 119개 통과, `npm run build` 성공.
+
 ## 2026-09-18 20:26 KST - 3차 기능·UX 점검 문서(docs/next-tasks-3_kr.md, T43~T72) 작성
 
 - "실제 50~300개 엔드포인트 솔루션을 매일 쓰는 개발자가 계속 쓰겠는가"를 기준으로 기능과 UX를 점검했다.

@@ -10,11 +10,15 @@ export interface ClassRelation {
   label?: string
 }
 
-export const relationLabels: Record<RelationType, string> = {
-  inherit: '상속',
-  implement: '구현',
-  assoc: '연관',
-  depend: '의존',
+/**
+ * 관계 이름은 i18n 키로만 들고 있는다.
+ * `graph/`는 React·언어에 의존하지 않는 순수 계산이라 문장을 직접 만들지 않는다.
+ */
+export const relationLabelKeys: Record<RelationType, 'relation.inherit' | 'relation.implement' | 'relation.assoc' | 'relation.depend'> = {
+  inherit: 'relation.inherit',
+  implement: 'relation.implement',
+  assoc: 'relation.assoc',
+  depend: 'relation.depend',
 }
 
 /** 메서드 호출 엣지를 클래스 단위로 접는다. 같은 클래스 안의 호출은 관계도에서 의미가 없으므로 뺀다. */

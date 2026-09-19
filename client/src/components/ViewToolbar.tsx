@@ -1,4 +1,4 @@
-import { relationLabels, type RelationType } from '../graph/relations'
+import { relationLabelKeys, type RelationType } from '../graph/relations'
 import { useI18n } from '../i18n/I18nProvider'
 import type { TranslationKey } from '../i18n/ko'
 import type { ClassMapState, DataViewState, MiddlewareViewState } from '../state/viewState'
@@ -116,7 +116,7 @@ interface ClassMapControlsProps {
 
 function ClassMapControls({ classMap, onChange, onFitZoom }: ClassMapControlsProps) {
   const { t } = useI18n()
-  const relationTypes = Object.keys(relationLabels) as RelationType[]
+  const relationTypes = Object.keys(relationLabelKeys) as RelationType[]
   return (
     <>
       <span>{t('toolbar.layout')}</span>

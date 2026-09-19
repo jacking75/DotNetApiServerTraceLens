@@ -158,6 +158,14 @@ describe('클래스 다이어그램 렌더', () => {
 })
 
 describe('전체 흐름도 렌더', () => {
+  /** 문장은 App이 번역해서 넘긴다. 테스트는 키를 그대로 쓰는 최소 구현으로 대신한다. */
+  const labels = {
+    globalNamespace: '(global)',
+    memberSummary: (kind: string, count: number) => `${kind} ${count}`,
+    entryMapMeta: (entryPoints: number, classes: number) => `${entryPoints}/${classes}`,
+    entryFlowMeta: (methods: number, classes: number, hidden: number) => `${methods}/${classes}/${hidden}`,
+  }
+
   const renderFlow = (view: ReturnType<typeof buildEntryMap>) => renderToStaticMarkup(createElement(I18nProvider, null, createElement(FlowDiagram, {
     view,
     selection: null,
@@ -168,7 +176,7 @@ describe('전체 흐름도 렌더', () => {
   })))
 
   it('진입점 지도는 컨트롤러 박스에 라우트를 줄로 붙인다', () => {
-    const markup = renderFlow(buildEntryMap(graph, graph.entryPoints, 'App.'))
+    const markup = renderFlow(buildEntryMap(graph, graph.entryPoints, 'App.', labels))
 
     expect(markup).toContain('/api/orders')
     expect(markup).toContain('http post')
@@ -176,7 +184,7 @@ describe('전체 흐름도 렌더', () => {
   })
 
   it('진입점 흐름은 도달한 메서드를 클래스로 묶는다', () => {
-    const view = buildEntryFlow(graph, graph.entryPoints[0].nodeId, 3, graph.entryPoints, 'App.')
+    const view = buildEntryFlow(graph, graph.entryPoints[0].nodeId, 3, graph.entryPoints, 'App.', labels)
 
     expect(view.boxes.map((box) => box.id)).toEqual(['App.Api.OrdersController', 'App.Core.OrderService'])
     expect(view.fixedLayers?.get('App.Core.OrderService')).toBe(1)
@@ -184,7 +192,7 @@ describe('전체 흐름도 렌더', () => {
   })
 
   it('깊이 제한에 걸린 호출은 +n으로 남는다', () => {
-    const view = buildEntryFlow(graph, graph.entryPoints[0].nodeId, 0, graph.entryPoints, 'App.')
+    const view = buildEntryFlow(graph, graph.entryPoints[0].nodeId, 0, graph.entryPoints, 'App.', labels)
 
     expect(view.hiddenCount).toBe(1)
     expect(view.boxes[0].rows[0].badge).toBe('+1')

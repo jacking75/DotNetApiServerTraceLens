@@ -65,8 +65,13 @@ export function commonNamespacePrefix(namespaces: string[]): string {
   return shared === 0 ? '' : `${first.slice(0, shared).join('.')}.`
 }
 
-export function shortenNamespace(namespace: string, prefix: string): string {
-  if (!namespace) return '(전역)'
+/**
+ * 네임스페이스 표시 이름. 공통 접두사를 떼어 낸다.
+ * 네임스페이스가 없는 타입(전역)의 라벨은 번역이 필요하므로 호출자가 넘긴다 —
+ * 여기서 한국어를 만들면 영어 화면에도 그대로 나온다.
+ */
+export function shortenNamespace(namespace: string, prefix: string, globalLabel = ''): string {
+  if (!namespace) return globalLabel
   return prefix && namespace.startsWith(prefix) ? namespace.slice(prefix.length) : namespace
 }
 

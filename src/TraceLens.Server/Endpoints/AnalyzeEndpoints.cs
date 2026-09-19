@@ -104,7 +104,8 @@ public static class AnalyzeEndpoints
         var json = await ReadBoundedAsync(context.Request.Body, MaxImportBytes, cancellationToken);
         if (json is null)
         {
-            return ApiResults.Error(
+            // 이 파일의 다른 오류와 같은 형태로 낸다(과거 API라 `error` 필드를 함께 담는다).
+            return ApiResults.LegacyError(
                 StatusCodes.Status413PayloadTooLarge,
                 GraphTooLarge,
                 $"가져올 분석 결과가 너무 크다({MaxImportBytes / (1024 * 1024)} MB까지 받는다).");

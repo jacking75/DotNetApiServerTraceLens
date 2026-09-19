@@ -131,9 +131,17 @@ if (-not $SkipZip) {
             }
         }
 
-        foreach ($directory in @('wwwroot', 'samples')) {
+        foreach ($directory in @('wwwroot', 'samples', 'docs')) {
             if (-not (Test-Path (Join-Path $publishDirectory $directory))) {
                 throw "$runtime 배포물에 $directory 폴더가 없다."
+            }
+        }
+
+        # 설명서와 설정 스키마가 빠지면 `/manual/ko`와 `tracelens init`이 조용히 실패한다.
+        $docFiles = @('manual.html', 'manual_kr.html', 'tracelens.config.schema.json')
+        foreach ($name in $docFiles) {
+            if (-not (Test-Path (Join-Path $publishDirectory "docs\$name"))) {
+                throw "$runtime 배포물의 docs에 $name 이(가) 없다. 설명서 없이 배포하면 안 된다."
             }
         }
 

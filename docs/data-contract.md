@@ -207,7 +207,6 @@
 | `POST /api/analyze/import` | 사용자가 고른 그래프 파일을 `offlineSnapshot`으로 불러온다. 활성 `graph.json`을 덮어쓰지 않는다. | `400 GRAPH_INVALID` |
 | `POST /api/analyze/adopt` | 가져온 결과의 원본 루트를 연결한다. 입력이 일치할 때만 소스 접근이 열린다. | `409 INPUT_MISMATCH` |
 | `GET /api/freshness` | `fresh`/`stale`/`unknown`과 변경 종류·이유를 돌려준다. 재분석하지 않는다. | `404 NO_ANALYSIS` |
-| `GET /api/analysis-status` | 분석 대상·시각·신선도·지원 기능·진단을 돌려준다. | `404 NO_ANALYSIS` |
 | `GET /api/diagnostics` | 환경과 분석 능력을 점검한다. 비밀값을 반환하거나 설치를 실행하지 않는다. | — |
 | `GET /api/source` | 분석 루트 안 소스를 읽고 `sourceVersion`(snapshot/current)을 함께 준다. | `400 SOURCE_DENIED`, `404` |
 | `POST /api/context` | 선택·목적·예산에서 문맥 DTO와 Markdown을 만든다. | `400 INVALID_REQUEST`, `404 SELECTION_NOT_FOUND`, `409 SNAPSHOT_MISMATCH` |
@@ -222,9 +221,24 @@
 | `GET /api/samples` | 배포물에 함께 넣은 예제 목록과 예상 결과를 돌려준다. | — |
 | `POST /api/samples/{id}/prepare` | 예제를 `%LOCALAPPDATA%\TraceLens\samples\{id}`에 복사한다. 이미 있으면 그대로 쓴다(`overwrite`로 덮어쓴다). | `404 SAMPLE_NOT_FOUND`, `500 SAMPLE_COPY_FAILED` |
 | `GET /api/browse` | 로컬 디렉터리를 훑어 `.sln`/`.csproj`를 찾는 대상 선택용 API(브라우저 파일 선택창은 절대 경로를 안 주므로). | `400 SOURCE_DENIED`, `400 INVALID_REQUEST` |
-| `GET /api/graph`, `/graph/entrypoints`, `/graph/classes`, `/graph/namespaces` | 현재 메모리 그래프 전체/진입점/클래스 요약/네임스페이스 요약을 돌려준다. 실패 응답은 옛 `error` 필드를 유지하면서 `code`를 함께 담는다. | `404 NO_ANALYSIS` |
+| `GET /api/graph`, `/graph/entrypoints`, `/graph/namespaces` | 현재 메모리 그래프 전체/진입점/네임스페이스 요약을 돌려준다. 실패 응답은 옛 `error` 필드를 유지하면서 `code`를 함께 담는다. | `404 NO_ANALYSIS` |
 | `GET /api/analysis-jobs` | 진행 중·최근 분석 작업 목록. 새로고침 뒤 진행 중 작업에 다시 붙을 때 쓴다. | — |
 | `GET /manual/{lang}` | `ko`·`en` 설명서를 정적으로 서빙한다. | `404 MANUAL_NOT_FOUND` |
+
+이 표는 `HttpContractTests`가 `Endpoints/*.cs`의 `Map*` 호출과 대조한다. 엔드포인트를 더하거나 지우면
+이 표도 함께 고쳐야 테스트가 통과한다.
+
+**지운 것.** `GET /api/analysis-status`와 `GET /api/graph/classes`는 아무도 부르지 않아 뺐다(T72).
+같은 내용은 `GET /api/graph` + `GET /api/freshness`로 얻고, 에이전트는 MCP의 `get_analysis_status`·
+`list_classes`를 쓴다.
+
+**화면이 읽지 않는 필드.** 아래 셋은 UI가 그리지 않지만 계약에 남긴다 — 지우면 다른 기능이 깨진다.
+
+| 필드 | 누가 쓰나 |
+|---|---|
+| `graph.fileHashes` | 신선도 판정(`GraphFreshnessEvaluator`)의 입력이다. 화면은 결과(`fresh`/`stale`)만 본다. |
+| `dataAccess.transactionScopes[].accessIds` | 보상 처리 판정이 경계 안의 접근을 찾는 데 쓴다. |
+| `context.contextVersion` | 문맥 DTO의 버전 표시다. 읽는 쪽이 형식을 구분하는 근거다. |
 
 ### 오류 코드
 
@@ -233,11 +247,14 @@
 `BASELINE_NOT_FOUND`, `SNAPSHOT_NOT_FOUND`, `SNAPSHOT_SAVE_FAILED`, `JOB_NOT_FOUND`,
 `JOB_NOT_CANCELABLE`, `JOB_ALREADY_RUNNING`, `RUN_NOT_FOUND`, `AGENT_NOT_FOUND`, `AGENT_TIMEOUT`,
 `SAMPLE_NOT_FOUND`, `SAMPLE_COPY_FAILED`, `MCP_HOST_MISSING`, `MANUAL_NOT_FOUND`, `FORBIDDEN_ORIGIN`,
-`UNEXPECTED_ERROR`.
+`ENDPOINT_NOT_FOUND`, `UNEXPECTED_ERROR`.
 
 - `JOB_ALREADY_RUNNING`(409) — 같은 대상의 분석이 이미 돌고 있다. 두 번째 요청은 시작하지 않는다.
 - `FORBIDDEN_ORIGIN`(403) — 상태를 바꾸는 `/api/*` 요청의 `Origin`이 이 서버가 아니다. 루프백 전용 도구라
   브라우저 밖에서 온 요청(Origin 없음)은 막지 않는다.
+- `INVALID_REQUEST`(400) — 본문이 JSON이 아니거나 필드 형식이 맞지 않는 것도 이 코드다.
+  `details.reason`에 바인딩이 실패한 이유가 들어간다(예전에는 본문 없는 400이었다).
+- `ENDPOINT_NOT_FOUND`(404) — `/api/*`에 없는 경로다. SPA HTML을 돌려주지 않는다.
 - `UNEXPECTED_ERROR`(500) — 처리하지 못한 예외다. `details.errorId`가 로그 파일의 같은 id와 이어진다.
 - 클라이언트는 서버에 닿지 못했을 때 `NETWORK`(status 0)를 자체적으로 만든다. 서버가 보내는 코드가 아니다.
 

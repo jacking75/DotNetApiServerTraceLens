@@ -315,32 +315,6 @@ export interface DiagnosticsReport {
   log?: DiagnosticsLogInfo | null
 }
 
-export interface AnalysisCapabilities {
-  minimalApi: boolean
-  controllers: boolean
-  callSites: boolean
-  manifest: boolean
-  dataAccess: boolean
-  middleware: boolean
-  startupFlow: boolean
-}
-
-export interface AnalysisStatus {
-  snapshotId: string
-  inputFingerprint: string
-  solutionPath: string
-  rootDirectory: string
-  analyzedAt: string
-  schemaVersion: number
-  analyzerVersion: string
-  rulesVersion: string
-  origin: 'live' | 'offlineSnapshot'
-  freshness: string
-  freshnessReasons: string[]
-  changedFiles: string[]
-  capabilities: AnalysisCapabilities
-}
-
 /* ------------------------------------------------------------------ MCP 설정 미리보기 · 공유 보고서 */
 
 export interface McpHostSnippet {

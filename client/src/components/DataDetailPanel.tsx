@@ -282,6 +282,8 @@ export function DataDetailPanel({
         <div className="detail-title">
           <h3>{step.name}</h3>
           {step.isDead && <span className="sev warn">{t('mw.dead')}</span>}
+          {/* 종단 단계 뒤의 미들웨어는 요청을 보지 못한다. 순서를 읽을 때 기준이 되는 표시다. */}
+          {step.isTerminal && <span className="chip small" title={t('mw.terminalTitle')}>{t('mw.terminal')}</span>}
         </div>
         <div className="detail-path">
           {step.implementationFile
@@ -326,6 +328,20 @@ export function DataDetailPanel({
                 </span>
               ))}
             </div>
+          </Section>
+        )}
+        {step.filters.length > 0 && (
+          <Section title={t('dd.endpointFilters')}>
+            {step.filters.map((filter) => (
+              <div className="target-row" key={`${filter.name}${filter.detail}`}>
+                <span className="cell">{filter.name}</span>
+                <span className="note">{filter.detail}</span>
+                {filter.statusCode && (
+                  <span className="chip small">{t('dd.filterStatus', { status: filter.statusCode })}</span>
+                )}
+              </div>
+            ))}
+            <p className="dim">{t('dd.endpointFiltersNote')}</p>
           </Section>
         )}
         {step.storeAccesses.length > 0 && (
@@ -378,13 +394,14 @@ function FindingDetail({
   onOpenSource: (location: SourceLocation) => void
   onOpenInEditor: (location: SourceLocation) => void
 }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const rule = [...(data?.rules ?? []), ...(pipeline?.rules ?? [])].find((item) => item.id === finding.ruleId)
   return (
     <div className="detail-body">
       <div className="detail-title">
         <span className={`sev ${finding.severity.toLowerCase()}`}>{t(severityLabelKeys[finding.severity])}</span>
-        <h3>{rule?.name ?? finding.ruleId}</h3>
+        {/* 규칙 이름은 한곳(ruleText)에서만 만든다. rule.name은 서버가 준 한국어 원문이다. */}
+        <h3>{rule ? ruleText(rule, lang).name : finding.ruleId}</h3>
       </div>
       <div className="detail-path">
         {finding.symbol}<br />

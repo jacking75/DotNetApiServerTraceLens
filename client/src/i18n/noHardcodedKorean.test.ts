@@ -16,8 +16,13 @@ const allowed: ReadonlyArray<{ file: string; reason: string }> = [
   },
 ]
 
-/** Vite가 빌드 시점에 소스를 문자열로 넣어 준다. Node fs를 쓰지 않아 브라우저 환경에서도 돈다. */
-const sources = import.meta.glob('../{components,content}/**/*.{ts,tsx}', {
+/**
+ * Vite가 빌드 시점에 소스를 문자열로 넣어 준다. Node fs를 쓰지 않아 브라우저 환경에서도 돈다.
+ *
+ * 범위는 `src/**`다. 예전에는 `components`·`content`·`App.tsx`만 봐서
+ * `graph/`·`api/`의 한국어가 그대로 새어 나갔다(T72).
+ */
+const sources = import.meta.glob('../**/*.{ts,tsx}', {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -28,6 +33,17 @@ const appSource = import.meta.glob('../App.tsx', {
   import: 'default',
   eager: true,
 }) as Record<string, string>
+
+/**
+ * 사전 자체와 테스트·벤치는 검사 대상이 아니다(한국어가 있는 것이 정상이다).
+ * 이 파일과 같은 폴더(`i18n/`)는 glob이 `./`로 돌려준다.
+ */
+const dictionaries = ['./ko.ts', './en.ts']
+
+function isChecked(path: string): boolean {
+  if (/\.(test|bench)\.tsx?$/.test(path)) return false
+  return !dictionaries.includes(path)
+}
 
 /** 문자열·템플릿 리터럴 안의 `//`를 주석으로 오해하지 않도록 직접 훑는다. */
 export function stripComments(source: string): string {
@@ -81,7 +97,7 @@ describe('사용자에게 보이는 문자열', () => {
     const files = { ...sources, ...appSource }
     const offenders: string[] = []
     for (const [path, source] of Object.entries(files)) {
-      if (/\.test\.tsx?$/.test(path)) continue
+      if (!isChecked(path)) continue
       if (allowed.some((item) => item.file === path)) continue
       stripComments(source).split('\n').forEach((line, index) => {
         if (/[가-힣]/.test(line)) offenders.push(`${path}:${index + 1} ${line.trim()}`)
@@ -92,9 +108,14 @@ describe('사용자에게 보이는 문자열', () => {
   })
 
   it('검사 대상 파일을 실제로 읽었다', () => {
-    // glob 경로가 어긋나면 위 검사가 조용히 통과한다. 파일 수를 최소한으로 확인한다.
-    expect(Object.keys(sources).length).toBeGreaterThan(10)
+    // glob 경로가 어긋나면 위 검사가 조용히 통과한다. 파일 수와 범위를 확인한다.
+    const checked = Object.keys(sources).filter(isChecked)
+    expect(checked.length).toBeGreaterThan(30)
     expect(Object.keys(appSource).length).toBe(1)
+    // `components` 밖도 실제로 들어와 있어야 한다.
+    expect(checked.some((path) => path.startsWith('../graph/'))).toBe(true)
+    expect(checked.some((path) => path.startsWith('../api/'))).toBe(true)
+    expect(checked.some((path) => path.startsWith('../state/'))).toBe(true)
   })
 
   it('ko.ts의 키와 en.ts의 키가 같다', () => {

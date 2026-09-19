@@ -100,7 +100,7 @@ export function NamespacePanel({
 
           return (
             <div key={group}>
-              <div className="side-group">{shortenNamespace(group, namespacePrefix)}</div>
+              <div className="side-group">{shortenNamespace(group, namespacePrefix, t('diagram.globalNamespace'))}</div>
               {visible.map((item) => {
                 const hidden = hiddenNamespaces.has(item.namespace)
                 const selected = selection?.type === 'namespace' && selection.key === item.namespace
@@ -136,7 +136,7 @@ export function NamespacePanel({
                         title={item.namespace}
                         onClick={() => onGoToNamespace(item.namespace)}
                       >
-                        {shortenNamespace(item.namespace, namespacePrefix)}
+                        {shortenNamespace(item.namespace, namespacePrefix, t('diagram.globalNamespace'))}
                       </button>
                       <span className="count">{item.classCount}</span>
                     </div>

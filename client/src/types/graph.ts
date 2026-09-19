@@ -109,20 +109,6 @@ export interface GraphClass {
   members: GraphClassMember[]
 }
 
-/** 클래스 메뉴용 요약 정보(`/api/graph/classes`). */
-export interface GraphClassSummary {
-  id: string
-  name: string
-  namespace: string
-  kind: NodeKind
-  typeKind: ClassTypeKind
-  file: string
-  startLine: number
-  endLine: number
-  methodCount: number
-  memberCount: number
-}
-
 /** 좌측 네임스페이스 패널용 요약(`/api/graph/namespaces`). */
 export interface GraphNamespaceSummary {
   namespace: string
