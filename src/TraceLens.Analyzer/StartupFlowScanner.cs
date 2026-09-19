@@ -100,9 +100,20 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
             return null;
         }
 
+        var limitations = new List<string>();
         if (context.Truncated)
         {
             logger.LogWarning("시작 흐름 단계가 {Max}개를 넘어 일부를 잘랐다.", MaxSteps);
+            limitations.Add(
+                $"시작 흐름 단계가 상한 {MaxSteps}개를 넘어 뒤쪽을 그리지 않았다. " +
+                "설정의 `startupFlow.maxSteps`로 늘린다.");
+        }
+
+        foreach (var skipped in host.SkippedStartups)
+        {
+            limitations.Add(
+                $"`Startup` 후보가 여럿이라 `{Path.GetFileName(skipped)}`의 등록·파이프라인은 그리지 않았다. " +
+                "첫 후보만 읽는다.");
         }
 
         logger.LogInformation(
@@ -116,7 +127,8 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
             serviceSteps,
             middlewareSteps)
         {
-            ProjectKey = host.ProjectKey
+            ProjectKey = host.ProjectKey,
+            Limitations = limitations
         };
     }
 
@@ -371,15 +383,36 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
             .ToArray();
     }
 
-    /// <summary>문자열 리터럴 인자만 보여준다(람다·옵션 객체 등은 코드 그대로 옮기면 알아보기 어려워 뺀다).</summary>
+    /// <summary>
+    /// 호출 한 줄을 사람이 읽을 라벨로 만든다.
+    ///
+    /// 제네릭 타입 인자(<c>UseMiddleware&lt;ApiKeyMiddleware&gt;</c>)를 버리면
+    /// 화면에 <c>UseMiddleware()</c>만 남아 무엇을 등록했는지 알 수 없다(E8).
+    /// 변수 인자는 이름을 그대로 남기고, <c>typeof(X)</c>는 타입 이름으로 바꾼다.
+    /// 람다·옵션 객체는 코드 그대로 옮기면 알아보기 어려워 <c>…</c>로 줄인다.
+    /// </summary>
     private static string FormatCall(string methodName, InvocationExpressionSyntax invocation)
     {
+        var typeArguments = (invocation.Expression as MemberAccessExpressionSyntax)?.Name is GenericNameSyntax generic
+            ? $"<{string.Join(", ", generic.TypeArgumentList.Arguments.Select(argument => argument.ToString()))}>"
+            : string.Empty;
+
         var arguments = invocation.ArgumentList.Arguments
-            .Select(argument => argument.Expression)
-            .OfType<LiteralExpressionSyntax>()
-            .Select(literal => literal.ToString());
-        return $"{methodName}({string.Join(", ", arguments)})";
+            .Select(argument => FormatArgument(argument.Expression))
+            .Where(text => text.Length > 0);
+        return $"{methodName}{typeArguments}({string.Join(", ", arguments)})";
     }
+
+    /// <summary>인자 하나를 라벨 조각으로. 확정할 수 없는 것은 줄여서 남기되 지우지는 않는다.</summary>
+    private static string FormatArgument(ExpressionSyntax expression) => expression switch
+    {
+        LiteralExpressionSyntax literal => literal.ToString(),
+        TypeOfExpressionSyntax typeOf => typeOf.Type.ToString(),
+        IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
+        MemberAccessExpressionSyntax member => member.ToString(),
+        AnonymousFunctionExpressionSyntax => "…",
+        _ => "…"
+    };
 
     private static bool HasSolutionSource(ISymbol symbol) => symbol.DeclaringSyntaxReferences.Length > 0;
 

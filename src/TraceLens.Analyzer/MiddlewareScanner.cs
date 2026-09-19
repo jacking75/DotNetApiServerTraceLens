@@ -10,7 +10,7 @@ namespace TraceLens.Analyzer;
 /// Program.cs의 <c>app.UseXxx()</c> 순서를 그대로 파이프라인으로 만들고,
 /// 솔루션 안에 있는 미들웨어는 <c>InvokeAsync</c> 본문을 열어 <c>_next</c> 앞뒤(요청/응답 구간)와 단락 지점을 읽는다.
 /// </summary>
-public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
+public sealed class MiddlewareScanner(FilterScanner filterScanner, ILogger<MiddlewareScanner> logger)
 {
     /// <summary>프레임워크 미들웨어는 본문을 볼 수 없으니 알려진 설명을 쓴다.</summary>
     private static readonly Dictionary<string, (string Pre, string? Post, string? Status, string? Condition)> Known = new(StringComparer.Ordinal)
@@ -59,13 +59,16 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
             return [];
         }
 
+        // MVC 필터는 프로젝트가 아니라 솔루션 단위로 모은다. 전역 등록은 Program.cs에, 특성은 컨트롤러에 있다.
+        var filters = await filterScanner.ScanAsync(loaded, solutionDirectory, cancellationToken);
+
         var pipelines = new List<MiddlewarePipelineDocument>();
         foreach (var host in hosts)
         {
             var pipeline = await ScanHostAsync(host, loaded, config, solutionDirectory, startupFlow, dataAccess, cancellationToken);
             if (pipeline is not null)
             {
-                pipelines.Add(pipeline);
+                pipelines.Add(pipeline with { Filters = filters });
             }
         }
 
@@ -232,7 +235,10 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
             MiddlewareStepKind.EndpointRegistration =>
                 "엔드포인트를 등록한다. 실제 실행은 파이프라인 맨 끝에서 일어나므로 이 줄 뒤에 등록한 미들웨어도 실행된다",
             MiddlewareStepKind.Terminal => "라우트가 맞으면 엔드포인트(필터 → 액션)를 실행하고 요청을 끝낸다",
-            _ => "프레임워크 미들웨어다. 본문은 어셈블리 안에 있어 열어 볼 수 없다"
+            // 소스를 정말 못 찾을 때만 "어셈블리 안"이라고 말한다(T31의 규칙을 이 경로에도 적용).
+            _ => symbol is not null && symbol.DeclaringSyntaxReferences.Length > 0
+                ? "솔루션 안에 정의한 확장 메서드다. 본문에서 하위 등록을 찾지 못했다"
+                : "프레임워크 미들웨어다. 본문은 어셈블리 안에 있어 열어 볼 수 없다"
         };
         steps.Add(new MiddlewareStepInfo(
             id, order, FormatCall(name, invocation), MiddlewareType.Framework, programFile, line,
@@ -816,6 +822,11 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
         type.Name == name ||
         (type is INamedTypeSymbol named && named.AllInterfaces.Any(item => item.Name == name));
 
+    /// <summary>
+    /// <c>UseMiddleware&lt;X&gt;()</c>의 타입 인자. 없으면 <c>UseMiddleware(typeof(X))</c>의 인자를 본다 —
+    /// 비제네릭 형태를 못 읽으면 Framework로 떨어져 "본문은 어셈블리 안에 있어 열어 볼 수 없다"는
+    /// <b>틀린</b> 설명이 남는다(T57).
+    /// </summary>
     private static INamedTypeSymbol? GetTypeArgument(
         InvocationExpressionSyntax invocation, SemanticModel model, CancellationToken cancellationToken)
     {
@@ -826,7 +837,17 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
             _ => null
         };
         var argument = generic?.TypeArgumentList.Arguments.FirstOrDefault();
-        return argument is null ? null : model.GetTypeInfo(argument, cancellationToken).Type as INamedTypeSymbol;
+        if (argument is not null)
+        {
+            return model.GetTypeInfo(argument, cancellationToken).Type as INamedTypeSymbol;
+        }
+
+        var first = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+        return first switch
+        {
+            TypeOfExpressionSyntax typeOf => model.GetTypeInfo(typeOf.Type, cancellationToken).Type as INamedTypeSymbol,
+            _ => null
+        };
     }
 
     /// <summary>엔드포인트 매핑에 붙은 필터를 읽는다(<c>AddEndpointFilter&lt;T&gt;</c> 체이닝).</summary>
@@ -868,14 +889,26 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
         return null;
     }
 
+    /// <summary>
+    /// 파이프라인 한 줄의 라벨. 제네릭 타입 인자와 변수 인자를 남긴다 —
+    /// 리터럴만 남기면 <c>UseMiddleware()</c>·<c>MapGroup()</c>이 되어 무엇을 등록했는지 알 수 없다(E8).
+    /// </summary>
     private static string FormatCall(string name, InvocationExpressionSyntax invocation)
     {
-        var literals = invocation.ArgumentList.Arguments
-            .Select(argument => argument.Expression)
-            .OfType<LiteralExpressionSyntax>()
-            .Select(literal => literal.ToString());
-        var joined = string.Join(", ", literals);
-        return joined.Length > 0 ? $"{name}({joined})" : name;
+        var typeArguments = (invocation.Expression as MemberAccessExpressionSyntax)?.Name is GenericNameSyntax generic
+            ? $"<{string.Join(", ", generic.TypeArgumentList.Arguments.Select(argument => argument.ToString()))}>"
+            : string.Empty;
+        var arguments = invocation.ArgumentList.Arguments
+            .Select(argument => argument.Expression switch
+            {
+                LiteralExpressionSyntax literal => literal.ToString(),
+                TypeOfExpressionSyntax typeOf => typeOf.Type.ToString(),
+                IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
+                _ => string.Empty
+            })
+            .Where(text => text.Length > 0);
+        var joined = string.Join(", ", arguments);
+        return joined.Length > 0 || typeArguments.Length > 0 ? $"{name}{typeArguments}({joined})" : name;
     }
 
     private static string NormalizeStatus(string text)

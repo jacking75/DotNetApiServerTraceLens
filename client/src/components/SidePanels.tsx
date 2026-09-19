@@ -239,8 +239,14 @@ export function StartupFlowSidePanel({ flow }: { flow: StartupFlowDocument }) {
       <div className="side-group">Program.cs</div>
       <div className="panel-message tight" title={flow.programFile}>{flow.programFile}</div>
 
+      {/* 좌측과 가운데가 다른 수를 말하면 어느 쪽을 믿어야 할지 알 수 없다. 한 정의만 쓴다(T57). */}
       <div className="side-group">{t('side.allSteps')}</div>
-      <div className="panel-message tight">{t('side.stepCount', { count: total })}</div>
+      <div className="panel-message tight">
+        {t('startup.topLevelSteps', {
+          top: flow.serviceSteps.length + flow.middlewareSteps.length,
+          all: total,
+        })}
+      </div>
 
       <div className="side-group">{t('side.serviceSteps', { count: flow.serviceSteps.length })}</div>
       <div className="panel-message tight">

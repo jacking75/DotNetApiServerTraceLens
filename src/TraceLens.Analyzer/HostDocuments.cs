@@ -9,6 +9,12 @@ public sealed record HostDocument(IReadOnlyList<Document> Documents, string Proj
 {
     /// <summary>대표 문서. 화면에 "이 파일을 읽었다"로 보여 주는 값이다.</summary>
     public Document Document => Documents[0];
+
+    /// <summary>
+    /// <c>Startup</c> 후보가 여럿이라 그리지 않은 파일. 조용히 버리면 두 번째 파이프라인이 사유 없이 사라진다.
+    /// 호출자가 <c>limitations</c>에 옮긴다(T57).
+    /// </summary>
+    public IReadOnlyList<string> SkippedStartups { get; init; } = [];
 }
 
 /// <summary>
@@ -80,14 +86,26 @@ public static class HostDocuments
             }
         }
 
+        // Startup 후보가 여럿이면 첫 것만 그린다. 조용히 버리면 두 번째 파이프라인이 사유 없이 사라진다.
+        var skipped = startups.Count > 1
+            ? startups.Skip(1)
+                .Select(document => document.FilePath ?? document.Name)
+                .ToArray()
+            : [];
+
         if (program is null)
         {
-            return startups.Count == 0 ? null : new HostDocument([startups[0]], project.AssemblyName, "startup");
+            return startups.Count == 0
+                ? null
+                : new HostDocument([startups[0]], project.AssemblyName, "startup") { SkippedStartups = skipped };
         }
 
         return startups.Count == 0
             ? new HostDocument([program], project.AssemblyName, "program")
-            : new HostDocument([program, startups[0]], project.AssemblyName, "program+startup");
+            : new HostDocument([program, startups[0]], project.AssemblyName, "program+startup")
+            {
+                SkippedStartups = skipped
+            };
     }
 
     /// <summary><c>UseStartup&lt;Startup&gt;()</c>에서 타입 이름을 읽는다. 없으면 null.</summary>

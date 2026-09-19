@@ -169,6 +169,7 @@ public sealed class TraceLensAnalyzer(
         CallResolutionStats stats;
         var depthLimitReached = false;
         var droppedCallSites = scan.DroppedCallSites;
+        var droppedEdges = scan.DroppedEdges;
         if (isSolutionScope)
         {
             (nodes, edges, callSites, stats) = (scan.Nodes, scan.Edges, scan.CallSites, scan.Stats);
@@ -179,6 +180,7 @@ public sealed class TraceLensAnalyzer(
             (nodes, edges, callSites, stats) = (walk.Nodes, walk.Edges, walk.CallSites, walk.Stats);
             depthLimitReached = walk.DepthLimitReached;
             droppedCallSites = walk.DroppedCallSites;
+            droppedEdges = walk.DroppedEdges;
         }
 
         var nodeIds = nodes.Select(node => node.Id).ToHashSet(StringComparer.Ordinal);
@@ -186,6 +188,8 @@ public sealed class TraceLensAnalyzer(
             .Select(item => item.EntryPoint)
             .Where(entryPoint => nodeIds.Contains(entryPoint.NodeId))
             .ToArray();
+        // 핸들러 노드가 없어 목록에서 빠진 진입점. 로그의 "진입점 N개"와 결과 수가 어긋나는 이유다(T58).
+        var droppedEntryPoints = entryPoints.Count - reachableEntryPoints.Length;
 
         var manifestResult = await manifestBuilder.BuildAsync(loaded, fullTargetPath, solutionDirectory, cancellationToken);
         // 노드·클래스가 없는 파일(시작 흐름만 있는 Program.cs 등)도 신선도 대상에 들어가도록 분석한 소스 전체를 해시한다.
@@ -253,6 +257,9 @@ public sealed class TraceLensAnalyzer(
             hostLimitations,
             depthLimitReached,
             droppedCallSites,
+            droppedEdges,
+            droppedEntryPoints,
+            startupFlows.SelectMany(item => item.Limitations).ToArray(),
             changedDuringAnalysis,
             configResult.Issues);
 
@@ -402,18 +409,45 @@ public sealed class TraceLensAnalyzer(
         IReadOnlyList<string> hostLimitations,
         bool depthLimitReached,
         int droppedCallSites,
+        int droppedEdges,
+        int droppedEntryPoints,
+        IReadOnlyList<string> startupLimitations,
         IReadOnlyList<string> changedDuringAnalysis,
         IReadOnlyList<ConfigIssue> configIssues)
     {
         var limitations = new List<string>(manifestResult.Manifest.Limitations);
         limitations.AddRange(hostLimitations);
+        limitations.AddRange(startupLimitations);
         limitations.AddRange(configIssues.Select(issue => $"설정: {issue.Message}"));
         if (droppedCallSites > 0)
         {
             limitations.Add($"호출 근거 {droppedCallSites}건은 상한(엣지당 {config.MaxCallSitesPerEdge}건, 경계 {config.MaxBoundaryCallSites}건) 때문에 목록에서 뺐다.");
         }
 
-        if (depthLimitReached)
+        // 상한에 걸려 잘린 것이 로그에만 남으면 화면과 에이전트는 "그게 전부"라고 읽는다(T58).
+        if (droppedEntryPoints > 0)
+        {
+            limitations.Add(
+                $"진입점 {droppedEntryPoints}개는 핸들러 노드를 찾지 못해 목록에서 뺐다. " +
+                "제외 네임스페이스(excludeNamespacePrefixes)나 빌드 산출물 아래의 생성 코드일 수 있다.");
+        }
+
+        if (droppedEdges > 0)
+        {
+            limitations.Add(
+                $"호출 {droppedEdges}건은 대상 노드가 그래프에 없어 엣지로 넣지 못했다. " +
+                "해석률의 분자에서도 뺐다.");
+        }
+
+        if (stats.ExternalTruncatedKeys > 0)
+        {
+            limitations.Add(
+                $"솔루션 밖 호출의 네임스페이스가 상한 200개를 넘어 {stats.ExternalTruncatedKeys}종을 `(기타)`로 합쳤다. " +
+                "상위 20종만 화면에 보인다.");
+        }
+
+        // 깊이 제한은 진입점 스캔에서만 의미가 있다. 솔루션 전체 스캔에서 남기면 "깊이 8까지만 봤나" 오해를 만든다.
+        if (depthLimitReached && config.AnalysisScope == AnalysisScope.EntryPoints)
         {
             limitations.Add($"maxCallDepth({config.MaxCallDepth})에 도달해 더 내려가지 않은 경로가 있다.");
         }
@@ -437,14 +471,17 @@ public sealed class TraceLensAnalyzer(
             stats,
             config.ExcludeNamespacePrefixes,
             config.MaxCallDepth,
-            depthLimitReached,
+            // 진입점 스캔이 아니면 깊이 제한은 애초에 적용되지 않는다. 진단에 실으면 오해를 만든다(T58).
+            depthLimitReached && config.AnalysisScope == AnalysisScope.EntryPoints,
             config.AnalysisScope.ToString().ToLowerInvariant(),
             limitations)
         {
             ChangedDuringAnalysis = changedDuringAnalysis.Count > 0,
             ChangedDuringAnalysisFiles = changedDuringAnalysis,
             EntryPointNotes = entryPointNotes,
-            EntryPointCandidates = entryPointCandidates
+            EntryPointCandidates = entryPointCandidates,
+            DroppedEntryPoints = droppedEntryPoints,
+            DroppedEdges = droppedEdges
         };
     }
 

@@ -185,6 +185,49 @@ public sealed class DataAccessAnalysisTests(FixtureDataAppFixture fixture)
         Assert.DoesNotContain("GuildController.Join", unverified);
     }
 
+    /// <summary>
+    /// 트랜잭션 경계를 선형 카운터로 세면 `if` 안의 Commit이 그 뒤 코드까지 밖으로 밀어낸다.
+    /// 경계는 구문 범위다 — 커밋 여부와 무관하게 `using` 블록 끝까지다(T56).
+    /// </summary>
+    [Fact]
+    public async Task Transaction_TreatsScopeAsSyntacticRange_NotLinearCounter()
+    {
+        var data = await GetDataAccessAsync();
+
+        Assert.DoesNotContain(data.Findings, finding =>
+            finding.Symbol == "TransactionEdgeCases.ConditionalCommitAsync" &&
+            finding.RuleId.StartsWith("COMP-", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 항상 트랜잭션 래퍼 안에서만 불리는 리포지터리를 COMP로 잡으면 오탐이다.
+    /// 판정 근거에 호출자 문맥이 남아야 "왜 안 걸렸는지"를 되짚을 수 있다(T56).
+    /// </summary>
+    [Fact]
+    public async Task Compensation_SkipsMethodsAlwaysCalledInsideTransaction()
+    {
+        var data = await GetDataAccessAsync();
+
+        Assert.DoesNotContain(data.Findings, finding =>
+            finding.Symbol == "InventoryRepository.MoveAsync" &&
+            finding.RuleId.StartsWith("COMP-", StringComparison.Ordinal));
+
+        var path = Assert.Single(data.WritePaths, item => item.MethodDisplayName == "InventoryRepository.MoveAsync");
+        Assert.Equal(TransactionContext.Always, path.CallerTransaction);
+        Assert.True(path.InTransaction);
+        Assert.Contains("호출자", path.Note);
+    }
+
+    /// <summary>`if/else`의 배타 분기에 있는 쓰기 2개는 순차 2단계가 아니다(T56).</summary>
+    [Fact]
+    public async Task Compensation_CountsExclusiveBranchesAsOneStep()
+    {
+        var data = await GetDataAccessAsync();
+
+        Assert.DoesNotContain(data.WritePaths, item =>
+            item.MethodDisplayName == "TransactionEdgeCases.ExclusiveBranchesAsync");
+    }
+
     [Fact]
     public async Task RuleCatalog_ShowsWhichRulesAreChecked()
     {

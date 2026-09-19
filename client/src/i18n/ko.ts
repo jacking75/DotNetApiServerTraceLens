@@ -487,7 +487,6 @@ export const ko = {
   'side.nonHttpUnits': 'HTTP 밖 실행 단위 {count}개는 이 목록에 없다.',
   'side.entrySearch': '라우트·동사·컨트롤러 검색',
   'side.allSteps': '전체 단계',
-  'side.stepCount': '{count}개',
   'side.serviceSteps': '서비스 등록 ({count})',
   'side.middlewareSteps': '미들웨어 파이프라인 ({count})',
   'side.tab.entries': '진입점',

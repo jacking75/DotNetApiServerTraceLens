@@ -112,6 +112,36 @@ public sealed class MiddlewarePipelineTests(FixtureDataAppFixture fixture)
         Assert.Equal("503", maintenance.ShortCircuit?.StatusCode);
     }
 
+    /// <summary>
+    /// 요청이 컨트롤러에 닿기 전에 무엇이 도는지가 실행 순서 보기의 가장 큰 빈칸이었다(T71).
+    /// 필터는 미들웨어가 아니므로 파이프라인 단계와 섞지 않고 별도 절로 낸다.
+    /// </summary>
+    [Fact]
+    public async Task Filters_ListGlobalControllerAndActionFilters()
+    {
+        var pipeline = await GetPipelineAsync();
+
+        var global = Assert.Single(pipeline.Filters, item => item.Name == "AuditActionFilter");
+        Assert.Equal(MvcFilterScope.Global, global.Scope);
+        Assert.Contains("IActionFilter", global.Kinds);
+        Assert.Equal(CallConfidence.Certain, global.Confidence);
+        Assert.NotNull(global.ImplementationFile);
+
+        var controller = Assert.Single(pipeline.Filters, item => item.Name == "DomainExceptionFilter");
+        Assert.Equal(MvcFilterScope.Controller, controller.Scope);
+        Assert.Equal("ItemController", controller.AppliesTo);
+
+        var action = Assert.Single(pipeline.Filters, item => item.Name == "RequireHeaderFilter");
+        Assert.Equal(MvcFilterScope.Action, action.Scope);
+        Assert.Equal("ItemController.Craft", action.AppliesTo);
+        // 단락 지점(`context.Result = …`)을 읽어야 "여기서 요청이 끝난다"를 말할 수 있다.
+        Assert.NotNull(action.ShortCircuit);
+        Assert.Equal("Unauthorized", action.ShortCircuit!.StatusCode);
+
+        // 필터는 미들웨어 단계 목록에 섞이지 않는다.
+        Assert.DoesNotContain(pipeline.Steps, step => step.Name.Contains("Filter", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Rules_FindOrderAndBodyProblems()
     {

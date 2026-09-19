@@ -490,7 +490,6 @@ export const en: Dictionary = {
   'side.nonHttpUnits': '{count} execution unit(s) outside HTTP are not in this list.',
   'side.entrySearch': 'Search route, verb or controller',
   'side.allSteps': 'All steps',
-  'side.stepCount': '{count}',
   'side.serviceSteps': 'Service registrations ({count})',
   'side.middlewareSteps': 'Middleware pipeline ({count})',
   'side.tab.entries': 'Entry points',

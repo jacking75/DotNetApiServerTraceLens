@@ -105,6 +105,14 @@ public sealed record MethodDataFacts(
 {
     /// <summary>이 메서드가 부른 트랜잭션 래퍼 호출들. 경계는 래퍼 안에 있어 Begin/Commit이 보이지 않는다.</summary>
     public IReadOnlyList<WrapperTransaction> Wrappers { get; init; } = [];
+
+    /// <summary>
+    /// 서로 배타인 <c>if/else</c> 분기에 놓인 이웃한 호출 자리 쌍.
+    /// 두 분기의 쓰기는 순차 2단계가 아니라 <b>같은 단계의 다른 경로</b>다 —
+    /// 순차로 세면 "트랜잭션 없이 쓰기 2개"(COMP-001) 오탐이 된다(T56).
+    /// </summary>
+    public IReadOnlySet<(int First, int Second)> ExclusiveBranchPairs { get; init; } =
+        new HashSet<(int, int)>();
 }
 
 /// <param name="Name">래퍼 메서드의 표시 이름.</param>
@@ -379,6 +387,106 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         }
     }
 
+    /// <param name="Start">경계를 연 자리. 그보다 앞의 호출은 트랜잭션 밖이다.</param>
+    /// <param name="End">경계가 끝나는 자리(포함하지 않는다).</param>
+    /// <param name="ConditionalCompletion">
+    /// <c>Commit</c>/<c>Complete</c>가 조건문 안에 있다. 이 경로가 실제로 커밋되는지 정적으로 확정할 수 없다.
+    /// </param>
+    private sealed record TransactionRange(int Start, int End, bool ConditionalCompletion);
+
+    /// <summary>
+    /// 본문 안의 트랜잭션 경계를 **구문 범위**로 모은다.
+    /// <list type="bullet">
+    ///   <item><c>using (…) { }</c>: 그 <c>using</c> 문 전체.</item>
+    ///   <item><c>using var tx = …;</c>: 선언 자리부터 감싼 블록의 끝까지.</item>
+    ///   <item><c>var tx = …BeginTransaction();</c>: 같은 규칙(보수적으로 블록 끝까지).</item>
+    /// </list>
+    /// </summary>
+    private static IReadOnlyList<TransactionRange> CollectTransactionRanges(
+        SyntaxNode body, SemanticModel model, CancellationToken cancellationToken)
+    {
+        var ranges = new List<TransactionRange>();
+        foreach (var node in body.DescendantNodes()
+                     .Where(node => node is InvocationExpressionSyntax or ObjectCreationExpressionSyntax))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var opens = node switch
+            {
+                ObjectCreationExpressionSyntax creation =>
+                    BuildTransactionScopeSite(creation, model, cancellationToken) is not null,
+                InvocationExpressionSyntax invocation =>
+                    (invocation.Expression as MemberAccessExpressionSyntax)?.Name.Identifier.ValueText
+                        .StartsWith("BeginTransaction", StringComparison.Ordinal) == true,
+                _ => false
+            };
+            if (!opens)
+            {
+                continue;
+            }
+
+            var (start, end) = ResolveScopeSpan(node, body);
+            ranges.Add(new TransactionRange(start, end, HasConditionalCompletion(body, start, end)));
+        }
+
+        return ranges;
+    }
+
+    /// <summary>경계가 미치는 구문 범위. using 문이면 그 문 전체, using 선언이면 감싼 블록의 끝까지다.</summary>
+    private static (int Start, int End) ResolveScopeSpan(SyntaxNode opener, SyntaxNode body)
+    {
+        for (SyntaxNode? current = opener; current is not null && current != body; current = current.Parent)
+        {
+            if (current is UsingStatementSyntax usingStatement)
+            {
+                return (usingStatement.SpanStart, usingStatement.Span.End);
+            }
+
+            if (current is LocalDeclarationStatementSyntax or ExpressionStatementSyntax)
+            {
+                // `using var tx = …;`도 `var tx = …;`도 감싼 블록의 끝까지 유효하다고 본다.
+                // 전자는 언어 규칙이고, 후자는 확정할 수 없어 보수적으로 넓게 잡는다.
+                var block = current.Parent as BlockSyntax;
+                return (current.SpanStart, block?.Span.End ?? body.Span.End);
+            }
+        }
+
+        return (opener.SpanStart, body.Span.End);
+    }
+
+    /// <summary>
+    /// 이 범위 안의 <c>Commit</c>/<c>Complete</c>가 조건문 안에 있는지.
+    /// 조건부 완료면 판정을 추정으로 낮춘다 — 커밋되는 경로와 되지 않는 경로가 함께 있다.
+    /// </summary>
+    private static bool HasConditionalCompletion(SyntaxNode body, int start, int end)
+    {
+        foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            if (invocation.SpanStart < start || invocation.SpanStart >= end)
+            {
+                continue;
+            }
+
+            var name = (invocation.Expression as MemberAccessExpressionSyntax)?.Name.Identifier.ValueText;
+            if (name is not ("Commit" or "CommitAsync" or "Complete"))
+            {
+                continue;
+            }
+
+            for (SyntaxNode? current = invocation; current is not null && current.SpanStart >= start; current = current.Parent)
+            {
+                if (current is IfStatementSyntax or SwitchStatementSyntax or ConditionalExpressionSyntax)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsInsideTransaction(IReadOnlyList<TransactionRange> ranges, int position) =>
+        ranges.Any(range => position > range.Start && position < range.End);
+
     /// <summary>기본 데이터소스 이름. 커넥션을 어디서 열었는지 못 찾았을 때 쓴다.</summary>
     internal const string FallbackDataSource = "Db";
 
@@ -440,7 +548,10 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
 
         var wrapperCalls = CollectWrapperCalls(body, model, config, autoWrappers, cancellationToken);
         var sites = new List<DataCallSite>();
-        var transactionDepth = 0;
+        // 트랜잭션 경계는 **구문 범위**로 잡는다. 선형 카운터를 쓰면
+        // `if (ok) tx.Commit();` 뒤의 쓰기가 트랜잭션 밖으로 밀리고,
+        // `Complete()` 없는 `TransactionScope`가 메서드 끝까지 안으로 보인다(T56).
+        var transactionRanges = CollectTransactionRanges(body, model, cancellationToken);
         // 호출식과 객체 생성을 한 순서로 훑는다. `new TransactionScope(...)`는 호출식이 아니라
         // ObjectCreationExpressionSyntax라 예전에는 트랜잭션 경계로 잡히지 않았다.
         foreach (var node in body.DescendantNodes()
@@ -456,7 +567,6 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
                     continue;
                 }
 
-                transactionDepth++;
                 sites.Add(scopeSite);
                 continue;
             }
@@ -465,21 +575,12 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             var enclosingWrapper = FindEnclosingWrapper(invocation, wrapperCalls);
             var site = BuildSite(
                 invocation, model, config, solutionDirectory,
-                transactionDepth > 0 || enclosingWrapper is not null,
+                IsInsideTransaction(transactionRanges, invocation.SpanStart) || enclosingWrapper is not null,
                 enclosingWrapper?.Name,
                 cancellationToken);
             if (site is null)
             {
                 continue;
-            }
-
-            if (site.Kind == SiteKind.TransactionBegin)
-            {
-                transactionDepth++;
-            }
-            else if (site.Kind == SiteKind.TransactionEnd && transactionDepth > 0)
-            {
-                transactionDepth--;
             }
 
             sites.Add(site);
@@ -496,6 +597,7 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         }
 
         sites.Sort((left, right) => left.Position.CompareTo(right.Position));
+        var exclusivePairs = CollectExclusiveBranchPairs(body, sites);
         // 선언 전체의 줄 범위. 본문만 받으므로 선언 노드(메서드·프로퍼티·접근자)까지 올라간다.
         var declaration = body.FirstAncestorOrSelf<MemberDeclarationSyntax>() ?? body;
         var lineSpan = declaration.GetLocation().GetLineSpan();
@@ -515,8 +617,44 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             sites.Any(site => site.Kind == SiteKind.TransactionBegin),
             sites.Any(site => site.Kind == SiteKind.TransactionEnd))
         {
-            Wrappers = wrapperCalls.Select(item => item.Call).ToArray()
+            Wrappers = wrapperCalls.Select(item => item.Call).ToArray(),
+            ExclusiveBranchPairs = exclusivePairs
         };
+    }
+
+    /// <summary>
+    /// 서로 배타인 <c>if/else</c>(또는 <c>switch</c>) 분기에 놓인 이웃한 호출 자리 쌍.
+    /// 두 분기의 쓰기는 순차 2단계가 아니라 같은 단계의 다른 경로다.
+    /// 형제 분기만 본다 — 중첩까지 따지면 판정이 불투명해진다.
+    /// </summary>
+    private static IReadOnlySet<(int First, int Second)> CollectExclusiveBranchPairs(
+        SyntaxNode body, IReadOnlyList<DataCallSite> sites)
+    {
+        var pairs = new HashSet<(int, int)>();
+        foreach (var statement in body.DescendantNodesAndSelf().OfType<IfStatementSyntax>())
+        {
+            if (statement.Else is not { Statement: { } elseBranch })
+            {
+                continue;
+            }
+
+            var thenSpan = statement.Statement.Span;
+            var elseSpan = elseBranch.Span;
+            for (var index = 1; index < sites.Count; index++)
+            {
+                var previous = sites[index - 1].Position;
+                var current = sites[index].Position;
+                var exclusive =
+                    (thenSpan.Contains(previous) && elseSpan.Contains(current)) ||
+                    (elseSpan.Contains(previous) && thenSpan.Contains(current));
+                if (exclusive)
+                {
+                    pairs.Add((previous, current));
+                }
+            }
+        }
+
+        return pairs;
     }
 
     /// <summary>

@@ -68,6 +68,28 @@ public sealed class ExternalCallDiagnosticsTests
         Assert.Contains("archived_orders", targets);
     }
 
+    /// <summary>
+    /// 상한에 걸려 잘린 것이 로그에만 남으면 화면과 에이전트는 "그게 전부"라고 읽는다(T58).
+    /// 해석률의 분자도 실제로 엣지가 된 것만 세야 한다.
+    /// </summary>
+    [Fact]
+    public async Task AnalyzeAsync_PutsTruncationsInDiagnostics()
+    {
+        await using var provider = CreateProvider();
+
+        var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureProjectPath());
+        var diagnostics = result.Graph.Diagnostics!;
+
+        // 분자는 그래프에 들어간 것만 센다.
+        Assert.Equal(diagnostics.Calls.Resolved - diagnostics.Calls.DroppedEdges, diagnostics.Calls.ResolvedInGraph);
+        Assert.Equal(diagnostics.Calls.DroppedEdges, diagnostics.DroppedEdges);
+
+        // 솔루션 전체 스캔에서는 깊이 제한이 애초에 적용되지 않는다. 진단에 실으면 오해를 만든다.
+        Assert.Equal("solution", diagnostics.AnalysisScope);
+        Assert.False(diagnostics.DepthLimitReached);
+        Assert.DoesNotContain(diagnostics.Limitations, line => line.Contains("maxCallDepth", StringComparison.Ordinal));
+    }
+
     private static ServiceProvider CreateProvider()
     {
         var services = new ServiceCollection();

@@ -136,6 +136,25 @@ public sealed record WriteStep(
     int Line);
 
 /// <summary>
+/// 이 메서드가 호출자 쪽에서 트랜잭션 안에 있는지.
+/// 항상 트랜잭션 안에서만 불리는 리포지터리를 "트랜잭션 없음"으로 판정하면 COMP 오탐이 된다(T56).
+/// </summary>
+public enum TransactionContext
+{
+    /// <summary>호출자를 하나도 찾지 못했다. "트랜잭션 밖"이라는 뜻이 아니다.</summary>
+    NoCaller,
+
+    /// <summary>모든 호출 경로가 트랜잭션 안이다. COMP 규칙을 내지 않는다.</summary>
+    Always,
+
+    /// <summary>일부 호출 경로만 트랜잭션 안이다. 판정을 추정으로 낮춘다.</summary>
+    Sometimes,
+
+    /// <summary>트랜잭션 안에서 부르는 호출자가 없다.</summary>
+    Never
+}
+
+/// <summary>
 /// 트랜잭션으로 묶이지 않은 쓰기 경로 하나. 화면의 "실패 지점 × 단계" 격자는 <see cref="Steps"/>로 만든다.
 /// </summary>
 public sealed record WritePath(
@@ -148,7 +167,17 @@ public sealed record WritePath(
     bool InTransaction,
     string Note,
     IReadOnlyList<WriteStep> Steps,
-    IReadOnlyList<string> FindingIds);
+    IReadOnlyList<string> FindingIds)
+{
+    /// <summary>호출자 쪽 트랜잭션 문맥. v7 이전 문서에는 없고, 없으면 <see cref="TransactionContext.NoCaller"/>다.</summary>
+    public TransactionContext CallerTransaction { get; init; } = TransactionContext.NoCaller;
+
+    /// <summary>트랜잭션 밖에서 부르는 호출자(최대 5개). `Sometimes`일 때 근거로 보여 준다.</summary>
+    public IReadOnlyList<string> CallersOutsideTransaction { get; init; } = [];
+
+    /// <summary>트랜잭션 안에서 부르는 호출자 수.</summary>
+    public int CallersInsideTransaction { get; init; }
+}
 
 /// <param name="Kind">single · shard · cache. 읽기/쓰기 전용은 별도 플래그로 둔다.</param>
 public sealed record DataSourceInfo(

@@ -5,7 +5,11 @@ using FixtureDataApp.Services;
 using FixtureDataApp.Support;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddControllers();
+builder.Services.AddControllers(options =>
+{
+    // 전역 MVC 필터. 미들웨어가 아니라 엔드포인트 실행 시점에 돈다(T71).
+    options.Filters.Add<AuditActionFilter>();
+});
 builder.Services.AddCors();
 builder.Services.AddAuthorization();
 

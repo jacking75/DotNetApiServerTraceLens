@@ -48,6 +48,11 @@ export function StartupFlowView({
         <ProjectPicker projectKeys={projectKeys} projectKey={projectKey} onChange={onChangeProject} />
         <span className="sub">{t('startup.topLevelSteps', { top: topLevel, all: total })}</span>
       </div>
+      {(flow.limitations ?? []).length > 0 && (
+        <ul className="context-limitations">
+          {(flow.limitations ?? []).map((line) => <li key={line}>{line}</li>)}
+        </ul>
+      )}
       {isEmpty && <div className="panel-message canvas-empty">{t('startup.empty')}</div>}
       {!isEmpty && (
         <div className="startup-flow">

@@ -232,6 +232,12 @@ export interface CallResolutionStats {
   resolutionRate: number
   /** 솔루션 밖 호출의 네임스페이스별 상위 집계. 옛 그래프에는 없다. */
   externalByNamespace?: ExternalCallGroup[]
+  /** 상한을 넘어 `(기타)`로 합친 네임스페이스 종류 수. 옛 그래프에는 없다. */
+  externalTruncatedKeys?: number
+  /** 대상 노드가 없어 엣지로 넣지 못한 호출 수. 해석률 분자에서 뺀 값이다. */
+  droppedEdges?: number
+  /** 해석률의 분자. 화면·문맥·MCP가 같은 값을 쓴다. */
+  resolvedInGraph?: number
 }
 
 export interface AnalysisDiagnostics {
@@ -282,6 +288,8 @@ export interface StartupFlowDocument {
   programFile: string
   serviceSteps: StartupStep[]
   middlewareSteps: StartupStep[]
+  /** 상한에 걸려 그리지 않은 것과 건너뛴 Startup 파일. 옛 그래프에는 없다. */
+  limitations?: string[]
 }
 
 export interface GraphDocument {

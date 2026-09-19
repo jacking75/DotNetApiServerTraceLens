@@ -8,8 +8,11 @@ namespace FixtureDataApp.Controllers;
 /// <summary>요청 본문의 UserNo를 검증 없이 그대로 넘긴다. SHARD-005 검증용이다.</summary>
 [ApiController]
 [Route("api/item")]
+[TypeFilter(typeof(FixtureDataApp.Middleware.DomainExceptionFilter))]
 public sealed class ItemController(CraftService craftService) : ControllerBase
 {
+    /// <summary>액션에 붙은 필터. 단락(`context.Result = …`)이 있다.</summary>
+    [ServiceFilter(typeof(FixtureDataApp.Middleware.RequireHeaderFilter))]
     [HttpPost("craft")]
     public async Task<IActionResult> Craft([FromBody] CraftRequest request)
     {

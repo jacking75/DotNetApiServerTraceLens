@@ -379,6 +379,37 @@ function MethodDetail({
                 </dd>
               </>
             )}
+            {entry.authorization && (
+              <>
+                <dt>{t('detail.authorize')}</dt>
+                <dd>
+                  {entry.authorization.allowAnonymous
+                    ? <span className="chip small">{t('detail.anonymous')}</span>
+                    : (
+                      <>
+                        {entry.authorization.policies.map((policy) => (
+                          <span key={policy} className="chip small">{policy}</span>
+                        ))}
+                        {entry.authorization.roles.map((role) => (
+                          <span key={role} className="chip small">{role}</span>
+                        ))}
+                        {entry.authorization.policies.length === 0 && entry.authorization.roles.length === 0 && (
+                          <span className="chip small">{t('detail.authorize')}</span>
+                        )}
+                      </>
+                    )}
+                  {entry.authorization.confidence === 'Estimated' && (
+                    <span className="chip small warn">{t('chip.estimated')}</span>
+                  )}
+                </dd>
+              </>
+            )}
+            {entry.hiddenFromApiExplorer && (
+              <>
+                <dt>{t('detail.ignoreApi')}</dt>
+                <dd title={t('detail.ignoreApiTitle')}>{t('detail.ignoreApiTitle')}</dd>
+              </>
+            )}
             <dt>{t('detail.confidence')}<HelpLink term="confidence" onOpen={actions.onExplain} /></dt>
             <dd>
               <span className={`chip small${entry.confidence === 'Estimated' ? ' warn' : ''}`}>

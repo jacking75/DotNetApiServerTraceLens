@@ -102,6 +102,66 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
         return effects;
     }
 
+    /// <param name="Outside">트랜잭션 밖에서 부르는 호출자 표시 이름(최대 5개).</param>
+    private sealed record CallerTransactionInfo(TransactionContext Context, int Inside, IReadOnlyList<string> Outside)
+    {
+        public static CallerTransactionInfo None { get; } = new(TransactionContext.NoCaller, 0, []);
+    }
+
+    /// <summary>
+    /// 호출자 쪽 트랜잭션 문맥을 한 홉으로 계산한다.
+    /// 모든 호출 자리가 트랜잭션 안이면 <c>Always</c>, 일부면 <c>Sometimes</c>, 하나도 없으면 <c>Never</c>다.
+    /// 호출자를 못 찾으면 <c>NoCaller</c>다 — "트랜잭션 밖"과 구분해야 한다.
+    /// </summary>
+    private static IReadOnlyDictionary<string, CallerTransactionInfo> BuildCallerTransactions(
+        IReadOnlyList<MethodDataFacts> methods)
+    {
+        var inside = new Dictionary<string, int>(StringComparer.Ordinal);
+        var outside = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var caller in methods)
+        {
+            foreach (var site in caller.Sites)
+            {
+                if (site.CalleeNodeId is null || site.CalleeNodeId == caller.NodeId)
+                {
+                    continue;
+                }
+
+                if (site.InTransaction)
+                {
+                    inside[site.CalleeNodeId] = inside.GetValueOrDefault(site.CalleeNodeId) + 1;
+                    continue;
+                }
+
+                if (!outside.TryGetValue(site.CalleeNodeId, out var list))
+                {
+                    list = [];
+                    outside[site.CalleeNodeId] = list;
+                }
+
+                if (list.Count < 5 && !list.Contains(caller.DisplayName, StringComparer.Ordinal))
+                {
+                    list.Add(caller.DisplayName);
+                }
+            }
+        }
+
+        var result = new Dictionary<string, CallerTransactionInfo>(StringComparer.Ordinal);
+        foreach (var facts in methods)
+        {
+            var insideCount = inside.GetValueOrDefault(facts.NodeId);
+            var outsideNames = outside.GetValueOrDefault(facts.NodeId) ?? [];
+            var context = insideCount == 0 && outsideNames.Count == 0
+                ? TransactionContext.NoCaller
+                : outsideNames.Count == 0
+                    ? TransactionContext.Always
+                    : insideCount == 0 ? TransactionContext.Never : TransactionContext.Sometimes;
+            result[facts.NodeId] = new CallerTransactionInfo(context, insideCount, outsideNames);
+        }
+
+        return result;
+    }
+
     public IReadOnlyList<WritePathAnalysis> BuildWritePaths(
         IReadOnlyList<MethodDataFacts> methods,
         IReadOnlyDictionary<string, MethodEffect> effects,
@@ -109,6 +169,7 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
         TraceLensConfig config,
         CancellationToken cancellationToken = default)
     {
+        var callerTransactions = BuildCallerTransactions(methods);
         var result = new List<WritePathAnalysis>();
         foreach (var facts in methods)
         {
@@ -126,14 +187,24 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
             }
 
             // 캐시 무효화처럼 되돌릴 필요가 없는 단계가 섞여 있어도, 실제 쓰기가 모두 트랜잭션 안이면 안전한 경로다.
-            var inTransaction =
+            var ownTransaction =
                 writeSteps.Any(step => step.Compensation == CompensationKind.Transaction) &&
                 writeSteps.All(step => step.Compensation is CompensationKind.Transaction or CompensationKind.NotNeeded);
-            var note = inTransaction
+
+            // 호출자 쪽 문맥. 항상 트랜잭션 안에서만 불리는 리포지터리를 COMP로 잡으면 오탐이다(T56).
+            var callerContext = callerTransactions.GetValueOrDefault(facts.NodeId, CallerTransactionInfo.None);
+            var inTransaction = ownTransaction || callerContext.Context == TransactionContext.Always;
+            var note = ownTransaction
                 ? "쓰기 전부가 한 트랜잭션 안에 있다 — 실패하면 함께 롤백된다."
-                : facts.FailurePaths.Count == 0
-                    ? "트랜잭션도 실패 처리도 없다. 중간에 예외가 나면 앞 단계가 그대로 남는다."
-                    : $"트랜잭션 없이 {steps.Count}단계를 순서대로 바꾼다. 실패 경로 {facts.FailurePaths.Count}곳을 확인했다.";
+                : callerContext.Context == TransactionContext.Always
+                    ? $"이 메서드 자체에는 트랜잭션이 없지만 호출자 {callerContext.Inside}개 모두 트랜잭션 안에서 부른다."
+                    : callerContext.Context == TransactionContext.Sometimes
+                        ? $"호출자 일부만 트랜잭션 안에서 부른다(밖: {string.Join(", ", callerContext.Outside)})."
+                        : callerContext.Context == TransactionContext.NoCaller
+                            ? "이 메서드를 부르는 곳을 찾지 못했다. 트랜잭션 밖이라는 뜻은 아니다."
+                            : facts.FailurePaths.Count == 0
+                                ? "트랜잭션도 실패 처리도 없다. 중간에 예외가 나면 앞 단계가 그대로 남는다."
+                                : $"트랜잭션 없이 {steps.Count}단계를 순서대로 바꾼다. 실패 경로 {facts.FailurePaths.Count}곳을 확인했다.";
 
             result.Add(new WritePathAnalysis(
                 new WritePath(
@@ -146,7 +217,12 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
                     inTransaction,
                     note,
                     writeSteps,
-                    []),
+                    [])
+                {
+                    CallerTransaction = callerContext.Context,
+                    CallersOutsideTransaction = callerContext.Outside,
+                    CallersInsideTransaction = callerContext.Inside
+                },
                 facts,
                 steps));
         }
@@ -170,6 +246,12 @@ public sealed class CompensationAnalyzer(ILogger<CompensationAnalyzer> logger)
         foreach (var site in facts.Sites)
         {
             if (inFailurePath.Contains(site.Position) || site.InCatch)
+            {
+                continue;
+            }
+
+            // `if/else`의 서로 배타인 분기에 있는 쓰기는 순차 2단계가 아니다. 같은 단계로 본다.
+            if (sites.Count > 0 && facts.ExclusiveBranchPairs.Contains((sites[^1].Position, site.Position)))
             {
                 continue;
             }

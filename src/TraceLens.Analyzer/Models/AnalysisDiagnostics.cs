@@ -49,8 +49,31 @@ public sealed record CallResolutionStats(
     /// <summary>솔루션 밖 호출의 네임스페이스별 상위 집계(건수 내림차순). 해석률에는 영향을 주지 않는다.</summary>
     public IReadOnlyList<ExternalCallGroup> ExternalByNamespace { get; init; } = [];
 
-    /// <summary>해석률 = 해석한 지원 대상 호출 지점 / 검사한 지원 대상 호출 지점. 호출 "정확도"와는 다른 값이다.</summary>
-    public double ResolutionRate => Inspected == 0 ? 1d : Math.Round((double)Resolved / Inspected, 4);
+    /// <summary>
+    /// 네임스페이스 키 상한을 넘어 <c>(기타)</c>로 합친 네임스페이스 종류 수.
+    /// 0이 아니면 집계가 전부가 아니라는 뜻이다(T58).
+    /// </summary>
+    public int ExternalTruncatedKeys { get; init; }
+
+    /// <summary>
+    /// 대상 노드가 그래프에 없어 엣지로 넣지 못한 호출 수.
+    /// 해석률 분자(<see cref="Resolved"/>)에서 이 수를 뺀 값이 실제 엣지 수다(T58).
+    /// </summary>
+    public int DroppedEdges { get; init; }
+
+    /// <summary>
+    /// 해석률 = <b>그래프에 실제로 들어간</b> 호출 지점 / 검사한 지원 대상 호출 지점.
+    /// 호출 "정확도"와는 다른 값이다.
+    ///
+    /// 분자에서 <see cref="DroppedEdges"/>를 뺀다 — 대상 노드가 없어 버린 호출을 "해석했다"고 세면
+    /// 분자가 부풀려진다(T58). 분모는 그대로다(검사는 실제로 했다).
+    /// </summary>
+    public double ResolutionRate => Inspected == 0
+        ? 1d
+        : Math.Round((double)Math.Max(0, Resolved - DroppedEdges) / Inspected, 4);
+
+    /// <summary>해석률의 분자. 화면·문맥·MCP가 같은 값을 쓴다.</summary>
+    public int ResolvedInGraph => Math.Max(0, Resolved - DroppedEdges);
 }
 
 /// <summary>
@@ -82,4 +105,13 @@ public sealed record AnalysisDiagnostics(
 
     /// <summary>HTTP 밖 실행 단위 후보(종류별). 진입점 수·엣지 수에는 영향을 주지 않는다.</summary>
     public IReadOnlyList<EntryPointCandidateGroup> EntryPointCandidates { get; init; } = [];
+
+    /// <summary>
+    /// 핸들러 노드가 없어 목록에서 뺀 진입점 수(제외 네임스페이스·<c>obj/</c> 아래 생성 컨트롤러 등).
+    /// 로그의 "진입점 N개"와 <c>graph.entryPoints</c> 수가 어긋나는 이유다(T58).
+    /// </summary>
+    public int DroppedEntryPoints { get; init; }
+
+    /// <summary>대상 노드가 그래프에 없어 넣지 못한 엣지 수. 해석률 분자에서 뺀 값이다(T58).</summary>
+    public int DroppedEdges { get; init; }
 }

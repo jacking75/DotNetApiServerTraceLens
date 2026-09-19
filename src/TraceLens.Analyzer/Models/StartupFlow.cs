@@ -62,4 +62,10 @@ public sealed record StartupFlowDocument(
 {
     /// <summary>이 시작 흐름이 속한 프로젝트(어셈블리 이름). 실행 가능한 프로젝트가 여럿일 때 구분한다.</summary>
     public string ProjectKey { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 상한에 걸려 그리지 않은 것과 여러 <c>Startup</c> 중 건너뛴 파일.
+    /// 로그에만 남기면 화면과 에이전트는 "그게 전부"라고 읽는다(T58).
+    /// </summary>
+    public IReadOnlyList<string> Limitations { get; init; } = [];
 }

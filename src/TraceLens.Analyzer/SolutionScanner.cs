@@ -179,15 +179,18 @@ public sealed class SolutionScanner(
             memberStopwatch.ElapsedMilliseconds);
 
         var nodeIds = nodes.Keys.ToHashSet(StringComparer.Ordinal);
+        var builtEdges = edges.Build(nodeIds);
         return new SolutionScanResult(
             built,
             nodes.Values.OrderBy(node => node.Id, StringComparer.Ordinal).ToArray(),
-            edges.Build(nodes.Keys.ToHashSet(StringComparer.Ordinal)),
+            builtEdges,
             memberCount,
             memberStopwatch.ElapsedMilliseconds,
             collector.Build(nodeIds),
-            collector.Stats,
-            collector.DroppedForLimit);
+            // 해석률의 분자는 실제로 엣지가 된 것만 센다. 버린 엣지를 세면 분자가 부풀려진다(T58).
+            collector.Stats with { DroppedEdges = edges.DroppedForMissingNode },
+            collector.DroppedForLimit,
+            edges.DroppedForMissingNode);
     }
 
     private void AddCalls(
@@ -471,4 +474,5 @@ public sealed record SolutionScanResult(
     long MemberElapsedMs,
     IReadOnlyList<CallSite> CallSites,
     CallResolutionStats Stats,
-    int DroppedCallSites);
+    int DroppedCallSites,
+    int DroppedEdges);

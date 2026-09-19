@@ -104,13 +104,16 @@ public sealed class CallGraphWalker(
         }
 
         var nodeIds = nodes.Keys.ToHashSet(StringComparer.Ordinal);
+        var builtEdges = edges.Build(nodeIds);
         return new CallGraphResult(
             nodes.Values.OrderBy(node => node.Id, StringComparer.Ordinal).ToArray(),
-            edges.Build(nodeIds),
+            builtEdges,
             collector.Build(nodeIds),
-            collector.Stats,
+            // 해석률의 분자는 실제로 엣지가 된 것만 센다. 버린 엣지를 세면 분자가 부풀려진다(T58).
+            collector.Stats with { DroppedEdges = edges.DroppedForMissingNode },
             depthLimitReached,
-            collector.DroppedForLimit);
+            collector.DroppedForLimit,
+            edges.DroppedForMissingNode);
     }
 
     private async Task<IReadOnlyList<ResolvedCall>> GetCallsAsync(
@@ -162,10 +165,12 @@ public sealed class CallGraphWalker(
 }
 
 /// <param name="DroppedCallSites">상한 때문에 근거 목록에서 뺀 호출 지점 수.</param>
+/// <param name="DroppedEdges">대상 노드가 그래프에 없어 넣지 못한 엣지 수.</param>
 public sealed record CallGraphResult(
     IReadOnlyList<GraphNode> Nodes,
     IReadOnlyList<GraphEdge> Edges,
     IReadOnlyList<CallSite> CallSites,
     CallResolutionStats Stats,
     bool DepthLimitReached,
-    int DroppedCallSites);
+    int DroppedCallSites,
+    int DroppedEdges);

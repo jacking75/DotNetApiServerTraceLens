@@ -20,6 +20,7 @@ public static class ServiceCollectionExtensions
         .AddScoped<DataAccessScanner>()
         .AddScoped<CompensationAnalyzer>()
         .AddScoped<DataRuleEngine>()
+        .AddScoped<FilterScanner>()
         .AddScoped<MiddlewareScanner>()
         .AddScoped<ITraceLensAnalyzer, TraceLensAnalyzer>();
 }

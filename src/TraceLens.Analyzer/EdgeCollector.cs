@@ -22,10 +22,31 @@ internal sealed class EdgeCollector
         edges[key] = confidence;
     }
 
-    public IReadOnlyList<GraphEdge> Build(IReadOnlySet<string> knownNodeIds) => edges
-        .Where(entry => knownNodeIds.Contains(entry.Key.From) && knownNodeIds.Contains(entry.Key.To))
-        .Select(entry => new GraphEdge(entry.Key.From, entry.Key.To) { Confidence = entry.Value })
-        .OrderBy(edge => edge.From, StringComparer.Ordinal)
-        .ThenBy(edge => edge.To, StringComparer.Ordinal)
-        .ToArray();
+    /// <summary>
+    /// 대상 노드가 그래프에 없어 버린 엣지 수.
+    /// 해석률의 분자는 <b>실제로 엣지가 된 것</b>만 세야 한다 — 버린 것을 세면 분자가 부풀려진다(T58).
+    /// </summary>
+    public int DroppedForMissingNode { get; private set; }
+
+    public IReadOnlyList<GraphEdge> Build(IReadOnlySet<string> knownNodeIds)
+    {
+        var kept = new List<GraphEdge>();
+        var dropped = 0;
+        foreach (var entry in edges)
+        {
+            if (knownNodeIds.Contains(entry.Key.From) && knownNodeIds.Contains(entry.Key.To))
+            {
+                kept.Add(new GraphEdge(entry.Key.From, entry.Key.To) { Confidence = entry.Value });
+                continue;
+            }
+
+            dropped++;
+        }
+
+        DroppedForMissingNode = dropped;
+        return kept
+            .OrderBy(edge => edge.From, StringComparer.Ordinal)
+            .ThenBy(edge => edge.To, StringComparer.Ordinal)
+            .ToArray();
+    }
 }

@@ -92,4 +92,41 @@ public sealed record MiddlewarePipelineDocument(
 {
     /// <summary>이 파이프라인이 속한 프로젝트(어셈블리 이름). 실행 가능한 프로젝트가 여럿일 때 구분한다.</summary>
     public string ProjectKey { get; init; } = string.Empty;
+
+    /// <summary>
+    /// MVC 필터. 미들웨어 단계와 섞지 않고 파이프라인 아래에 별도 절로 둔다 —
+    /// 필터는 미들웨어를 다 지난 뒤 엔드포인트 실행 시점에 돈다(T71).
+    /// </summary>
+    public IReadOnlyList<MvcFilterInfo> Filters { get; init; } = [];
 }
+
+/// <summary>MVC 필터가 걸린 범위. 전역 → 컨트롤러 → 액션 순으로 실행된다.</summary>
+public enum MvcFilterScope
+{
+    Global,
+    Controller,
+    Action
+}
+
+/// <summary>
+/// MVC 필터 한 줄.
+/// </summary>
+/// <param name="Kinds">확인한 필터 인터페이스. 비어 있으면 확정하지 못했다는 뜻이다.</param>
+/// <param name="Order"><c>[TypeFilter(Order = 1)]</c>처럼 명시한 순서. 없으면 null.</param>
+/// <param name="AppliesTo">전역이면 빈 문자열, 아니면 걸린 컨트롤러·액션 이름.</param>
+public sealed record MvcFilterInfo(
+    string Id,
+    string Name,
+    MvcFilterScope Scope,
+    IReadOnlyList<string> Kinds,
+    int? Order,
+    string AppliesTo,
+    string RegistrationFile,
+    int RegistrationLine,
+    string? ImplementationFile,
+    int ImplementationLine,
+    string? Pre,
+    string? Post,
+    MiddlewareShortCircuit? ShortCircuit,
+    CallConfidence Confidence,
+    string? Note);

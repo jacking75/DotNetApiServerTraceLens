@@ -276,13 +276,23 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
                 continue;
             }
 
+            // 호출자 일부만 트랜잭션 안이면 확실하다고 말할 수 없다. 근거에 문맥과 호출자를 함께 남긴다(T56).
+            var compConfidence = path.CallerTransaction is TransactionContext.Sometimes or TransactionContext.NoCaller
+                ? FindingConfidence.Estimated
+                : FindingConfidence.Certain;
+            var contextEvidence = CallerTransactionEvidence(path);
+
             Add(new Finding(
-                NextId(findings.Count), "COMP-001", FindingSeverity.Info, FindingConfidence.Certain,
+                NextId(findings.Count), "COMP-001", FindingSeverity.Info, compConfidence,
                 $"트랜잭션 없이 저장소를 {path.Steps.Count}번 바꾼다",
                 "중간에 실패하면 앞 단계를 사람이 되돌려야 한다. 같은 커넥션의 쓰기라면 트랜잭션으로 묶는 편이 간단하다.",
                 "묶을 수 있는 쓰기는 한 트랜잭션으로 모은다.",
                 path.MethodDisplayName, path.File, path.StartLine, path.MethodNodeId, path.Id, null, null,
-                [Evidence("bad", "쓰기 단계", string.Join(" → ", path.Steps.Select(step => step.Label)), $"{path.File}:{path.StartLine}")]),
+                [
+                    Evidence("bad", "쓰기 단계", string.Join(" → ", path.Steps.Select(step => step.Label)), string.Empty)
+                        with { File = path.File, Line = path.StartLine },
+                    contextEvidence
+                ]),
                 path.Id);
 
             for (var index = 0; index < path.Steps.Count - 1; index++)
@@ -295,7 +305,7 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
                         ? "CACHE-002"
                         : "COMP-002";
                     Add(new Finding(
-                        NextId(findings.Count), rule, FindingSeverity.Critical, FindingConfidence.Certain,
+                        NextId(findings.Count), rule, FindingSeverity.Critical, compConfidence,
                         $"{step.Order}번 단계({step.Label})가 실패 시 되돌아가지 않는다",
                         $"뒤 단계에서 실패하면 {(step.Target.Length > 0 ? step.Target : step.Label)}가 그대로 남는다. {step.CompensationNote}",
                         "역연산을 실패 경로에 추가하거나, 앞뒤 쓰기를 한 트랜잭션으로 묶는다.",
@@ -541,6 +551,25 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
 
     private static FindingEvidence Evidence(string tone, string head, string detail, string note) =>
         new(tone, head, detail, note);
+
+    /// <summary>
+    /// 호출자 쪽 트랜잭션 문맥을 근거 한 줄로 만든다.
+    /// "왜 이 판정이 확실인지/추정인지"를 화면에서 되짚을 수 있어야 한다.
+    /// </summary>
+    private static FindingEvidence CallerTransactionEvidence(WritePath path) => path.CallerTransaction switch
+    {
+        TransactionContext.Always => Evidence(
+            "ok", "호출자 트랜잭션", $"호출자 {path.CallersInsideTransaction}개 모두 트랜잭션 안", string.Empty),
+        TransactionContext.Sometimes => Evidence(
+            "bad",
+            "호출자 트랜잭션",
+            $"일부만 트랜잭션 안({path.CallersInsideTransaction}개). 밖: {string.Join(", ", path.CallersOutsideTransaction)}",
+            "트랜잭션 밖 호출자가 있어 판정을 추정으로 낮췄다."),
+        TransactionContext.Never => Evidence(
+            "bad", "호출자 트랜잭션", "트랜잭션 안에서 부르는 호출자가 없다", string.Empty),
+        _ => Evidence(
+            "", "호출자 트랜잭션", "이 메서드를 부르는 곳을 찾지 못했다", "트랜잭션 밖이라는 뜻은 아니다.")
+    };
 
     private static string NextId(int index) => $"f{index + 1}";
 

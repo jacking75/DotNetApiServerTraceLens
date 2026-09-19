@@ -124,11 +124,15 @@ internal sealed class CallSiteCollector(bool enabled, int maxPerEdge, int maxBou
         .ThenBy(site => site.Line)
         .ToArray();
 
+    /// <summary>상한을 넘어 <c>(기타)</c>로 합친 네임스페이스 종류. 잘렸다는 사실을 진단에 남긴다(T58).</summary>
+    private readonly HashSet<string> truncatedNamespaces = new(StringComparer.Ordinal);
+
     private void CountExternal(ResolvedCall call)
     {
         var key = call.ExternalNamespace.Length > 0 ? call.ExternalNamespace : "(global)";
         if (!externalByNamespace.ContainsKey(key) && externalByNamespace.Count >= MaxExternalNamespaceKeys)
         {
+            truncatedNamespaces.Add(key);
             key = OtherNamespace;
         }
 
@@ -146,7 +150,8 @@ internal sealed class CallSiteCollector(bool enabled, int maxPerEdge, int maxBou
             .ThenBy(item => item.Key, StringComparer.Ordinal)
             .Take(TopExternalNamespaces)
             .Select(item => new ExternalCallGroup(item.Key, item.Value.Count, item.Value.SampleType ?? string.Empty))
-            .ToArray()
+            .ToArray(),
+        ExternalTruncatedKeys = truncatedNamespaces.Count
     };
 
     /// <summary>상한 때문에 목록에서 뺀 근거 수. 0이 아니면 제한을 화면·문맥에 알린다.</summary>
