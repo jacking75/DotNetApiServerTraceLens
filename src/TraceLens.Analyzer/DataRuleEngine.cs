@@ -443,21 +443,30 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
 
     /// <summary>
     /// 인식했지만 해석하지 않은 입력을 사실로 남긴다.
-    /// 규칙 결과는 손대지 않는다 — 규칙은 실제로 돌았고, 입력이 비었을 뿐이다.
+    /// 규칙 결과는 손대지 않는다 — 규칙은 실제로 돌았고, 그 입력을 읽지 않았을 뿐이다.
+    ///
+    /// ORM 힌트가 있으면 접근이 1건 이상이어도 <b>항상</b> 남긴다.
+    /// 예전에는 접근 0건일 때만 남겨서, Dapper 접근 1건이 있으면 EF Core `DbSet` 100곳이 있어도
+    /// 아무 말 없이 "규칙을 다 검사했다"로 읽혔다(T55).
     /// </summary>
     private static IReadOnlyList<string> BuildNotes(DataAccessScanResult scan, DataAccessOptions options)
     {
-        if (scan.Accesses.Count > 0)
-        {
-            return [];
-        }
-
         var notes = new List<string>();
         if (scan.OrmTypeHints.Count > 0)
         {
+            var described = scan.OrmTypeHints
+                .Select(hint => scan.OrmTypeHintCounts.TryGetValue(hint, out var count)
+                    ? $"{hint} {count}곳"
+                    : hint)
+                .ToArray();
             notes.Add(
-                $"저장소 접근을 한 건도 찾지 못했지만 솔루션에 {string.Join(", ", scan.OrmTypeHints)}이(가) 있다. " +
-                "지금 버전은 SQL 리터럴·Dapper·SqlKata·설정한 queryApis만 읽는다.");
+                $"솔루션에 {string.Join(", ", described)}을(를) 참조하는 자리가 있지만 접근으로 세지 않았다. " +
+                "지금 버전은 SQL 리터럴·Dapper·SqlKata·설정한 queryApis만 읽는다(외부 네임스페이스 집계 참고).");
+        }
+
+        if (scan.Accesses.Count > 0)
+        {
+            return notes;
         }
 
         if (options.QueryApis.SequenceEqual(DataAccessOptions.Default.QueryApis, StringComparer.Ordinal))
@@ -537,7 +546,19 @@ public sealed class DataRuleEngine(ILogger<DataRuleEngine> logger)
 
     private static IReadOnlyList<RuleInfo> BuildRuleCatalog(bool sharding) => Catalog
         .Select(rule => rule.ShardOnly && !sharding ? rule with { Enabled = false } : rule)
+        .Select(rule => rule with { Scope = ScopeOf(rule.Id) })
         .ToArray();
+
+    /// <summary>
+    /// 규칙이 무엇을 보고 판정하는지. 규칙군으로 정한다 —
+    /// "검사했는데 안 걸렸다"와 "그 입력을 읽지 않았다"를 화면에서 구분하기 위한 값이다.
+    /// </summary>
+    private static RuleScope ScopeOf(string ruleId) => ruleId switch
+    {
+        _ when ruleId.StartsWith("CACHE-", StringComparison.Ordinal) => RuleScope.CacheApis,
+        "CONN-002" => RuleScope.StartupRegistrations,
+        _ => RuleScope.SqlAndConfiguredApis
+    };
 
     /// <summary>
     /// 규칙 카탈로그. <c>Enabled == false</c>인 규칙은 이번 단계에서 검사하지 않는 것이고, 화면에 "꺼짐"으로 나온다.

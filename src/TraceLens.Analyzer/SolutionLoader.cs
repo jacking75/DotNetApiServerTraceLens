@@ -72,6 +72,7 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
             : await workspace.OpenSolutionAsync(fullPath, cancellationToken: cancellationToken);
 
         var successfulProjects = new HashSet<ProjectId>();
+        var testProjectIds = new HashSet<ProjectId>();
         var projectDiagnostics = new List<AnalyzedProject>();
         foreach (var project in solution.Projects.Where(project => project.SupportsCompilation))
         {
@@ -108,12 +109,18 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
                         string.Join(" | ", errors.Select(error => error.GetMessage())));
                 }
 
+                var isTest = IsTestProject(project);
+                if (isTest)
+                {
+                    testProjectIds.Add(project.Id);
+                }
+
                 projectDiagnostics.Add(new AnalyzedProject(
                     project.Name,
                     project.FilePath ?? string.Empty,
                     true,
                     allErrors.Length,
-                    errors.Select(error => error.GetMessage()).ToArray()));
+                    errors.Select(error => error.GetMessage()).ToArray()) { IsTest = isTest });
                 successfulProjects.Add(project.Id);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
@@ -127,8 +134,32 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
         return new LoadedSolution(workspace, solution, successfulProjects)
         {
             ProjectDiagnostics = projectDiagnostics,
+            TestProjectIds = testProjectIds,
             WorkspaceFailures = workspaceFailures.Distinct(StringComparer.Ordinal).Take(20).ToArray()
         };
+    }
+
+    /// <summary>
+    /// 테스트 프로젝트인지. 테스트 프레임워크 참조나 이름 규칙으로 판정한다.
+    /// MSBuild의 <c>IsTestProject</c> 속성은 Roslyn 워크스페이스에 그대로 오지 않아 참조를 본다.
+    /// </summary>
+    private static bool IsTestProject(Project project)
+    {
+        foreach (var reference in project.MetadataReferences)
+        {
+            var name = System.IO.Path.GetFileNameWithoutExtension(reference.Display ?? string.Empty);
+            if (name.StartsWith("xunit", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("nunit", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("Microsoft.VisualStudio.TestPlatform", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("Microsoft.NET.Test.Sdk", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return project.Name.EndsWith(".Tests", StringComparison.OrdinalIgnoreCase) ||
+               project.Name.EndsWith("Tests", StringComparison.OrdinalIgnoreCase) ||
+               project.Name.EndsWith(".Test", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void EnsureMsBuildRegistered()
@@ -233,6 +264,9 @@ public sealed class LoadedSolution(
 
     /// <summary>프로젝트별 로드·컴파일 결과. UI와 AI 문맥에 "무엇을 못 봤는지" 알리는 근거다.</summary>
     public IReadOnlyList<AnalyzedProject> ProjectDiagnostics { get; init; } = [];
+
+    /// <summary>테스트 프로젝트의 ID. 유일 구현체 판정에서 이 프로젝트의 타입을 후보에서 뺀다. </summary>
+    public IReadOnlySet<ProjectId> TestProjectIds { get; init; } = new HashSet<ProjectId>();
 
     /// <summary>MSBuildWorkspace가 남긴 경고. 프로젝트 로드 실패의 실제 이유가 여기에 있는 경우가 많다.</summary>
     public IReadOnlyList<string> WorkspaceFailures { get; init; } = [];

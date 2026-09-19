@@ -25,6 +25,8 @@ interface ClassDiagramProps {
   onSelectMember: (graphClass: GraphClass, member: GraphClassMember) => void
   onZoomChange?: (zoom: number) => void
   onFitZoom?: () => void
+  /** 지금 필터·토글 상태 그대로 SVG로 저장한다. */
+  onExportSvg?: (root: HTMLElement, size: { width: number; height: number }) => void
 }
 
 const markers: Record<RelationType, { normal: string; active: string }> = {
@@ -49,6 +51,7 @@ export function ClassDiagram({
   onSelectMember,
   onZoomChange,
   onFitZoom,
+  onExportSvg,
 }: ClassDiagramProps) {
   const { t } = useI18n()
   // 클래스가 수백 개면 보이는 박스만 그린다. 스크롤하면 바로 채워진다(여백 600px).
@@ -109,6 +112,7 @@ export function ClassDiagram({
         onZoomChange={onZoomChange}
         onFitZoom={onFitZoom}
         onViewportChange={onViewportChange}
+        onExportSvg={onExportSvg}
       >
         {cullToViewport(view.visible, view.boxes, viewport).map((graphClass) => {
           const box = view.boxes.get(graphClass.id)

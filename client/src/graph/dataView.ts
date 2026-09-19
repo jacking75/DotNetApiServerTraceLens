@@ -68,19 +68,34 @@ export interface MatrixRow {
 export interface AccessMatrix {
   targets: { name: string; dataSource: string; storage: string }[]
   rows: MatrixRow[]
+  /** 상한에 걸려 그리지 않은 행·열 수. 0이면 다 그린 것이다. */
+  hiddenRows: number
+  hiddenTargets: number
 }
+
+/**
+ * 한 번에 그리는 접근 지도의 행·열 상한.
+ * 300개 엔드포인트짜리 솔루션이면 rows × targets가 수천 칸이 되어 화면이 멈춘다.
+ */
+export const maxMatrixRows = 50
+export const maxMatrixTargets = 50
 
 /** 접근 지도. 클래스 × (테이블·키) 격자를 접근 목록에서 만든다. */
 export function buildAccessMatrix(
   data: DataAccessDocument,
   filter: 'all' | 'write' | 'flagged',
+  keyword = '',
 ): AccessMatrix {
+  const needle = keyword.trim().toLowerCase()
   const findingByTarget = new Map<string, string>()
   for (const finding of data.findings) {
     if (finding.target && !findingByTarget.has(finding.target)) findingByTarget.set(finding.target, finding.id)
   }
 
   const accesses = data.accesses.filter((access) => {
+    if (needle.length > 0 &&
+      !access.target.toLowerCase().includes(needle) &&
+      !access.classId.toLowerCase().includes(needle)) return false
     if (filter === 'write') return access.operation === 'Write' || access.operation === 'Delete'
     if (filter === 'flagged') return findingByTarget.has(access.target)
     return true
@@ -109,10 +124,15 @@ export function buildAccessMatrix(
     row.cells[access.target] = { operations, findingId: findingByTarget.get(access.target) ?? null }
   }
 
+  const allTargets = [...targets.values()].sort((left, right) =>
+    left.dataSource.localeCompare(right.dataSource) || left.name.localeCompare(right.name))
+  const allRows = [...rows.values()].sort((left, right) => left.className.localeCompare(right.className))
+
   return {
-    targets: [...targets.values()].sort((left, right) =>
-      left.dataSource.localeCompare(right.dataSource) || left.name.localeCompare(right.name)),
-    rows: [...rows.values()].sort((left, right) => left.className.localeCompare(right.className)),
+    targets: allTargets.slice(0, maxMatrixTargets),
+    rows: allRows.slice(0, maxMatrixRows),
+    hiddenTargets: Math.max(0, allTargets.length - maxMatrixTargets),
+    hiddenRows: Math.max(0, allRows.length - maxMatrixRows),
   }
 }
 

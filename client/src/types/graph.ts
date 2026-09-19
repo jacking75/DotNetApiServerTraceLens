@@ -153,6 +153,23 @@ export interface EntryPoint {
   notes: string[]
   /** `[ApiVersion]`으로 선언한 버전. 옛 그래프에는 없다. */
   apiVersions?: string[]
+  /** Minimal API의 `MapGroup` 접두사. 목록에서 묶는 기준이다. 없으면 빈 문자열이다. */
+  groupKey: string
+  /** `[ApiExplorerSettings(IgnoreApi = true)]`로 숨긴 API. 라우트는 실제로 존재한다. */
+  hiddenFromApiExplorer: boolean
+  /** `[Authorize]`·`[AllowAnonymous]`·`RequireAuthorization()`으로 확인한 인가. 없으면 null이다. */
+  authorization: EndpointAuthorization | null
+}
+
+/** 진입점에 걸린 인가. 정책 이름이 상수가 아니면 `confidence`가 Estimated다. */
+export interface EndpointAuthorization {
+  policies: string[]
+  roles: string[]
+  schemes: string[]
+  allowAnonymous: boolean
+  confidence: CallConfidence
+  file: string
+  line: number
 }
 
 /* ------------------------------------------------------------------ 분석 진단·입력 목록 (스키마 v7) */
@@ -176,6 +193,8 @@ export interface AnalysisManifest {
 export interface AnalyzedProject {
   name: string
   path: string
+  /** 테스트 프로젝트로 보이는지(xunit/nunit/MSTest 참조 또는 IsTestProject). 옛 그래프에는 없다. */
+  isTest?: boolean
   loaded: boolean
   errorCount: number
   sampleErrors: string[]
@@ -231,6 +250,10 @@ export interface AnalysisDiagnostics {
   entryPointNotes: string[]
   /** HTTP 밖 실행 단위 후보(종류별). 옛 그래프에는 없다. */
   entryPointCandidates?: EntryPointCandidateGroup[]
+  /** 핸들러 노드가 없어 목록에서 빠진 진입점 수. 옛 그래프에는 없다. */
+  droppedEntryPoints?: number
+  /** 대상 노드가 없어 그래프에 넣지 못한 엣지 수. 해석률 분자에서 뺀 값이다. */
+  droppedEdges?: number
 }
 
 /** 시작 흐름 한 단계의 종류. */
@@ -302,6 +325,8 @@ export type GraphWindowKind = 'callFlow'
 
 export interface GraphWindow {
   kind: GraphWindowKind
+  /** 창이 자라는 방향. `up`이면 고른 노드를 부르는 쪽이다. */
+  direction: 'down' | 'up'
   focusNodeId: string
   /** 상한 때문에 이 창에 넣지 못한 노드 수. 0이면 다 보여 준 것이다. */
   hiddenCount?: number
@@ -309,6 +334,18 @@ export interface GraphWindow {
   edges: GraphEdge[]
   /** 아직 창에 없는 관계가 남아 있어 눌러서 더 펼칠 수 있는 노드. */
   branchNodeIds: Set<string>
+  /** 팬아웃이 커서 종류별로 접은 자식들. 요약 노드를 누르면 그 종류만 펼친다. */
+  groups: FanOutGroupView[]
+  /** 방문 집합에 걸려 더 따라가지 않은 노드. 화면이 `↺` 배지를 붙인다. */
+  cycleNodeIds: Set<string>
+}
+
+/** 창 안에서 접힌 팬아웃 한 묶음. */
+export interface FanOutGroupView {
+  id: string
+  parentNodeId: string
+  kind: NodeKind
+  nodeIds: string[]
 }
 
 /** 상단 보기 전환 툴바가 고르는 보기. */
@@ -329,6 +366,7 @@ export type Selection =
   | { type: 'storageTarget'; key: string }
   | { type: 'rule'; key: string }
   | { type: 'middlewareStep'; key: string }
+  | { type: 'mvcFilter'; key: string }
 
 export interface AnalyzeSummary {
   /** DB·캐시와 미들웨어 점검에서 잡은 항목 수. v6부터 채워진다. */
@@ -451,6 +489,9 @@ export interface FindingEvidence {
   head: string
   detail: string
   note: string
+  /** 근거를 읽은 자리. 비어 있으면(집계·설정 근거) 링크를 그리지 않는다. */
+  file: string
+  line: number
 }
 
 export interface Finding {
@@ -471,6 +512,13 @@ export interface Finding {
   evidence: FindingEvidence[]
 }
 
+/** 규칙이 보는 입력의 종류. */
+export type RuleScope =
+  | 'SqlAndConfiguredApis'
+  | 'CacheApis'
+  | 'StartupRegistrations'
+  | 'MiddlewarePipeline'
+
 export interface RuleInfo {
   id: string
   group: string
@@ -481,6 +529,11 @@ export interface RuleInfo {
   shardOnly: boolean
   /** 이번 분석에서 실제로 검사했는지. false면 화면에 "꺼짐"으로 나온다. */
   enabled: boolean
+  /**
+   * 이 규칙이 무엇을 보고 판정하는지. "검사했는데 안 걸렸다"와 "그 입력을 읽지 않았다"를 구분한다.
+   * 옛 그래프에는 없다.
+   */
+  scope?: RuleScope
 }
 
 export interface DataAccess {
@@ -634,11 +687,43 @@ export interface MiddlewareStepInfo {
   parentId?: string | null
 }
 
+/** MVC 필터가 걸린 범위. 전역 → 컨트롤러 → 액션 순으로 실행된다. */
+export type MvcFilterScope = 'Global' | 'Controller' | 'Action'
+
+/**
+ * MVC 필터 한 줄. 미들웨어 단계와 섞지 않고 파이프라인 아래 "필터" 절에 순서대로 둔다.
+ * 요청이 컨트롤러에 닿기 전에 무엇이 도는지가 실행 순서 보기의 가장 큰 빈칸이었다.
+ */
+export interface MvcFilterInfo {
+  id: string
+  name: string
+  scope: MvcFilterScope
+  /** 확인한 필터 인터페이스(IActionFilter·IAsyncActionFilter·IExceptionFilter…). */
+  kinds: string[]
+  /** `[TypeFilter(Order = 1)]`처럼 명시한 순서. 없으면 null. */
+  order: number | null
+  /** 전역이면 빈 문자열, 아니면 걸린 컨트롤러·액션 이름. */
+  appliesTo: string
+  registrationFile: string
+  registrationLine: number
+  implementationFile: string | null
+  implementationLine: number
+  /** next 호출 전에 하는 일. */
+  pre: string | null
+  /** next 이후에 하는 일. 없으면 null. */
+  post: string | null
+  shortCircuit: MiddlewareShortCircuit | null
+  confidence: CallConfidence
+  note: string | null
+}
+
 export interface MiddlewarePipelineDocument {
   /** 이 파이프라인이 속한 프로젝트(어셈블리 이름). v7부터 있다. */
   projectKey: string
   programFile: string
   steps: MiddlewareStepInfo[]
+  /** MVC 필터. 옛 문서에는 없고, 없으면 빈 목록으로 읽는다. */
+  filters: MvcFilterInfo[]
   findings: Finding[]
   rules: RuleInfo[]
 }

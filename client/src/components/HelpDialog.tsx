@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { useModal } from '../hooks/useModal'
+import { shortcuts } from '../shortcuts'
 import { recipes, type Recipe } from '../content/recipes'
 import { useI18n } from '../i18n/I18nProvider'
 import type { TranslationKey } from '../i18n/ko'
@@ -24,15 +26,6 @@ export const glossaryTerms = [
 
 export type GlossaryTerm = (typeof glossaryTerms)[number]
 
-/** 실제로 동작하는 단축키. 조건(어디에 포커스가 있어야 하는지)까지 적는다. */
-const shortcuts: readonly { keysKey: TranslationKey; bodyKey: TranslationKey }[] = [
-  { keysKey: 'help.key.zoom', bodyKey: 'help.key.zoomBody' },
-  { keysKey: 'help.key.zoomStep', bodyKey: 'help.key.zoomStepBody' },
-  { keysKey: 'help.key.splitter', bodyKey: 'help.key.splitterBody' },
-  { keysKey: 'help.key.escape', bodyKey: 'help.key.escapeBody' },
-  { keysKey: 'help.key.quickFind', bodyKey: 'help.key.quickFindBody' },
-]
-
 export type HelpTab = 'glossary' | 'shortcuts' | 'recipes'
 
 interface HelpDialogProps {
@@ -50,15 +43,10 @@ interface HelpDialogProps {
 export function HelpDialog({ initialTab, focusTerm, analyzed, onStartRecipe, onClose }: HelpDialogProps) {
   const { t, lang } = useI18n()
   const [tab, setTab] = useState<HelpTab>(initialTab)
+  const modalRef = useModal<HTMLDivElement>(onClose)
   const closeRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => { setTab(initialTab) }, [initialTab])
-  useEffect(() => { closeRef.current?.focus() }, [])
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   const manualUrl = `/manual/${lang}`
 
@@ -66,6 +54,7 @@ export function HelpDialog({ initialTab, focusTerm, analyzed, onStartRecipe, onC
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <div
         className="modal help-dialog"
+        ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-label={t('help.title')}
@@ -106,9 +95,9 @@ export function HelpDialog({ initialTab, focusTerm, analyzed, onStartRecipe, onC
         {tab === 'shortcuts' && (
           <dl className="glossary">
             {shortcuts.map((item) => (
-              <div key={item.keysKey}>
-                <dt><kbd>{t(item.keysKey)}</kbd></dt>
-                <dd>{t(item.bodyKey)}</dd>
+              <div key={item.id}>
+                <dt><kbd>{item.keys}</kbd></dt>
+                <dd>{t(item.bodyKey)} <span className="hint">{t(item.scopeKey)}</span></dd>
               </div>
             ))}
           </dl>

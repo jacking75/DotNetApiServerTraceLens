@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { recipes, type Recipe } from '../content/recipes'
 import { useI18n } from '../i18n/I18nProvider'
 import type { TranslationKey } from '../i18n/ko'
@@ -47,6 +48,8 @@ export function GuidedWalkthrough({
   onClose,
 }: GuidedWalkthroughProps) {
   const { t, lang } = useI18n()
+  /** 선행 조건이 아직 아닐 때의 안내. 모달 경고창 대신 이 줄을 띄운다. */
+  const [notice, setNotice] = useState<string | null>(null)
   const allDone = steps.every((step) => completed.has(step.id))
   const current = steps.find((step) => !completed.has(step.id)) ?? steps[steps.length - 1]
 
@@ -54,9 +57,12 @@ export function GuidedWalkthrough({
   const focusTarget = (elementId: string) => {
     const element = document.getElementById(elementId)
     if (!element) {
-      window.alert(t('guide.notYet'))
+      // 모달 경고창은 화면을 막고 키보드 흐름을 끊는다. 안내 안에서 한 줄로 말한다.
+      setNotice(t('guide.notYet'))
       return
     }
+
+    setNotice(null)
 
     element.scrollIntoView({ block: 'nearest' })
     if (element instanceof HTMLElement) element.focus({ preventScroll: true })
@@ -69,6 +75,7 @@ export function GuidedWalkthrough({
         <small>{t('guide.progress', { done: completed.size, total: steps.length })}</small>
         <button type="button" className="link-button" onClick={onClose}>{t('guide.close')}</button>
       </header>
+      {notice && <div className="panel-message tight warn" role="status">{notice}</div>}
       {expected.length > 0 && (
         <div className="walkthrough-expected">
           <b>{t('welcome.sample.expected')}</b>

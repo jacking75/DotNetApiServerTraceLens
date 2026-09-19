@@ -20,7 +20,7 @@ describe('SourceLink', () => {
     const user = userEvent.setup()
     render(
       <I18nProvider>
-        <SourceLink file="src/OrderService.cs" line={42} onOpen={onOpen} />
+        <SourceLink file="src/OrderService.cs" line={42} onOpen={onOpen} onOpenInEditor={() => {}} />
       </I18nProvider>,
     )
 

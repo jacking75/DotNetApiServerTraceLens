@@ -4,6 +4,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
 import { I18nProvider } from '../i18n/I18nProvider'
 import { AskPanel, type AskContext } from './AskPanel'
 
@@ -20,6 +21,27 @@ function stubFetch() {
     status: 500,
     headers: { 'Content-Type': 'application/json' },
   })))
+}
+
+/**
+ * 질문 초안은 App이 들고 있다(우측 열을 접었다 펴도 남아야 하기 때문이다).
+ * 테스트도 같은 모양으로 감싸야 칩 → 입력칸 흐름을 실제와 같게 확인한다.
+ */
+function Harness() {
+  const [question, setQuestion] = useState('')
+  return (
+    <AskPanel
+      context={context}
+      snapshotId="snap"
+      question={question}
+      onChangeQuestion={setQuestion}
+      recentAnswers={[]}
+      onPushRecentAnswer={() => {}}
+      onExplain={() => {}}
+      onOpenSource={() => {}}
+      onOpenInEditor={() => {}}
+    />
+  )
 }
 
 describe('AskPanel 프리셋 질문', () => {
@@ -40,7 +62,7 @@ describe('AskPanel 프리셋 질문', () => {
     const user = userEvent.setup()
     render(
       <I18nProvider>
-        <AskPanel context={context} snapshotId="snap" onExplain={() => {}} />
+        <Harness />
       </I18nProvider>,
     )
 
@@ -57,7 +79,7 @@ describe('AskPanel 프리셋 질문', () => {
   it('목적과 길이가 무엇을 바꾸는지 한 줄로 알려 준다', () => {
     render(
       <I18nProvider>
-        <AskPanel context={context} snapshotId="snap" onExplain={() => {}} />
+        <Harness />
       </I18nProvider>,
     )
 

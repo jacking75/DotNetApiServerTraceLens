@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   buildAccessMatrix,
+  type AccessMatrix,
   buildEntryDataFlow,
   buildFailGrid,
   compensationLabelKeys,
@@ -44,6 +45,8 @@ interface DataAccessViewProps {
   onSelect: (selection: Selection) => void
   /** 용어집으로 보내는 `?` 링크. 보상 처리처럼 배경지식이 필요한 자리에 붙인다. */
   onExplain: (term: GlossaryTerm) => void
+  /** 목록·표를 Markdown으로 복사한다. PR·회의록에 그대로 붙일 수 있게 한다. */
+  onCopyMarkdown: (markdown: string) => void
 }
 
 export function SeverityBadge({ severity, muted }: { severity: FindingSeverity; muted?: boolean }) {
@@ -76,6 +79,7 @@ export function DataAccessView({
   selection,
   onSelect,
   onExplain,
+  onCopyMarkdown,
 }: DataAccessViewProps) {
   const findings = useMemo(
     () => filterFindings(data.findings, { severity: view.severity, onlyCertain: view.onlyCertain }),
@@ -87,7 +91,16 @@ export function DataAccessView({
   }
 
   if (view.sub === 'map') {
-    return <MapView data={data} view={view} onChangeView={onChangeView} selection={selection} onSelect={onSelect} />
+    return (
+      <MapView
+        data={data}
+        view={view}
+        onChangeView={onChangeView}
+        selection={selection}
+        onSelect={onSelect}
+        onCopyMarkdown={onCopyMarkdown}
+      />
+    )
   }
 
   if (view.sub === 'tx') {
@@ -104,6 +117,7 @@ export function DataAccessView({
         rules={data.rules}
         onSelect={onSelect}
         onExplain={onExplain}
+        onCopyMarkdown={onCopyMarkdown}
       />
     )
   }
@@ -115,6 +129,7 @@ export function DataAccessView({
       unconfirmedAccessCount={data.accesses.filter((access) => access.operation === 'Unknown').length}
       selection={selection}
       onSelect={onSelect}
+      onCopyMarkdown={onCopyMarkdown}
     />
   )
 }
@@ -217,15 +232,21 @@ function MapView({
   onChangeView,
   selection,
   onSelect,
+  onCopyMarkdown,
 }: {
   data: DataAccessDocument
   view: DataViewState
   onChangeView: (patch: Partial<DataViewState>) => void
   selection: Selection | null
   onSelect: (selection: Selection) => void
+  onCopyMarkdown: (markdown: string) => void
 }) {
   const { t } = useI18n()
-  const matrix = useMemo(() => buildAccessMatrix(data, view.mapFilter), [data, view.mapFilter])
+  /** 행·열이 50개를 넘으면 잘리므로 좁힐 수단을 함께 둔다. */
+  const [keyword, setKeyword] = useState('')
+  const matrix = useMemo(
+    () => buildAccessMatrix(data, view.mapFilter, keyword),
+    [data, view.mapFilter, keyword])
   const cacheKeys = useMemo(() => {
     const keys = new Map<string, { key: string; operations: Set<string>; users: Set<string> }>()
     for (const access of data.accesses) {
@@ -260,8 +281,31 @@ function MapView({
               {t(filter.labelKey)}
             </button>
           ))}
+          <input
+            className="side-search"
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder={t('side.search')}
+            aria-label={t('side.search')}
+          />
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => onCopyMarkdown(matrixMarkdown(matrix, {
+              title: t('data.mapTitle'),
+              rowHeader: t('data.classTargetHeader'),
+              truncated: t('data.matrixTruncated', { rows: matrix.hiddenRows, targets: matrix.hiddenTargets }),
+            }))}
+          >
+            {t('export.copyMarkdown')}
+          </button>
         </span>
       </div>
+      {(matrix.hiddenRows > 0 || matrix.hiddenTargets > 0) && (
+        <div className="hint warn">
+          {t('data.matrixTruncated', { rows: matrix.hiddenRows, targets: matrix.hiddenTargets })}
+        </div>
+      )}
 
       {matrix.rows.length === 0 ? (
         <div className="panel-message">{t('data.noMatchingAccess')}</div>
@@ -424,6 +468,7 @@ function CompensationView({
   rules,
   onSelect,
   onExplain,
+  onCopyMarkdown,
 }: {
   data: DataAccessDocument
   view: DataViewState
@@ -432,6 +477,7 @@ function CompensationView({
   rules: readonly RuleInfo[]
   onSelect: (selection: Selection) => void
   onExplain: (term: GlossaryTerm) => void
+  onCopyMarkdown: (markdown: string) => void
 }) {
   const { t } = useI18n()
   const heading = (
@@ -453,6 +499,13 @@ function CompensationView({
   return (
     <div className="data-view">
       {heading}
+      <button
+        type="button"
+        className="link-button"
+        onClick={() => onCopyMarkdown(writePathsMarkdown(data.writePaths, t('sub.comp')))}
+      >
+        {t('export.copyMarkdown')}
+      </button>
       {data.writePaths.map((path) => {
         const open = path.id === openId
         const worst = worstSeverity(path, findingById)
@@ -589,6 +642,7 @@ export function FindingTable({
   unconfirmedAccessCount = 0,
   selection,
   onSelect,
+  onCopyMarkdown,
 }: {
   findings: Finding[]
   /** 규칙 카탈로그. ID 아래에 이름을 함께 보여 주려면 필요하다. */
@@ -597,6 +651,8 @@ export function FindingTable({
   unconfirmedAccessCount?: number
   selection: Selection | null
   onSelect: (selection: Selection) => void
+  /** 없으면 복사 버튼을 그리지 않는다(미들웨어 보기에서도 쓴다). */
+  onCopyMarkdown?: (markdown: string) => void
 }) {
   const { t, lang } = useI18n()
   const unconfirmed = unconfirmedAccessCount > 0
@@ -610,6 +666,15 @@ export function FindingTable({
   return (
     <div className="data-view">
       {unconfirmed}
+      {onCopyMarkdown && (
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => onCopyMarkdown(findingsMarkdown(findings, rules, lang, t('sub.check')))}
+        >
+          {t('export.copyMarkdown')}
+        </button>
+      )}
       <table className="findings">
         <thead>
           <tr>
@@ -663,3 +728,51 @@ function worstSeverity(path: WritePath, findingById: Map<string, Finding>): Find
 }
 
 const shorten = (value: string) => (value.length <= 16 ? value : `${value.slice(0, 16)}…`)
+
+/**
+ * 접근 지도를 Markdown 표로 만든다. 회의록·PR에 그대로 붙일 수 있어야 한다.
+ * 문구는 화면에서 받아 온다 — 이 파일에 한국어를 박으면 영어 화면에서도 한국어가 나온다.
+ */
+export function matrixMarkdown(
+  matrix: AccessMatrix,
+  labels: { title: string; rowHeader: string; truncated: string },
+): string {
+  const header = [labels.rowHeader, ...matrix.targets.map((target) => target.name)]
+  const lines = [
+    `## ${labels.title}`,
+    '',
+    `| ${header.join(' | ')} |`,
+    `| ${header.map(() => '---').join(' | ')} |`,
+    ...matrix.rows.map((row) =>
+      `| ${[row.className, ...matrix.targets.map((target) => row.cells[target.name]?.operations ?? '·')].join(' | ')} |`),
+  ]
+  if (matrix.hiddenRows > 0 || matrix.hiddenTargets > 0) lines.push('', `> ${labels.truncated}`)
+  return lines.join(String.fromCharCode(10))
+}
+
+/** 점검 결과를 Markdown 목록으로 만든다. */
+export function findingsMarkdown(
+  findings: readonly Finding[],
+  rules: readonly RuleInfo[],
+  lang: 'ko' | 'en',
+  title: string,
+): string {
+  return [
+    `## ${title}`,
+    '',
+    ...findings.map((finding) =>
+      `- \`${finding.ruleId}\` ${ruleName(finding.ruleId, rules, lang) ?? ''} · ${finding.severity}` +
+      ` · ${finding.what} · \`${finding.file}:${finding.line}\` · ${finding.confidence}`),
+  ].join('\n')
+}
+
+/** 쓰기 경로를 Markdown 목록으로 만든다. */
+export function writePathsMarkdown(paths: readonly WritePath[], title: string): string {
+  return [
+    `## ${title}`,
+    '',
+    ...paths.map((path) =>
+      `- ${path.inTransaction ? '[tx]' : '[no-tx]'} \`${path.methodDisplayName}\`` +
+      ` · \`${path.file}:${path.startLine}\` · ${path.note}`),
+  ].join(String.fromCharCode(10))
+}

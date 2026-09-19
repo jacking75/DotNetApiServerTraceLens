@@ -19,7 +19,7 @@
     "entryPointAttributes": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "HTTP 진입점으로 볼 컨트롤러 특성 이름(Attribute 접미사 제외). 기본값: HttpGet, HttpPost, HttpPut, HttpDelete, HttpPatch."
+      "description": "HTTP 진입점으로 볼 컨트롤러 특성 이름(Attribute 접미사 제외). 기본값: HttpGet, HttpPost, HttpPut, HttpDelete, HttpPatch, HttpHead, HttpOptions."
     },
     "kindRules": {
       "type": "array",

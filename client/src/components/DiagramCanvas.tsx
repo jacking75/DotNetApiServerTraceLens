@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
 import type { PlacedPackage } from '../graph/packageLayout'
+import { clampZoom, ZoomControls, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from './ZoomControls'
 
 export interface CanvasPath {
   id: string
@@ -9,11 +10,7 @@ export interface CanvasPath {
   marker: string
 }
 
-export const ZOOM_MIN = 0.25
-export const ZOOM_MAX = 2
-const ZOOM_STEP = 0.1
-
-export const clampZoom = (value: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Number(value.toFixed(2))))
+export { clampZoom, ZOOM_MAX, ZOOM_MIN }
 
 interface DiagramCanvasProps {
   shellRef: RefObject<HTMLDivElement>
@@ -34,6 +31,8 @@ interface DiagramCanvasProps {
   onZoomChange?: (zoom: number) => void
   /** 내부 "맞춤" 버튼과 Ctrl+0 단축키에 연결한다. */
   onFitZoom?: () => void
+  /** 지금 필터·토글 상태 그대로 SVG로 저장한다. 주어지지 않으면 버튼을 그리지 않는다. */
+  onExportSvg?: (root: HTMLElement, size: { width: number; height: number }) => void
 }
 
 /**
@@ -56,7 +55,10 @@ export function DiagramCanvas({
   onZoomChange,
   onFitZoom,
   onViewportChange,
+  onExportSvg,
 }: DiagramCanvasProps) {
+  const { t } = useI18n()
+  const rootRef = useRef<HTMLDivElement>(null)
   const token = scrollTarget?.token
   useEffect(() => {
     if (!scrollTarget || !shellRef.current) return
@@ -173,7 +175,7 @@ export function DiagramCanvas({
         {emptyMessage && <div className="panel-message canvas-empty">{emptyMessage}</div>}
         {!emptyMessage && (
           <div className="dg-scale" style={{ transform: `scale(${zoom})`, width, height }}>
-            <div className="dg-root" style={{ width, height }}>
+            <div className="dg-root" style={{ width, height }} ref={rootRef}>
               {packages?.map((item) => (
                 <div
                   key={item.namespace}
@@ -196,44 +198,14 @@ export function DiagramCanvas({
       {!emptyMessage && onZoomChange && (
         <ZoomControls zoom={zoom} onZoomChange={onZoomChange} onFitZoom={onFitZoom} />
       )}
-    </div>
-  )
-}
-
-interface ZoomControlsProps {
-  zoom: number
-  onZoomChange: (zoom: number) => void
-  onFitZoom?: () => void
-}
-
-function ZoomControls({ zoom, onZoomChange, onFitZoom }: ZoomControlsProps) {
-  const { t } = useI18n()
-  return (
-    <div className="zoom-controls">
-      <button
-        type="button"
-        onClick={() => onZoomChange(clampZoom(zoom - ZOOM_STEP))}
-        title={t('canvas.zoomOutTitle')}
-        aria-label={t('canvas.zoomOut')}
-      >
-        −
-      </button>
-      <button type="button" className="zoom-pct" onClick={() => onZoomChange(1)} title={t('canvas.zoomReset')}>
-        {Math.round(zoom * 100)}%
-      </button>
-      <button
-        type="button"
-        onClick={() => onZoomChange(clampZoom(zoom + ZOOM_STEP))}
-        title={t('canvas.zoomInTitle')}
-        aria-label={t('canvas.zoomIn')}
-      >
-        +
-      </button>
-      {onFitZoom && (
-        <>
-          <span className="zoom-sep" />
-          <button type="button" onClick={onFitZoom} title={t('canvas.fitTitle')}>{t('canvas.fit')}</button>
-        </>
+      {!emptyMessage && onExportSvg && (
+        <button
+          type="button"
+          className="canvas-export"
+          onClick={() => rootRef.current && onExportSvg(rootRef.current, { width, height })}
+        >
+          {t('export.saveSvg')}
+        </button>
       )}
     </div>
   )

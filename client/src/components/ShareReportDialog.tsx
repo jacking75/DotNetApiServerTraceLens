@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useModal } from '../hooks/useModal'
 import { ApiError, buildReport } from '../api/client'
 import { translateError, useI18n } from '../i18n/I18nProvider'
 import type { SelectionKind, ShareReport } from '../types/context'
@@ -15,6 +16,7 @@ interface ShareReportDialogProps {
  */
 export function ShareReportDialog({ kind, id, onClose }: ShareReportDialogProps) {
   const { t } = useI18n()
+  const modalRef = useModal<HTMLDivElement>(onClose)
   const [includePaths, setIncludePaths] = useState(true)
   const [includeStorageNames, setIncludeStorageNames] = useState(true)
   const [report, setReport] = useState<ShareReport | null>(null)
@@ -70,10 +72,10 @@ export function ShareReportDialog({ kind, id, onClose }: ShareReportDialogProps)
   return (
     <div
       className="modal-backdrop"
+      ref={modalRef}
       role="dialog"
       aria-modal="true"
       aria-label={t('share.title')}
-      onKeyDown={(event) => { if (event.key === 'Escape') onClose() }}
     >
       <div className="modal share-modal">
         <header>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useModal } from '../hooks/useModal'
 import { browsePath } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import type { BrowseEntry, BrowseResponse } from '../types/graph'
@@ -35,7 +36,7 @@ export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
-  const previouslyFocused = useRef<Element | null>(null)
+  const modalRef = useModal<HTMLDivElement>(onClose, closeRef)
 
   const load = useCallback(async (path?: string) => {
     setBusy(true)
@@ -54,23 +55,6 @@ export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: 
   useEffect(() => {
     void load(initialPath.trim() || undefined)
   }, [initialPath, load])
-
-  useEffect(() => {
-    previouslyFocused.current = document.activeElement
-    closeRef.current?.focus()
-    return () => {
-      if (previouslyFocused.current instanceof HTMLElement) previouslyFocused.current.focus()
-    }
-  }, [])
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [onClose])
 
   const openEntry = (entry: BrowseEntry) => {
     if (entry.kind === 'Directory') {
@@ -93,6 +77,7 @@ export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: 
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section
         className="path-picker"
+        ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}

@@ -40,6 +40,13 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
     /// <summary>인터페이스 키 → 솔루션 안에서 그 인터페이스를 구현한 클래스들.</summary>
     private readonly Dictionary<string, List<INamedTypeSymbol>> implementations = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// 테스트 프로젝트에서 본 타입 키.
+    /// 테스트 더블(`FakeOrderRepository`)이 구현체로 세어지면 "구현체 2개"가 되어 유일 구현체 추정이 꺼지고
+    /// 해석률·엣지가 조용히 줄어든다(T59). 후보에서 빼되 뺐다는 사실을 근거에 적는다.
+    /// </summary>
+    private readonly Dictionary<string, string> testImplementationNames = new(StringComparer.Ordinal);
+
     /// <summary>기반 클래스 키 → 솔루션 안에서 그 클래스를 상속한 클래스들. virtual/abstract 디스패치에 쓴다.</summary>
     private readonly Dictionary<string, List<INamedTypeSymbol>> derivedTypes = new(StringComparer.Ordinal);
 
@@ -57,13 +64,14 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
         registrations.Clear();
         implementations.Clear();
         derivedTypes.Clear();
+        testImplementationNames.Clear();
 
         foreach (var project in loaded.Solution.Projects.Where(project => loaded.AnalyzableProjectIds.Contains(project.Id)))
         {
             var compilation = await project.GetCompilationAsync(cancellationToken);
             if (compilation is not null)
             {
-                CollectImplementations(compilation, cancellationToken);
+                CollectImplementations(compilation, loaded.TestProjectIds.Contains(project.Id), cancellationToken);
             }
 
             foreach (var document in project.Documents.Where(document => document.SourceCodeKind == SourceCodeKind.Regular))
@@ -179,25 +187,29 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
         }
 
         implementations.TryGetValue(key, out var candidates);
+        var excludedTestDouble = testImplementationNames.GetValueOrDefault(key);
+        var testNote = excludedTestDouble is null
+            ? string.Empty
+            : $" 테스트 프로젝트의 `{excludedTestDouble}`은(는) 후보에서 제외했다.";
         if (candidates is not { Count: 1 })
         {
             logger.LogDebug(
                 "구현체를 특정하지 못해 인터페이스 호출을 제외한다: {Method} (후보 {Count}개)",
                 interfaceMethod.ToDisplayString(),
                 candidates?.Count ?? 0);
-            return DiResolution.Failed(candidates is null || candidates.Count == 0
+            return DiResolution.Failed((candidates is null || candidates.Count == 0
                 ? "DI 등록도 솔루션 안 구현체도 찾지 못했다."
-                : $"DI 등록이 없고 솔루션 안 구현체가 {candidates.Count}개라 확정할 수 없다.");
+                : $"DI 등록이 없고 솔루션 안 구현체가 {candidates.Count}개라 확정할 수 없다.") + testNote);
         }
 
         var single = FindImplementation(candidates[0], interfaceMethod);
         return single is null
-            ? DiResolution.Failed($"유일한 구현체 {candidates[0].Name}에서 구현 메서드를 찾지 못했다.")
+            ? DiResolution.Failed($"유일한 구현체 {candidates[0].Name}에서 구현 메서드를 찾지 못했다.{testNote}")
             : new DiResolution(
                 single,
                 CallResolution.SingleImplementation,
                 CallConfidence.Estimated,
-                $"DI 등록은 없지만 솔루션 안 구현체가 {candidates[0].Name} 하나뿐이라 연결했다.");
+                $"DI 등록은 없지만 솔루션 안 구현체가 {candidates[0].Name} 하나뿐이라 연결했다.{testNote}");
     }
 
     private static IMethodSymbol? FindImplementation(INamedTypeSymbol implementation, IMethodSymbol interfaceMethod) =>
@@ -444,7 +456,7 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
         return false;
     }
 
-    private void CollectImplementations(Compilation compilation, CancellationToken cancellationToken)
+    private void CollectImplementations(Compilation compilation, bool isTestProject, CancellationToken cancellationToken)
     {
         foreach (var type in EnumerateNamedTypes(compilation.Assembly.GlobalNamespace, cancellationToken))
         {
@@ -458,6 +470,13 @@ public sealed class DiResolver(ILogger<DiResolver> logger)
             foreach (var abstraction in type.AllInterfaces.Where(item => item.DeclaringSyntaxReferences.Length > 0))
             {
                 var key = GetTypeKey(abstraction);
+                if (isTestProject)
+                {
+                    // 테스트 더블은 후보에서 뺀다. 뺐다는 사실은 근거 문구에 남긴다.
+                    testImplementationNames.TryAdd(key, type.Name);
+                    continue;
+                }
+
                 if (!implementations.TryGetValue(key, out var candidates))
                 {
                     candidates = [];

@@ -17,6 +17,12 @@ const dynamicPrefixes = [
   'error.', // translateError가 서버 오류 code로 만든다
   'help.tab.', // HelpDialog가 탭 id로 만든다
   'glossary.', // HelpDialog·HelpLink가 용어 id로 만든다
+  'selection.', // 우측 열 머리가 t(`selection.${type}`)로 만든다
+  'right.tab.', // 우측 열 탭이 탭 id로 만든다
+  'freshness.kind.', // FreshnessDetail이 변경 종류로 만든다
+  'side.sort.', // EntryPointList가 정렬 종류로 만든다
+  'rule.scope.', // DataDetailPanel이 규칙 scope로 만든다
+  'mw.filterScope.', // MiddlewareView·DataDetailPanel이 필터 범위로 만든다
 ]
 
 /** 사전 두 개를 뺀 클라이언트 소스 전체. Vite가 빌드 시각에 읽어 넣는다. */

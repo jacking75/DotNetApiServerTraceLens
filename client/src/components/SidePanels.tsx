@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { memberKey, shortenNamespace } from '../graph/classDiagram'
+import type { EntryGroupBy, EntrySort } from '../graph/entryGroups'
 import { countByLifetime, countSteps } from '../graph/startupFlow'
 import type {
   EntryPoint,
@@ -10,148 +11,8 @@ import type {
   StartupFlowDocument,
 } from '../types/graph'
 import { useI18n } from '../i18n/I18nProvider'
+import { EntryPointList } from './EntryPointList'
 import { kindColors } from './kindColors'
-
-interface EntryPointListProps {
-  entryPoints: EntryPoint[]
-  /** 선택 표시는 엔드포인트 ID로 한다. 같은 메서드에 여러 라우트가 걸릴 수 있기 때문이다. */
-  selectedEndpointId: string | null
-  emptyMessage: string
-  /** 컨트롤러 이름으로도 거를 수 있게 노드 → 클래스 매핑을 받는다. */
-  classIdOfMethod?: (nodeId: string) => string | undefined
-  /** HTTP 밖 실행 단위 수. 목록이 전부가 아니라는 사실을 목록 안에서 말한다. */
-  candidateCount: number
-  onShowDiagnostics: () => void
-  onSelect: (entryPoint: EntryPoint) => void
-}
-
-/**
- * 진입점을 컨트롤러(선언 클래스)별로 묶는다. 호출 흐름 목록과 전체 흐름도 사이드가 같은 규칙을 쓴다.
- * 클래스를 알 수 없는 진입점(Minimal API 람다 등)은 한 그룹으로 모은다.
- */
-export function groupByController(
-  entryPoints: readonly EntryPoint[],
-  classIdOfMethod: ((nodeId: string) => string | undefined) | undefined,
-  unknownLabel: string,
-): [string, EntryPoint[]][] {
-  const grouped = new Map<string, EntryPoint[]>()
-  for (const entryPoint of entryPoints) {
-    const classId = classIdOfMethod?.(entryPoint.nodeId) ?? unknownLabel
-    const list = grouped.get(classId)
-    if (list) list.push(entryPoint)
-    else grouped.set(classId, [entryPoint])
-  }
-
-  return [...grouped.entries()]
-}
-
-/** 이 개수를 넘는 컨트롤러 그룹은 접힌 채로 시작한다. 200개짜리 목록이 한 화면을 넘지 않게 한다. */
-const collapseGroupsAbove = 20
-
-/** 호출 흐름 보기의 좌측 패널. 진입점이 많은 솔루션을 위해 라우트·동사·컨트롤러로 거른다. */
-export function EntryPointList({
-  entryPoints,
-  selectedEndpointId,
-  emptyMessage,
-  classIdOfMethod,
-  candidateCount,
-  onShowDiagnostics,
-  onSelect,
-}: EntryPointListProps) {
-  const { t } = useI18n()
-  const [keyword, setKeyword] = useState('')
-  /** 기본 접힘 상태를 뒤집은 그룹. 목록이 짧으면 펼침이 기본이라 여기 든 것이 접힌 것이다. */
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
-  const filtered = useMemo(() => {
-    const needle = keyword.trim().toLowerCase()
-    if (!needle) return entryPoints
-    return entryPoints.filter((entryPoint) =>
-      entryPoint.route.toLowerCase().includes(needle) ||
-      entryPoint.httpMethod.toLowerCase().includes(needle) ||
-      (classIdOfMethod?.(entryPoint.nodeId) ?? '').toLowerCase().includes(needle) ||
-      entryPoint.handlerDisplayName.toLowerCase().includes(needle))
-  }, [entryPoints, keyword, classIdOfMethod])
-
-  const groups = useMemo(
-    () => groupByController(filtered, classIdOfMethod, t('side.unknownClass')),
-    [filtered, classIdOfMethod, t])
-  // 컨트롤러가 많으면 접힌 채로 시작한다. 검색 중에는 결과가 보여야 하므로 항상 펼친다.
-  const collapsedByDefault = groups.length > collapseGroupsAbove && keyword.trim().length === 0
-
-  return (
-    <div className="side-list">
-      {entryPoints.length > 0 && (
-        <input
-          className="side-search"
-          value={keyword}
-          onChange={(event) => setKeyword(event.target.value)}
-          placeholder={t('side.entrySearch')}
-          aria-label={t('side.entrySearch')}
-        />
-      )}
-      {entryPoints.length === 0 && <div className="panel-message">{emptyMessage}</div>}
-      {entryPoints.length > 0 && filtered.length === 0 && (
-        <div className="panel-message">{t('side.entryPointsEmpty')}</div>
-      )}
-      {candidateCount > 0 && (
-        <div className="side-footnote">
-          {t('side.nonHttpUnits', { count: candidateCount })}
-          <button type="button" className="link-button" onClick={onShowDiagnostics}>
-            {t('hint.seeDiagnostics')}
-          </button>
-        </div>
-      )}
-      {groups.map(([classId, items]) => {
-        const open = expanded.has(classId) !== collapsedByDefault
-        return (
-          <div key={classId}>
-            <button
-              type="button"
-              className="side-group toggle"
-              aria-expanded={open}
-              onClick={() => setExpanded((current) => {
-                const next = new Set(current)
-                if (!next.delete(classId)) next.add(classId)
-                return next
-              })}
-            >
-              <span className="grow">{classId.split('.').pop() ?? classId}</span>
-              <span className="count">{items.length}</span>
-            </button>
-            {open && items.map((entryPoint) => (
-        <button
-          type="button"
-          key={entryPoint.endpointId}
-          className={`side-item${selectedEndpointId === entryPoint.endpointId ? ' selected' : ''}`}
-          onClick={() => onSelect(entryPoint)}
-          title={[entryPoint.nodeId, ...entryPoint.notes].join(String.fromCharCode(10))}
-        >
-          <span className={`http ${entryPoint.httpMethod.toLowerCase()}`}>{entryPoint.httpMethod}</span>
-          <span className="grow">{entryPoint.route}</span>
-          {(entryPoint.apiVersions ?? []).map((version) => (
-            <span key={version} className="chip small" title={t('detail.apiVersionTitle')}>
-              {t('detail.apiVersion', { version })}
-            </span>
-          ))}
-          {entryPoint.source === 'MinimalApi' && (
-            <span className="chip small" title={t('chip.minimalApiTitle')}>{t('chip.minimalApi')}</span>
-          )}
-          {entryPoint.confidence === 'Estimated' && (
-            <span
-              className="chip small warn"
-              title={[t('chip.estimatedTitle'), ...entryPoint.notes].join(String.fromCharCode(10))}
-            >
-              {t('chip.estimated')}
-            </span>
-          )}
-        </button>
-            ))}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
 
 interface NamespacePanelProps {
   namespaces: GraphNamespaceSummary[]
@@ -317,57 +178,53 @@ export function NamespacePanel({
 
 interface FlowSidePanelProps {
   entryPoints: EntryPoint[]
-  classes: GraphClass[]
   classIdOfMethod: (nodeId: string) => string | undefined
   flowEntryId: string | null
+  sort: EntrySort
+  onChangeSort: (sort: EntrySort) => void
+  groupBy: EntryGroupBy
   onSelectMap: () => void
   onSelectEntry: (entryPoint: EntryPoint) => void
 }
 
-/** 전체 흐름도의 좌측 패널. 맨 위가 전체 지도이고, 그 아래는 컨트롤러별 진입점 목록이다. */
+/** 전체 흐름도의 좌측 패널. 맨 위가 전체 지도이고, 그 아래는 호출 흐름과 같은 진입점 목록이다. */
 export function FlowSidePanel({
   entryPoints,
-  classes,
   classIdOfMethod,
   flowEntryId,
+  sort,
+  onChangeSort,
+  groupBy,
   onSelectMap,
   onSelectEntry,
 }: FlowSidePanelProps) {
   const { t } = useI18n()
-  const classNameById = useMemo(() => new Map(classes.map((item) => [item.id, item.name])), [classes])
-  const byController = useMemo(
-    () => groupByController(entryPoints, classIdOfMethod, t('side.unknownClass')),
-    [entryPoints, classIdOfMethod, t])
+  // 전체 흐름도는 노드 ID로 고르므로 같은 노드를 가리키는 엔드포인트 중 첫 번째를 선택 표시로 쓴다.
+  const selectedEndpointId = flowEntryId
+    ? entryPoints.find((item) => item.nodeId === flowEntryId)?.endpointId ?? null
+    : null
 
   return (
-    <div className="side-list">
-      <button
-        type="button"
-        className={`side-item${flowEntryId === null ? ' selected' : ''}`}
-        onClick={onSelectMap}
-      >
-        <span className="grow">{t('side.entryMap')}</span>
-        <span className="count">{entryPoints.length}</span>
-      </button>
-      {entryPoints.length === 0 && <div className="panel-message">{t('side.entryPointsEmpty')}</div>}
-      {byController.map(([classId, items]) => (
-        <div key={classId}>
-          <div className="side-group">{classNameById.get(classId) ?? classId}</div>
-          {items.map((entryPoint) => (
-            <button
-              type="button"
-              key={`${entryPoint.httpMethod} ${entryPoint.route} ${entryPoint.nodeId}`}
-              className={`side-item${flowEntryId === entryPoint.nodeId ? ' selected' : ''}`}
-              onClick={() => onSelectEntry(entryPoint)}
-              title={entryPoint.nodeId}
-            >
-              <span className={`http ${entryPoint.httpMethod.toLowerCase()}`}>{entryPoint.httpMethod}</span>
-              <span className="grow">{entryPoint.route}</span>
-            </button>
-          ))}
-        </div>
-      ))}
-    </div>
+    <EntryPointList
+      entryPoints={entryPoints}
+      selectedEndpointId={selectedEndpointId}
+      onSelect={onSelectEntry}
+      emptyMessage={t('side.entryPointsEmpty')}
+      classIdOfMethod={classIdOfMethod}
+      sort={sort}
+      onChangeSort={onChangeSort}
+      groupBy={groupBy}
+      header={(
+        <button
+          type="button"
+          className={`side-item${flowEntryId === null ? ' selected' : ''}`}
+          onClick={onSelectMap}
+        >
+          <span className="grow">{t('side.entryMap')}</span>
+          <span className="count">{entryPoints.length}</span>
+        </button>
+      )}
+    />
   )
 }
 

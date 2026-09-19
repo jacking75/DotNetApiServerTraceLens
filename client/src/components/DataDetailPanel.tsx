@@ -17,13 +17,22 @@ interface DataDetailPanelProps {
   onShowFlow: (nodeId: string) => void
   /** `파일:줄`을 누르면 코드 보기를 그 위치로 옮긴다. */
   onOpenSource: (location: SourceLocation) => void
+  /** Shift+클릭·컨텍스트 메뉴로 에디터에서 연다. */
+  onOpenInEditor: (location: SourceLocation) => void
 }
 
 /**
  * DB·캐시와 미들웨어 보기에서 고른 항목의 상세.
  * 점검 항목은 "무엇이 걸렸나 → 판정 근거 → 왜 문제인가 → 제안" 순서로 보여준다.
  */
-export function DataDetailPanel({ graph, selection, onSelect, onShowFlow, onOpenSource }: DataDetailPanelProps) {
+export function DataDetailPanel({
+  graph,
+  selection,
+  onSelect,
+  onShowFlow,
+  onOpenSource,
+  onOpenInEditor,
+}: DataDetailPanelProps) {
   const { t, lang } = useI18n()
   const data = graph.dataAccess
   const pipeline = graph.middleware
@@ -39,6 +48,7 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow, onOpen
         onSelect={onSelect}
         onShowFlow={onShowFlow}
         onOpenSource={onOpenSource}
+        onOpenInEditor={onOpenInEditor}
       />
     )
   }
@@ -54,7 +64,14 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow, onOpen
             : <span className="sev critical">{t('dd.checkCompensation')}</span>}
           <h3>{path.methodDisplayName}</h3>
         </div>
-        <div className="detail-path">{path.file}:{path.startLine}</div>
+        <div className="detail-path">
+          <SourceLink
+            file={path.file}
+            line={path.startLine}
+            onOpen={onOpenSource}
+            onOpenInEditor={onOpenInEditor}
+          />
+        </div>
         <Section title={t('dd.verdict')}><p>{path.note}</p></Section>
         <Section title={t('dd.stepByStep')}>
           <div className="chain">
@@ -135,7 +152,12 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow, onOpen
               <button type="button" className="link" onClick={() => onSelect({ type: 'method', key: access.methodNodeId })}>
                 {access.methodDisplayName}
               </button>
-              <span className="note">{access.file}:{access.line}</span>
+              <SourceLink
+                file={access.file}
+                line={access.line}
+                onOpen={onOpenSource}
+                onOpenInEditor={onOpenInEditor}
+              />
               {access.confidence === 'Estimated' && <span className="chip small warn">{t('dd.estimated')}</span>}
               {access.transactionWrapper.length > 0 && (
                 <span className="chip small">{t('dd.transactionWrapper', { name: access.transactionWrapper })}</span>
@@ -167,7 +189,11 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow, onOpen
           })}
           {rule.shardOnly ? t('dd.shardOnly') : ''}
         </div>
-        <Section title={t('dd.ruleDescription')}><p>{ruleText(rule, lang).description}</p></Section>
+        <Section title={t('dd.ruleDescription')}>
+          <p>{ruleText(rule, lang).description}</p>
+          {/* "검사했는데 안 걸렸다"와 "그 입력을 애초에 읽지 않았다"는 다르다. 범위를 한 줄로 적는다. */}
+          <p className="dim">{t(`rule.scope.${rule.scope ?? 'SqlAndConfiguredApis'}` as const)}</p>
+        </Section>
         {!rule.enabled && (
           <Section title={t('dd.notCheckedTitle')}>
             <p>
@@ -182,11 +208,67 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow, onOpen
           {hits.map((finding) => (
             <div key={finding.id} style={{ marginBottom: 6 }}>
               <button type="button" className="btn sm" onClick={() => onSelect({ type: 'finding', key: finding.id })}>
-                <SourceLink file={finding.file} line={finding.line} onOpen={onOpenSource} />
+                <SourceLink
+                  file={finding.file}
+                  line={finding.line}
+                  onOpen={onOpenSource}
+                  onOpenInEditor={onOpenInEditor}
+                />
               </button>
             </div>
           ))}
         </Section>
+      </div>
+    )
+  }
+
+  if (selection.type === 'mvcFilter') {
+    const filter = (pipeline?.filters ?? []).find((item) => item.id === selection.key)
+    if (!filter) return <div className="panel-message">{t('dd.filterMissing')}</div>
+    return (
+      <div className="detail-body">
+        <div className="detail-title">
+          <h3>{filter.name}</h3>
+          <span className="chip small">{t(`mw.filterScope.${filter.scope}` as const)}</span>
+          {filter.confidence === 'Estimated' && <span className="chip small warn">{t('dd.estimated')}</span>}
+        </div>
+        <div className="detail-path">
+          {filter.implementationFile
+            ? (
+              <SourceLink
+                file={filter.implementationFile}
+                line={filter.implementationLine}
+                onOpen={onOpenSource}
+                onOpenInEditor={onOpenInEditor}
+              />
+            )
+            : t('dd.frameworkImpl')}
+          <br />
+          {t('dd.registeredAtLabel')}{' '}
+          <SourceLink
+            file={filter.registrationFile}
+            line={filter.registrationLine}
+            onOpen={onOpenSource}
+            onOpenInEditor={onOpenInEditor}
+          />
+        </div>
+        <Section title={t('dd.filterKinds')}>
+          <p>{filter.kinds.length > 0 ? filter.kinds.join(' · ') : t('dd.filterKindUnknown')}</p>
+        </Section>
+        {filter.appliesTo && <Section title={t('dd.filterAppliesTo')}><p>{filter.appliesTo}</p></Section>}
+        <Section title={t('dd.onRequest')}><p>{filter.pre ?? '—'}</p></Section>
+        <Section title={t('dd.onResponse')}><p>{filter.post ?? t('dd.noPost')}</p></Section>
+        <Section title={t('dd.shortCircuit')}>
+          <p>
+            {filter.shortCircuit
+              ? t('dd.shortCircuitNote', {
+                condition: filter.shortCircuit.condition || t('mw.conditionUnknown'),
+                status: filter.shortCircuit.statusCode,
+              })
+              : t('dd.noShortCircuit')}
+          </p>
+        </Section>
+        {filter.note && <Section title={t('dd.note')}><p>{filter.note}</p></Section>}
       </div>
     )
   }
@@ -202,9 +284,24 @@ export function DataDetailPanel({ graph, selection, onSelect, onShowFlow, onOpen
           {step.isDead && <span className="sev warn">{t('mw.dead')}</span>}
         </div>
         <div className="detail-path">
-          {step.implementationFile ?? t('dd.frameworkImpl')}
+          {step.implementationFile
+            ? (
+              <SourceLink
+                file={step.implementationFile}
+                line={step.implementationLine}
+                onOpen={onOpenSource}
+                onOpenInEditor={onOpenInEditor}
+              />
+            )
+            : t('dd.frameworkImpl')}
           <br />
-          {t('dd.registeredAt', { file: step.registrationFile, line: step.registrationLine })}
+          {t('dd.registeredAtLabel')}{' '}
+          <SourceLink
+            file={step.registrationFile}
+            line={step.registrationLine}
+            onOpen={onOpenSource}
+            onOpenInEditor={onOpenInEditor}
+          />
         </div>
         <Section title={t('dd.onRequest')}><p>{step.pre ?? '—'}</p></Section>
         <Section title={t('dd.onResponse')}>
@@ -271,6 +368,7 @@ function FindingDetail({
   onSelect,
   onShowFlow,
   onOpenSource,
+  onOpenInEditor,
 }: {
   finding: Finding
   data: DataAccessDocument | null
@@ -278,6 +376,7 @@ function FindingDetail({
   onSelect: (selection: Selection) => void
   onShowFlow: (nodeId: string) => void
   onOpenSource: (location: SourceLocation) => void
+  onOpenInEditor: (location: SourceLocation) => void
 }) {
   const { t } = useI18n()
   const rule = [...(data?.rules ?? []), ...(pipeline?.rules ?? [])].find((item) => item.id === finding.ruleId)
@@ -289,7 +388,12 @@ function FindingDetail({
       </div>
       <div className="detail-path">
         {finding.symbol}<br />
-        <SourceLink file={finding.file} line={finding.line} onOpen={onOpenSource} />
+        <SourceLink
+          file={finding.file}
+          line={finding.line}
+          onOpen={onOpenSource}
+          onOpenInEditor={onOpenInEditor}
+        />
       </div>
 
       <Section title={t('dd.whatFlagged')}><p>{finding.what}</p></Section>
@@ -299,6 +403,14 @@ function FindingDetail({
             <div className={`chain-step ${item.tone}`} key={`${item.head}${index}`}>
               {item.head}
               <span className="note mono">{item.detail}</span>
+              {item.file && (
+                <SourceLink
+                  file={item.file}
+                  line={item.line}
+                  onOpen={onOpenSource}
+                  onOpenInEditor={onOpenInEditor}
+                />
+              )}
               {item.note && <span className="note">{item.note}</span>}
             </div>
           ))}

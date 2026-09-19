@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    분석 대상 솔루션 안의 테스트 프로젝트다. TraceLens 자신의 테스트가 아니라 "분석되는 쪽"이다.
+    테스트 더블이 유일 구현체 판정을 깨지 않는지(T59) 확인하는 데만 쓴다.
+    패키지를 받지 않아도 되게 테스트 프레임워크 참조 없이 이름 규칙(`.Tests`)으로만 판정하게 둔다.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FixtureApp\FixtureApp.csproj" />
+  </ItemGroup>
+</Project>

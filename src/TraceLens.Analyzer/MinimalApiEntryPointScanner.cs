@@ -98,7 +98,7 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
 
         foreach (var registration in registrations.Where(item => item.PrefixOwner is null && item.HttpMethods.Count > 0))
         {
-            Emit(registration, registration.LocalPrefix, results, usedIds, notes, []);
+            Emit(registration, registration.LocalPrefix, results, usedIds, notes, [], registration.GroupPrefix);
         }
 
         // 등록자를 호출하는 쪽의 접두사를 따라 내려간다. 순환 방문은 막고, 제한을 넘으면 미해석 사유로 남긴다.
@@ -112,7 +112,7 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
                 foreach (var item in items.Where(item => item.HttpMethods.Count > 0))
                 {
                     var note = $"이 등록을 감싼 메서드 {registrar.Name}의 호출 지점을 찾지 못해 라우트 접두사를 확정하지 못했다.";
-                    Emit(item, item.LocalPrefix, results, usedIds, notes, [note]);
+                    Emit(item, item.LocalPrefix, results, usedIds, notes, [note], item.GroupPrefix);
                 }
 
                 continue;
@@ -131,7 +131,8 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
                         [
                             .. caller.Notes,
                             $"라우트 접두사를 등록자 {registrar.Name}의 호출 지점에서 채웠다(추정)."
-                        ]);
+                        ],
+                        EndpointIdentity.Append(caller.Prefix, item.GroupPrefix));
                 }
             }
         }
@@ -184,7 +185,8 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
         List<ScannedEntryPoint> results,
         HashSet<string> usedIds,
         List<string> scanNotes,
-        IReadOnlyList<string> extraNotes)
+        IReadOnlyList<string> extraNotes,
+        string groupPrefix)
     {
         var handler = registration.Handler;
         if (handler is null)
@@ -220,6 +222,7 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
                     RegistrationLine = registration.Line,
                     HandlerDisplayName = handler.DisplayName,
                     ProjectKey = registration.ProjectKey,
+                    GroupKey = groupPrefix,
                     Notes = notes
                 }));
         }
@@ -253,6 +256,7 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
             return new Registration(projectKey, file, line, [], null, HandlerKind.Unresolved, CallConfidence.Certain, [])
             {
                 LocalPrefix = registrarChain.Prefix,
+                GroupPrefix = registrarChain.Prefix,
                 PrefixOwner = null,
                 RegistrarCalls =
                 [
@@ -307,6 +311,7 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
         return new Registration(projectKey, file, line, httpMethods, handler, handlerKind, confidence, notes)
         {
             LocalPrefix = localRoute,
+            GroupPrefix = chain.Prefix,
             PrefixOwner = chain.Complete ? null : FindEnclosingMethod(model, invocation, cancellationToken),
             RegistrarCalls = []
         };
@@ -587,6 +592,9 @@ public sealed class MinimalApiEntryPointScanner(ILogger<MinimalApiEntryPointScan
         IReadOnlyList<string> Notes)
     {
         public string LocalPrefix { get; init; } = string.Empty;
+
+        /// <summary>이 등록을 감싼 <c>MapGroup</c> 접두사. 목록에서 묶는 기준이 된다.</summary>
+        public string GroupPrefix { get; init; } = string.Empty;
 
         public IMethodSymbol? PrefixOwner { get; init; }
 

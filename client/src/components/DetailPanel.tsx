@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { classMembers, memberKey, memberSign, shortenNamespace, stereotypeOf } from '../graph/classDiagram'
 import { relationLabels, type ClassRelation, type RelationType } from '../graph/relations'
 import { findStartupStep } from '../graph/startupFlow'
@@ -14,16 +14,13 @@ import type {
   GraphNamespaceSummary,
   Selection,
 } from '../types/graph'
-import type { SourceTarget } from './CodePanel'
 import { confidenceLabel } from '../i18n/labels'
 import { HelpLink, type GlossaryTerm } from './HelpDialog'
 import { SourceLink, type SourceLocation } from './SourceLink'
 import { kindColors } from './kindColors'
 
-const SourceView = lazy(() => import('./CodePanel').then((module) => ({ default: module.SourceView })))
-
-/** `파일:줄`로 온 위치 주변에 함께 보여 줄 줄 수. 호출 한 줄만 보면 문맥을 알 수 없다. */
-const callContextLines = 15
+/** 한 번에 그리는 목록 상한. 넘치면 "더 보기"로 늘린다(3000개짜리 pill 목록을 한 번에 그리지 않는다). */
+const listPageSize = 50
 
 export interface DetailActions {
   onSelect: (selection: Selection) => void
@@ -38,31 +35,32 @@ export interface DetailActions {
   onOpenSource: (location: SourceLocation) => void
   /** Shift+클릭·컨텍스트 메뉴로 에디터에서 연다. */
   onOpenInEditor: (location: SourceLocation) => void
+  /** 이 메서드를 부르는 쪽으로 자라는 창을 호출 흐름에 연다. */
+  onShowCallerWindow: (nodeId: string) => void
 }
 
 interface DetailPanelProps {
   graph: GraphDocument | null
-  /** `파일:줄`을 눌러 연 위치. 없으면 선택한 항목의 선언 위치를 보여 준다. */
-  sourceTarget?: SourceLocation | null
-  /** 화면 테마. 코드 보기(Monaco)가 함께 따라야 라이트 테마에서 대비가 유지된다. */
-  theme?: 'dark' | 'light'
   selection: Selection | null
   relations: ClassRelation[]
   namespaces: GraphNamespaceSummary[]
   entryPoints: EntryPoint[]
   namespacePrefix: string
+  /** App이 한 번만 만든 인접 색인. 선택할 때마다 전체 엣지를 다시 훑지 않게 받는다. */
+  incomingByNode: Map<string, string[]>
+  outgoingByNode: Map<string, string[]>
   actions: DetailActions
 }
 
 export function DetailPanel({
   graph,
-  sourceTarget = null,
-  theme = 'dark',
   selection,
   relations,
   namespaces,
   entryPoints,
   namespacePrefix,
+  incomingByNode,
+  outgoingByNode,
   actions,
 }: DetailPanelProps) {
   const { t } = useI18n()
@@ -86,8 +84,8 @@ export function DetailPanel({
           graph={graph}
           nodeId={selection.key}
           entryPoints={entryPoints}
-          sourceTarget={sourceTarget}
-          theme={theme}
+          incomingByNode={incomingByNode}
+          outgoingByNode={outgoingByNode}
           actions={actions}
         />
       )}
@@ -132,23 +130,19 @@ function StartupStepDetail({
   return (
     <>
       <div className="detail-title"><h3>{step.label}</h3></div>
-      <div className="detail-path">{step.file}:{step.line}</div>
+      <div className="detail-path">
+        <SourceLink
+          file={step.file}
+          line={step.line}
+          onOpen={actions.onOpenSource}
+          onOpenInEditor={actions.onOpenInEditor}
+        />
+      </div>
       <dl className="kv">
         <dt>{t('detail.kind')}</dt>
         <dd>{startupKindLabels[step.kind] ?? step.kind}</dd>
         {step.lifetime && <><dt>{t('detail.lifetime')}</dt><dd>{step.lifetime}</dd></>}
       </dl>
-
-      <div className="detail-section">
-        <h4>{t('detail.source')}</h4>
-        <Suspense fallback={<div className="panel-message">{t('detail.loadingSource')}</div>}>
-          <SourceView
-            target={{ file: step.file, startLine: step.line, endLine: step.line }}
-            height={160}
-            emptyMessage={t('detail.loadingSource')}
-          />
-        </Suspense>
-      </div>
 
       {(step.serviceTypeId || step.implementationTypeId) && (
         <div className="detail-section detail-actions">
@@ -199,7 +193,15 @@ function ClassDetail({
         <span className="dg-kind" style={{ background: kindColors[graphClass.kind] }} />
         <h3>{stereotype ? `«${stereotype}» ` : ''}{graphClass.name}</h3>
       </div>
-      <div className="detail-path">{graphClass.file}:{graphClass.startLine}-{graphClass.endLine}</div>
+      <div className="detail-path">
+        <SourceLink
+          file={graphClass.file}
+          line={graphClass.startLine}
+          endLine={graphClass.endLine}
+          onOpen={actions.onOpenSource}
+          onOpenInEditor={actions.onOpenInEditor}
+        />
+      </div>
       <dl className="kv">
         <dt>{t('detail.category')}</dt>
         <dd>{graphClass.kind}{graphClass.isAbstract ? ' · abstract' : ''}{graphClass.isStatic ? ' · static' : ''}</dd>
@@ -238,17 +240,6 @@ function ClassDetail({
       )}
       <MemberList title={t('detail.methods')} members={methods} graphClass={graphClass} actions={actions} />
 
-      <div className="detail-section">
-        <h4>{t('detail.source')}</h4>
-        <Suspense fallback={<div className="panel-message">{t('detail.loadingSource')}</div>}>
-          <SourceView
-            target={{ file: graphClass.file, startLine: graphClass.startLine, endLine: graphClass.endLine }}
-            height={220}
-            emptyMessage={t('detail.loadingSource')}
-          />
-        </Suspense>
-      </div>
-
       <div className="detail-section detail-actions">
         <button type="button" className="btn sm" onClick={() => actions.onFocusOnly(classId)}>{t('detail.focusOnly')}</button>
         <button type="button" className="btn sm" onClick={() => actions.onShowInDiagram(classId)}>{t('detail.showInDiagram')}</button>
@@ -266,15 +257,15 @@ function MethodDetail({
   graph,
   nodeId,
   entryPoints,
-  sourceTarget,
-  theme,
+  incomingByNode,
+  outgoingByNode,
   actions,
 }: {
   graph: GraphDocument
   nodeId: string
   entryPoints: EntryPoint[]
-  sourceTarget: SourceLocation | null
-  theme: 'dark' | 'light'
+  incomingByNode: Map<string, string[]>
+  outgoingByNode: Map<string, string[]>
   actions: DetailActions
 }) {
   const { t } = useI18n()
@@ -291,8 +282,10 @@ function MethodDetail({
 
   const graphClass = node ? graph.classes.find((item) => item.id === node.classId) : member?.graphClass
   const entry = entryPoints.find((item) => item.nodeId === nodeId)
-  const callees = graph.edges.filter((edge) => edge.from === nodeId).map((edge) => edge.to)
-  const callers = graph.edges.filter((edge) => edge.to === nodeId).map((edge) => edge.from)
+  /** 이 노드를 핸들러로 가리키는 진입점 수. 기반 클래스 액션이면 파생 수만큼 나온다. */
+  const sharedByDerived = entryPoints.filter((item) => item.nodeId === nodeId).length
+  const callees = outgoingByNode.get(nodeId) ?? []
+  const callers = incomingByNode.get(nodeId) ?? []
 
   // 이 메서드에 도달하는 HTTP 진입점이 하나라도 있는지. 없으면 호출 흐름에 그릴 자리가 없다.
   // "호출자가 없다 → 삭제해도 안전"이 아니다. 배치·컨슈머처럼 다른 경로로 실행될 수 있다(T29의 후보 집계).
@@ -300,19 +293,12 @@ function MethodDetail({
     if (!node) return true
     const entryIds = new Set(entryPoints.map((item) => item.nodeId))
     if (entryIds.has(nodeId)) return true
-    const incoming = new Map<string, string[]>()
-    for (const edge of graph.edges) {
-      const list = incoming.get(edge.to)
-      if (list) list.push(edge.from)
-      else incoming.set(edge.to, [edge.from])
-    }
-
     const seen = new Set([nodeId])
     const queue = [nodeId]
     while (queue.length > 0) {
       const current = queue.shift()!
       if (entryIds.has(current)) return true
-      for (const from of incoming.get(current) ?? []) {
+      for (const from of incomingByNode.get(current) ?? []) {
         if (seen.has(from)) continue
         seen.add(from)
         queue.push(from)
@@ -320,34 +306,30 @@ function MethodDetail({
     }
 
     return false
-  }, [graph.edges, entryPoints, nodeId, node])
-
-  // 호출 근거: 이 노드가 부르거나 이 노드를 부르는 확정 엣지의 실제 호출 줄.
-  const evidence = graph.callSites.filter(
-    (site) => site.to.length > 0 && (site.from === nodeId || site.to === nodeId))
-  // 경계: 확정하지 못해 엣지를 만들지 않은 호출. 목록이 비었다고 "호출 없음"이 아니다.
-  const boundaries = graph.callSites.filter((site) => site.to.length === 0 && site.from === nodeId)
+  }, [incomingByNode, entryPoints, nodeId, node])
 
   /**
-   * 지금 보는 파일 안의 호출 지점. 여백 표시를 누르면 그 호출의 대상 노드로 간다.
-   * 훅은 조건부 return보다 앞에 있어야 하므로 여기서 계산한다 —
-   * 보여 줄 파일은 `파일:줄`로 온 위치가 있으면 그 파일, 없으면 선택한 항목의 파일이다.
+   * 호출 근거: 이 노드가 부르거나 이 노드를 부르는 확정 엣지의 실제 호출 줄.
+   * 경계: 확정하지 못해 엣지를 만들지 않은 호출. 목록이 비었다고 "호출 없음"이 아니다.
+   * 선택할 때마다 callSites를 두 번 훑지 않도록 한 번에 갈라 담는다.
    */
-  const shownFile = sourceTarget?.file ?? node?.file ?? graphClass?.file ?? null
-  const callMarkers = useMemo(
-    () => shownFile === null
-      ? []
-      : graph.callSites
-        .filter((site) => site.from === nodeId && site.to.length > 0 && site.file === shownFile)
-        .map((site) => ({
-          line: site.line,
-          targetNodeId: site.to,
-          label: nodeNameById.get(site.to) ?? site.to,
-        })),
-    [graph.callSites, nodeId, shownFile, nodeNameById])
+  const { evidence, boundaries } = useMemo(() => {
+    const resolved: CallSite[] = []
+    const edges: CallSite[] = []
+    for (const site of graph.callSites) {
+      if (site.to.length === 0) {
+        if (site.from === nodeId) edges.push(site)
+        continue
+      }
+
+      if (site.from === nodeId || site.to === nodeId) resolved.push(site)
+    }
+
+    return { evidence: resolved, boundaries: edges }
+  }, [graph.callSites, nodeId])
 
   // 노드가 없으면(인터페이스 선언 등) 멤버 선언 줄을 대신 보여준다.
-  const target: SourceTarget | null = node
+  const target: { file: string; startLine: number; endLine: number } | null = node
     ? { file: node.file, startLine: node.startLine, endLine: node.endLine }
     : member && graphClass
       ? { file: graphClass.file, startLine: member.member.startLine, endLine: member.member.endLine }
@@ -356,21 +338,6 @@ function MethodDetail({
 
   const signature = member?.member.signature ?? node?.displayName ?? nodeId
   const returnType = member?.member.type || node?.returnType || ''
-
-  /**
-   * `파일:줄`을 눌러 온 위치가 있으면 그 구간(±15줄)을 보여 준다.
-   * 없으면 선택한 항목의 선언 구간이다.
-   */
-  const sourceView: SourceTarget = sourceTarget
-    ? {
-      file: sourceTarget.file,
-      startLine: Math.max(1, sourceTarget.line - callContextLines),
-      endLine: (sourceTarget.endLine ?? sourceTarget.line) + callContextLines,
-    }
-    : target
-
-  // 선언 줄만 강조한다. 예전에는 1행부터 끝까지 전체를 칠해 강조의 의미가 없었다.
-  const highlightLines = sourceTarget ? [sourceTarget.line] : [target.startLine]
 
   return (
     <>
@@ -424,6 +391,13 @@ function MethodDetail({
       {entry && entry.notes.length > 0 && (
         <div className="detail-hint"><b>{t('detail.entryPointNotes')}:</b> {entry.notes.join(' ')}</div>
       )}
+      {/*
+        기반 클래스에 선언한 액션은 파생 컨트롤러마다 진입점이 하나씩 생기지만 노드는 하나다.
+        호출 흐름이 N번 똑같이 보이는 이유를 여기서 말한다.
+      */}
+      {sharedByDerived > 1 && (
+        <div className="detail-hint">{t('detail.baseClassAction', { count: sharedByDerived })}</div>
+      )}
       {!reachedByEntryPoint && (
         <div className="detail-hint warn">{t('detail.noEntryPointReaches')}</div>
       )}
@@ -435,6 +409,11 @@ function MethodDetail({
       <PillSection
         title={t('detail.callers', { count: callers.length })}
         items={callers.map((id) => ({ label: nodeNameById.get(id) ?? id, onClick: () => actions.onSelect({ type: 'method', key: id }) }))}
+        extra={callers.length > 0 && (
+          <button type="button" className="link-button" onClick={() => actions.onShowCallerWindow(nodeId)}>
+            {t('detail.showCallerWindow')}
+          </button>
+        )}
       />
 
       <CallEvidenceSection
@@ -447,21 +426,6 @@ function MethodDetail({
         onOpenSource={actions.onOpenSource}
         onOpenInEditor={actions.onOpenInEditor}
       />
-
-      <div className="detail-section">
-        <h4>{t('detail.source')}</h4>
-        <Suspense fallback={<div className="panel-message">{t('detail.loadingSource')}</div>}>
-          <SourceView
-            target={sourceView}
-            theme={theme}
-            height={240}
-            emptyMessage={t('detail.loadingSource')}
-            highlightLines={highlightLines}
-            markers={callMarkers}
-            onSelectMarker={(marker) => actions.onSelect({ type: 'method', key: marker.targetNodeId })}
-          />
-        </Suspense>
-      </div>
 
       <div className="detail-section detail-actions">
         <button type="button" className="btn sm" onClick={() => actions.onShowFlow(nodeId)}>{t('detail.showFlowHere')}</button>
@@ -521,8 +485,9 @@ function CallEvidenceSection({
     <div className="detail-section">
       <h4>{t('detail.callEvidence', { count: evidence.length })}<HelpLink term="callSite" onOpen={onExplain} /></h4>
       <div className="detail-hint">{t('detail.callEvidenceHint')}</div>
-      <ul className="evidence-list">
-        {evidence.map((site, index) => (
+      <EvidenceList
+        items={evidence}
+        render={(site, index) => (
           <li key={`${site.from}-${site.to}-${site.file}-${site.line}-${index}`}>
             <span className="evidence-dir">{site.from === nodeId ? '→' : '←'}</span>
             <b>{nodeNameById.get(site.from === nodeId ? site.to : site.from) ?? (site.from === nodeId ? site.to : site.from)}</b>
@@ -533,13 +498,14 @@ function CallEvidenceSection({
             {site.viaLambda && <span className="chip small warn">{t('detail.viaLambda')}</span>}
             {site.note && <div className="detail-hint">{site.note}</div>}
           </li>
-        ))}
-      </ul>
+        )}
+      />
 
       <h4>{t('detail.boundaryCalls', { count: boundaries.length })}<HelpLink term="boundary" onOpen={onExplain} /></h4>
       <div className="detail-hint">{t('detail.boundaryHintFull')}</div>
-      <ul className="evidence-list">
-        {boundaries.map((site, index) => (
+      <EvidenceList
+        items={boundaries}
+        render={(site, index) => (
           <li key={`${site.file}-${site.line}-${index}`}>
             <b>{site.declaredTarget}</b>
             <SourceLink file={site.file} line={site.line} onOpen={onOpenSource} onOpenInEditor={onOpenInEditor} />
@@ -547,8 +513,8 @@ function CallEvidenceSection({
             {site.viaLambda && <span className="chip small warn">{t('detail.viaLambda')}</span>}
             {site.note && <div className="detail-hint">{site.note}</div>}
           </li>
-        ))}
-      </ul>
+        )}
+      />
     </div>
   )
 }
@@ -667,19 +633,64 @@ function MemberList({
   )
 }
 
-function PillSection({ title, items }: { title: string; items: Array<{ label: string; onClick: () => void }> }) {
+function PillSection({
+  title,
+  items,
+  extra,
+}: {
+  title: string
+  items: Array<{ label: string; onClick: () => void }>
+  /** 목록 머리에 붙일 버튼(호출자 창 보기 등). */
+  extra?: React.ReactNode
+}) {
   const { t } = useI18n()
+  // 호출자가 3000개인 메서드가 실제로 있다. 한 번에 다 그리면 선택만으로 화면이 멈춘다.
+  const [shown, setShown] = useState(listPageSize)
+  const visible = items.slice(0, shown)
+
   return (
     <div className="detail-section">
-      <h4>{title}</h4>
+      <h4>{title}{extra}</h4>
       <div className="pill-list">
         {items.length === 0 && <span className="pill">{t('detail.none')}</span>}
-        {items.map((item, index) => (
+        {visible.map((item, index) => (
           <button type="button" className="pill" key={`${item.label}-${index}`} onClick={item.onClick}>
             {item.label}
           </button>
         ))}
+        {items.length > shown && (
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => setShown((current) => current + listPageSize)}
+          >
+            {t('detail.showMore', { count: items.length - shown })}
+          </button>
+        )}
       </div>
     </div>
+  )
+}
+
+/** 근거·경계 목록도 같은 상한을 쓴다. 한 메서드의 근거가 수백 줄이면 상세가 스크롤 지옥이 된다. */
+function EvidenceList<T>({ items, render }: { items: readonly T[]; render: (item: T, index: number) => React.ReactNode }) {
+  const { t } = useI18n()
+  const [shown, setShown] = useState(listPageSize)
+
+  return (
+    <>
+      <ul className="evidence-list">
+        {items.slice(0, shown).map(render)}
+      </ul>
+      {items.length > shown && (
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => setShown((current) => current + listPageSize)}
+        >
+          {t('detail.showMore', { count: items.length - shown })}
+        </button>
+      )}
+    </>
   )
 }

@@ -181,12 +181,25 @@ export interface ImpactTestCandidate {
   evidence: string
 }
 
+/** 대상에서 전방으로 도달하는 저장소 쓰기. 접근 요약 전파를 그대로 쓴다. */
+export interface ImpactDataWrite {
+  nodeId: string
+  dataSource: string
+  target: string
+  operation: string
+  file: string
+  line: number
+  confidence: string
+}
+
 export interface ImpactResult {
   snapshotId: string
   targets: string[]
   endpoints: ImpactEndpoint[]
   unreachableTargets: string[]
   testCandidates: ImpactTestCandidate[]
+  /** 옛 서버에는 없다. 없으면 빈 목록으로 읽는다. */
+  dataWrites?: ImpactDataWrite[]
   truncated: boolean
   truncationReasons: string[]
   limitations: string[]

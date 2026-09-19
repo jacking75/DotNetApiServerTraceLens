@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { dataSourceTone } from '../graph/dataView'
+import type { EntryGroupBy, EntrySort } from '../graph/entryGroups'
 import type { DataViewState } from '../state/viewState'
 import type {
   DataAccessDocument,
@@ -11,6 +12,7 @@ import type {
 } from '../types/graph'
 import { useI18n } from '../i18n/I18nProvider'
 import { ruleText } from '../i18n/ruleText'
+import { EntryPointList } from './EntryPointList'
 import { MiddlewareStepRow } from './MiddlewareView'
 
 type DataTab = 'entries' | 'sources' | 'targets' | 'rules'
@@ -22,6 +24,10 @@ interface DataSidePanelProps {
   onChangeView: (patch: Partial<DataViewState>) => void
   selection: Selection | null
   onSelect: (selection: Selection) => void
+  classIdOfMethod?: (nodeId: string) => string | undefined
+  entrySort: EntrySort
+  onChangeEntrySort: (sort: EntrySort) => void
+  entryGroupBy: EntryGroupBy
 }
 
 export function DataSidePanel({
@@ -31,6 +37,10 @@ export function DataSidePanel({
   onChangeView,
   selection,
   onSelect,
+  classIdOfMethod,
+  entrySort,
+  onChangeEntrySort,
+  entryGroupBy,
 }: DataSidePanelProps) {
   const [tab, setTab] = useState<DataTab>('entries')
   const [search, setSearch] = useState('')
@@ -55,6 +65,10 @@ export function DataSidePanel({
   }, [data.findings])
 
   const { t, lang } = useI18n()
+  /** DB·캐시 보기는 노드 ID로 고른다. 같은 노드의 엔드포인트 중 첫 번째를 선택 표시로 쓴다. */
+  const selectedEndpointId = view.entryNodeId
+    ? entryPoints.find((item) => item.nodeId === view.entryNodeId)?.endpointId ?? null
+    : null
   const keyword = search.trim().toLowerCase()
   const matches = (value: string) => keyword.length === 0 || value.toLowerCase().includes(keyword)
 
@@ -74,6 +88,23 @@ export function DataSidePanel({
           {t('side.tab.rules')}
         </button>
       </div>
+      {tab === 'entries' && (
+        <EntryPointList
+          entryPoints={entryPoints}
+          selectedEndpointId={selectedEndpointId}
+          onSelect={(entry) => {
+            onChangeView({ sub: 'route', entryNodeId: entry.nodeId })
+            onSelect({ type: 'method', key: entry.nodeId })
+          }}
+          emptyMessage={t('side.entryPointsEmpty')}
+          classIdOfMethod={classIdOfMethod}
+          sort={entrySort}
+          onChangeSort={onChangeEntrySort}
+          groupBy={entryGroupBy}
+        />
+      )}
+      {tab !== 'entries' && (
+      <>
       <input
         className="side-search"
         value={search}
@@ -81,21 +112,6 @@ export function DataSidePanel({
         placeholder={t('side.search')}
       />
       <div className="side-list">
-        {tab === 'entries' && entryPoints.filter((entry) => matches(entry.route)).map((entry) => (
-          <button
-            type="button"
-            key={entry.nodeId}
-            className={`side-item${view.entryNodeId === entry.nodeId ? ' selected' : ''}`}
-            onClick={() => {
-              onChangeView({ sub: 'route', entryNodeId: entry.nodeId })
-              onSelect({ type: 'method', key: entry.nodeId })
-            }}
-          >
-            <span className={`http ${entry.httpMethod.toLowerCase()}`}>{entry.httpMethod}</span>
-            <span className="grow">{entry.route}</span>
-          </button>
-        ))}
-
         {tab === 'sources' && data.dataSources.filter((source) => matches(source.name)).map((source) => (
           <button
             type="button"
@@ -140,6 +156,8 @@ export function DataSidePanel({
           />
         )}
       </div>
+      </>
+      )}
     </>
   )
 }

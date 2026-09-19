@@ -124,6 +124,13 @@ public sealed record DataAccessScanResult(
     /// 접근이 0건인데 이것이 있으면 "DB를 안 쓴다"가 아니라 "우리가 못 읽었다"는 뜻이다.
     /// </summary>
     public IReadOnlyList<string> OrmTypeHints { get; init; } = [];
+
+    /// <summary>
+    /// ORM 타입을 참조한 자리 수(타입 이름별).
+    /// "EF Core는 안 읽었다"를 개수와 함께 말하려고 센다 — 호출 수가 아니라 <b>참조한 자리</b> 수다.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> OrmTypeHintCounts { get; init; } =
+        new Dictionary<string, int>(StringComparer.Ordinal);
 }
 
 /// <summary>
@@ -156,6 +163,7 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         var methods = new List<MethodDataFacts>();
         var accesses = new List<DataAccess>();
         var ormHints = new SortedSet<string>(StringComparer.Ordinal);
+        var ormHintCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         var transactions = new List<TransactionScopeInfo>();
         var dataSourceKinds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var seenAccesses = new HashSet<(string File, int Line, string Target, AccessOperation Operation)>();
@@ -186,22 +194,15 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
                 }
 
                 var (root, model) = (semantics.Root, semantics.Model);
-                CollectOrmHints(root, ormHints);
+                CollectOrmHints(root, ormHints, ormHintCounts);
 
-                foreach (var member in root.DescendantNodes().OfType<MemberDeclarationSyntax>())
+                // 스캔 단위는 메서드·생성자뿐 아니라 프로퍼티 getter/setter와 인덱서도 포함한다.
+                // 프로퍼티 getter 안의 쿼리는 실전에서 흔한데 예전에는 조용히 빠졌다(T55).
+                foreach (var (bodySyntax, symbol) in EnumerateScanUnits(root, model, cancellationToken))
                 {
-                    if (member is not (MethodDeclarationSyntax or ConstructorDeclarationSyntax))
-                    {
-                        continue;
-                    }
-
-                    if (model.GetDeclaredSymbol(member, cancellationToken) is not IMethodSymbol symbol)
-                    {
-                        continue;
-                    }
-
                     var facts = BuildFacts(
-                        member, symbol, model, config, relativePath, solutionDirectory, autoWrappers, cancellationToken);
+                        bodySyntax, symbol, model, config, relativePath, solutionDirectory, autoWrappers,
+                        cancellationToken);
                     if (facts is null)
                     {
                         continue;
@@ -235,7 +236,8 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             transactions.Count);
         return new DataAccessScanResult(methods, accesses, transactions, dataSourceKinds, methodDataSources)
         {
-            OrmTypeHints = [.. ormHints]
+            OrmTypeHints = [.. ormHints],
+            OrmTypeHintCounts = ormHintCounts
         };
     }
 
@@ -244,8 +246,102 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
     /// 심볼 해석 없이 구문만 보므로 비용이 거의 없고, 패키지가 없는 픽스처에서도 같은 판단을 한다.
     /// 여기서 모은 것은 <b>접근을 만들지 않는다</b> — "못 읽었다"를 말하는 데만 쓴다.
     /// </summary>
-    private static void CollectOrmHints(SyntaxNode root, SortedSet<string> hints)
+    /// <summary>
+    /// 본문을 훑을 단위와 그 심볼. 메서드·생성자·프로퍼티 접근자·인덱서 접근자를 한 줄로 낸다.
+    /// 프로퍼티 접근자의 심볼은 <c>get_X</c>/<c>set_X</c>라 노드 ID 규칙이 기존과 그대로 맞는다.
+    /// </summary>
+    private static IEnumerable<(SyntaxNode Body, IMethodSymbol Symbol)> EnumerateScanUnits(
+        SyntaxNode root, SemanticModel model, CancellationToken cancellationToken)
     {
+        foreach (var member in root.DescendantNodes().OfType<MemberDeclarationSyntax>())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            switch (member)
+            {
+                case MethodDeclarationSyntax method:
+                {
+                    var body = (SyntaxNode?)method.Body ?? method.ExpressionBody;
+                    if (body is not null && model.GetDeclaredSymbol(method, cancellationToken) is { } symbol)
+                    {
+                        yield return (body, symbol);
+                    }
+
+                    break;
+                }
+
+                case ConstructorDeclarationSyntax constructor:
+                {
+                    if (constructor.Body is { } body &&
+                        model.GetDeclaredSymbol(constructor, cancellationToken) is { } symbol)
+                    {
+                        yield return (body, symbol);
+                    }
+
+                    break;
+                }
+
+                case PropertyDeclarationSyntax property:
+                {
+                    // 식 본문 프로퍼티(`public int Count => Query(...);`)는 getter 하나다.
+                    if (property.ExpressionBody is { } expression &&
+                        model.GetDeclaredSymbol(property, cancellationToken)?.GetMethod is { } getter)
+                    {
+                        yield return (expression, getter);
+                    }
+
+                    foreach (var unit in EnumerateAccessors(property.AccessorList, model, cancellationToken))
+                    {
+                        yield return unit;
+                    }
+
+                    break;
+                }
+
+                case IndexerDeclarationSyntax indexer:
+                {
+                    if (indexer.ExpressionBody is { } expression &&
+                        model.GetDeclaredSymbol(indexer, cancellationToken)?.GetMethod is { } getter)
+                    {
+                        yield return (expression, getter);
+                    }
+
+                    foreach (var unit in EnumerateAccessors(indexer.AccessorList, model, cancellationToken))
+                    {
+                        yield return unit;
+                    }
+
+                    break;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<(SyntaxNode Body, IMethodSymbol Symbol)> EnumerateAccessors(
+        AccessorListSyntax? accessors, SemanticModel model, CancellationToken cancellationToken)
+    {
+        foreach (var accessor in accessors?.Accessors ?? default)
+        {
+            var body = (SyntaxNode?)accessor.Body ?? accessor.ExpressionBody;
+            if (body is null)
+            {
+                continue;
+            }
+
+            if (model.GetDeclaredSymbol(accessor, cancellationToken) is { } symbol)
+            {
+                yield return (body, symbol);
+            }
+        }
+    }
+
+    private static void CollectOrmHints(SyntaxNode root, SortedSet<string> hints, Dictionary<string, int> counts)
+    {
+        void Add(string hint)
+        {
+            hints.Add(hint);
+            counts[hint] = counts.GetValueOrDefault(hint) + 1;
+        }
+
         foreach (var type in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
         {
             foreach (var baseType in type.BaseList?.Types ?? default)
@@ -258,7 +354,7 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
                 };
                 if (name is "DbContext" or "IdentityDbContext")
                 {
-                    hints.Add("DbContext");
+                    Add("DbContext");
                 }
             }
         }
@@ -267,14 +363,17 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         {
             switch (name.Identifier.ValueText)
             {
+                case "DbSet":
+                    Add("DbSet<>");
+                    break;
                 case "IMongoCollection":
-                    hints.Add("IMongoCollection<>");
+                    Add("IMongoCollection<>");
                     break;
                 case "IMongoDatabase":
-                    hints.Add("IMongoDatabase");
+                    Add("IMongoDatabase");
                     break;
                 case "ISessionFactory":
-                    hints.Add("ISessionFactory");
+                    Add("ISessionFactory");
                     break;
             }
         }
@@ -329,7 +428,7 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
     }
 
     private MethodDataFacts? BuildFacts(
-        MemberDeclarationSyntax member,
+        SyntaxNode body,
         IMethodSymbol symbol,
         SemanticModel model,
         TraceLensConfig config,
@@ -338,16 +437,6 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         IReadOnlySet<string> autoWrappers,
         CancellationToken cancellationToken)
     {
-        SyntaxNode? body = member switch
-        {
-            MethodDeclarationSyntax method => (SyntaxNode?)method.Body ?? method.ExpressionBody,
-            ConstructorDeclarationSyntax constructor => constructor.Body,
-            _ => null
-        };
-        if (body is null)
-        {
-            return null;
-        }
 
         var wrapperCalls = CollectWrapperCalls(body, model, config, autoWrappers, cancellationToken);
         var sites = new List<DataCallSite>();
@@ -407,7 +496,9 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         }
 
         sites.Sort((left, right) => left.Position.CompareTo(right.Position));
-        var lineSpan = member.GetLocation().GetLineSpan();
+        // 선언 전체의 줄 범위. 본문만 받으므로 선언 노드(메서드·프로퍼티·접근자)까지 올라간다.
+        var declaration = body.FirstAncestorOrSelf<MemberDeclarationSyntax>() ?? body;
+        var lineSpan = declaration.GetLocation().GetLineSpan();
         var isAction = IsControllerAction(symbol);
         return new MethodDataFacts(
             SymbolNames.GetNodeId(symbol),
@@ -521,7 +612,8 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
         var isSql = statement is not null && SqlVerb.IsMatch(statement) && SqlClause.IsMatch(statement);
         var matchesQueryApi = PatternMatch.MatchesAny(calleeSymbol, options.QueryApis);
         var isSolutionMethod = InvocationResolver.IsSolutionMethod(method, solutionDirectory, config);
-        var isCacheApi = IsCacheApi(calleeSymbol, containingType, options, isSolutionMethod);
+        var cacheMatch = ClassifyCacheApi(calleeSymbol, containingType, options, isSolutionMethod);
+        var isCacheApi = cacheMatch != CacheMatch.None;
         var isConnectionOpen = IsConnectionOpen(calleeSymbol, containingType, method, options);
         var builder = isSql || matchesQueryApi
             ? null
@@ -576,6 +668,14 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
             {
                 confidence = FindingConfidence.Estimated;
                 note = cacheTarget.Note;
+            }
+
+            // 이름 패턴만으로 잡은 캐시는 외부 패키지의 임의 `…Cache` 타입일 수 있다. 추정으로 낮추고 사유를 적는다.
+            if (cacheMatch == CacheMatch.NamePattern)
+            {
+                confidence = FindingConfidence.Estimated;
+                var reason = $"타입 이름 패턴으로 캐시라고 봤다(`{containingType?.Name}`). 알려진 캐시 클라이언트가 아니다.";
+                note = note.Length == 0 ? reason : $"{note} {reason}";
             }
         }
         else if (builder is not null)
@@ -1029,7 +1129,32 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
     /// 호출자는 접근 요약 전파로 래퍼의 캐시 접근을 물려받으므로 쓰기 경로에는 계속 나타난다.
     /// 내부 래퍼를 굳이 클라이언트로 보고 싶으면 <c>db.cacheWrappers</c>에 적는다.
     /// </summary>
+    /// <summary>캐시 판정 결과. 무엇으로 잡았는지 함께 돌려줘야 확실도를 정할 수 있다.</summary>
+    private enum CacheMatch
+    {
+        None,
+
+        /// <summary>설정한 래퍼·API 패턴이나 알려진 클라이언트로 확정했다.</summary>
+        Known,
+
+        /// <summary>타입 이름에 Cache·Redis가 들어 있어 잡았다. 외부 패키지의 임의 타입일 수 있다.</summary>
+        NamePattern
+    }
+
+    /// <summary>알려진 캐시 클라이언트. 이 이름들로 잡은 것은 확정으로 본다.</summary>
+    private static readonly string[] KnownCacheClients =
+    [
+        "StackExchange.Redis", "IDistributedCache", "IMemoryCache", "CloudStructures", "IConnectionMultiplexer"
+    ];
+
     private static bool IsCacheApi(
+        string calleeSymbol,
+        INamedTypeSymbol? containingType,
+        DataAccessOptions options,
+        bool isSolutionMethod) =>
+        ClassifyCacheApi(calleeSymbol, containingType, options, isSolutionMethod) != CacheMatch.None;
+
+    private static CacheMatch ClassifyCacheApi(
         string calleeSymbol,
         INamedTypeSymbol? containingType,
         DataAccessOptions options,
@@ -1037,27 +1162,38 @@ public sealed class DataAccessScanner(DiResolver diResolver, ILogger<DataAccessS
     {
         if (containingType is null)
         {
-            return false;
+            return CacheMatch.None;
         }
 
         if (PatternMatch.MatchesAny(calleeSymbol, options.CacheWrappers))
         {
-            return true;
+            return CacheMatch.Known;
         }
 
         if (isSolutionMethod)
         {
-            return false;
+            return CacheMatch.None;
         }
 
         if (PatternMatch.MatchesAny(calleeSymbol, options.CacheApis))
         {
-            return true;
+            // `*Cache.*`·`*Redis*.*`처럼 넓은 기본 패턴에 걸린 것은 알려진 클라이언트일 때만 확정이다.
+            return IsKnownCacheClient(calleeSymbol, containingType) ? CacheMatch.Known : CacheMatch.NamePattern;
         }
 
         var typeName = containingType.Name;
         return typeName.Contains("Cache", StringComparison.OrdinalIgnoreCase) ||
-               typeName.Contains("Redis", StringComparison.OrdinalIgnoreCase);
+               typeName.Contains("Redis", StringComparison.OrdinalIgnoreCase)
+            ? CacheMatch.NamePattern
+            : CacheMatch.None;
+    }
+
+    private static bool IsKnownCacheClient(string calleeSymbol, INamedTypeSymbol containingType)
+    {
+        var full = containingType.ToDisplayString();
+        return KnownCacheClients.Any(known =>
+            full.Contains(known, StringComparison.Ordinal) ||
+            calleeSymbol.Contains(known, StringComparison.Ordinal));
     }
 
     private static bool IsConnectionOpen(

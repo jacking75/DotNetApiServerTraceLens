@@ -4,22 +4,28 @@ import { useI18n } from '../i18n/I18nProvider'
 interface SplitterProps {
   side: 'left' | 'right'
   columns: { left: number; right: number }
-  onDrag: (delta: number, start: { left: number; right: number }) => void
+  /** 드래그 중. CSS 변수만 바꾸고 state는 건드리지 않는다. 클램프한 폭을 돌려준다. */
+  onPreview: (delta: number, start: { left: number; right: number }) => { left: number; right: number }
+  /** 드래그가 끝난 뒤 한 번. 여기서만 state를 바꾼다. */
+  onCommit: (columns: { left: number; right: number }) => void
   onReset: () => void
 }
 
 /**
- * 3분할 패널 사이의 경계선. 드래그 중에는 CSS 변수만 바꾸고 state는 드래그가 끝날 때만 반영해야
- * 리렌더가 안 생겨서 부드럽게 움직인다(폭 계산과 클램프는 App의 applyColumns가 한다).
+ * 3분할 패널 사이의 경계선.
+ * 드래그 중에는 CSS 변수만 바꾸고 state는 드래그가 끝날 때 한 번만 반영한다 —
+ * pointermove마다 setState를 부르면 저장 effect·배치 계산·클래스 다이어그램이 연쇄로 돈다.
  */
-export function Splitter({ side, columns, onDrag, onReset }: SplitterProps) {
+export function Splitter({ side, columns, onPreview, onCommit, onReset }: SplitterProps) {
   const { t } = useI18n()
   const startRef = useRef({ x: 0, left: 0, right: 0 })
+  const latestRef = useRef(columns)
   const elementRef = useRef<HTMLDivElement>(null)
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault()
     startRef.current = { x: event.clientX, left: columns.left, right: columns.right }
+    latestRef.current = columns
     elementRef.current?.setPointerCapture(event.pointerId)
     elementRef.current?.classList.add('dragging')
     document.body.classList.add('resizing')
@@ -27,7 +33,7 @@ export function Splitter({ side, columns, onDrag, onReset }: SplitterProps) {
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!elementRef.current?.hasPointerCapture(event.pointerId)) return
-    onDrag(event.clientX - startRef.current.x, startRef.current)
+    latestRef.current = onPreview(event.clientX - startRef.current.x, startRef.current)
   }
 
   const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -35,6 +41,7 @@ export function Splitter({ side, columns, onDrag, onReset }: SplitterProps) {
     elementRef.current.releasePointerCapture(event.pointerId)
     elementRef.current.classList.remove('dragging')
     document.body.classList.remove('resizing')
+    onCommit(latestRef.current)
   }
 
   /** 마우스 없이도 폭을 바꿀 수 있어야 한다. 화살표 키 한 번에 16px, Home은 기본값으로 되돌린다. */
@@ -42,13 +49,13 @@ export function Splitter({ side, columns, onDrag, onReset }: SplitterProps) {
     const step = event.shiftKey ? 64 : 16
     if (event.key === 'ArrowLeft') {
       event.preventDefault()
-      onDrag(-step, columns)
+      onCommit(onPreview(-step, columns))
       return
     }
 
     if (event.key === 'ArrowRight') {
       event.preventDefault()
-      onDrag(step, columns)
+      onCommit(onPreview(step, columns))
       return
     }
 

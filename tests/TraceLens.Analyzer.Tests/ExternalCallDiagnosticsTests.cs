@@ -32,8 +32,13 @@ public sealed class ExternalCallDiagnosticsTests
         Assert.Equal(diagnostics.Calls.Resolved + diagnostics.Calls.Ambiguous + diagnostics.Calls.Unresolved, diagnostics.Calls.Inspected);
     }
 
+    /// <summary>
+    /// EF Core + Dapper 혼용이 실전에서 가장 흔하다.
+    /// 예전에는 접근이 0건일 때만 notes를 남겨서, SQL 리터럴 1건이 있으면
+    /// EF Core `DbSet`이 몇 곳이든 "EF Core는 안 읽었다"가 사라졌다(T55).
+    /// </summary>
     [Fact]
-    public async Task AnalyzeAsync_SaysWhyDataAccessIsEmpty()
+    public async Task AnalyzeAsync_SaysWhatItDidNotRead_EvenWhenSomeAccessesExist()
     {
         await using var provider = CreateProvider();
 
@@ -41,10 +46,26 @@ public sealed class ExternalCallDiagnosticsTests
 
         var data = result.Graph.DataAccess;
         Assert.NotNull(data);
-        Assert.Empty(data.Accesses);
+        Assert.NotEmpty(data.Accesses);
         Assert.Contains(data.Notes, note => note.Contains("DbContext", StringComparison.Ordinal));
+        // 개수를 함께 적어야 "몇 곳을 못 봤는지"를 알 수 있다.
+        Assert.Contains(data.Notes, note => note.Contains("곳", StringComparison.Ordinal));
         // 규칙은 실제로 돌았다. notes가 규칙 결과를 바꾸면 안 된다.
         Assert.NotEmpty(data.Rules);
+    }
+
+    /// <summary>프로퍼티 getter·접근자 본문 안의 쿼리도 접근으로 잡아야 한다(T55).</summary>
+    [Fact]
+    public async Task AnalyzeAsync_FindsAccessesInPropertyBodies()
+    {
+        await using var provider = CreateProvider();
+
+        var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureProjectPath());
+
+        var targets = result.Graph.DataAccess!.Accesses.Select(item => item.Target).ToArray();
+
+        Assert.Contains("pending_orders", targets);
+        Assert.Contains("archived_orders", targets);
     }
 
     private static ServiceProvider CreateProvider()

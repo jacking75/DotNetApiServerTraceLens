@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useModal } from '../hooks/useModal'
 import { useI18n } from '../i18n/I18nProvider'
 import type { McpSetupPreview } from '../types/context'
 
@@ -37,12 +38,7 @@ export function McpSetupDialog({ setup, onClose }: McpSetupDialogProps) {
   const { t } = useI18n()
   const tabs = [...setup.hosts.map((host) => host.host), 'agentGuide']
   const [tab, setTab] = useState(tabs[0])
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  const modalRef = useModal<HTMLDivElement>(onClose)
 
   const host = setup.hosts.find((item) => item.host === tab) ?? null
   const oneLiner = setup.oneLiners.find((item) => item.host === tab) ?? null
@@ -51,6 +47,7 @@ export function McpSetupDialog({ setup, onClose }: McpSetupDialogProps) {
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <div
         className="modal mcp-dialog"
+        ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-label={t('ask.mcpSetupTitle')}

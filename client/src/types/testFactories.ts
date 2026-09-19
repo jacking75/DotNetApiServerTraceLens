@@ -26,6 +26,9 @@ export function entryPoint(nodeId: string, httpMethod: string, route: string): E
     handlerDisplayName: nodeId,
     projectKey: '',
     notes: [],
+    groupKey: '',
+    hiddenFromApiExplorer: false,
+    authorization: null,
   }
 }
 

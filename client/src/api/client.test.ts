@@ -73,6 +73,7 @@ describe('normalizeGraph', () => {
         projectKey: 'Fixture',
         programFile: 'Program.cs',
         steps: [{ id: 'mw1', order: 1, name: 'UseRouting' } as never],
+        filters: [],
         findings: [],
         rules: [],
       },

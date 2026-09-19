@@ -31,6 +31,11 @@ interface SourceViewProps {
   /** 호출 지점 표시. 같은 줄에 여러 개면 목록으로 고르게 한다. */
   markers?: readonly SourceMarker[]
   onSelectMarker?: (marker: SourceMarker) => void
+  /**
+   * 지금 보는 내용이 분석 당시 스냅샷인지 그 뒤에 바뀐 현재 파일인지 머리에 적는다.
+   * 코드를 고친 직후가 도구를 가장 많이 쓰는 순간이라 이 구분이 없으면 잘못된 줄을 읽게 된다.
+   */
+  showVersion?: boolean
 }
 
 /** 지정한 파일 구간을 읽어 Monaco로 보여준다. 상세 패널의 "소스" 절에 끼워 넣어 쓴다. */
@@ -42,6 +47,7 @@ export function SourceView({
   highlightLines = [],
   markers = [],
   onSelectMarker,
+  showVersion = false,
 }: SourceViewProps) {
   const { t } = useI18n()
   const [source, setSource] = useState<SourceResponse | null>(null)
@@ -123,6 +129,12 @@ export function SourceView({
 
   return (
     <div className="source-view" style={{ height }}>
+      {showVersion && (
+        <div className={`source-version${source.sourceVersion === 'current' ? ' warn' : ''}`}>
+          {source.sourceVersion === 'current' ? t('code.versionCurrent') : t('code.versionSnapshot')}
+          {source.truncated && ` · ${t('code.truncated')}`}
+        </div>
+      )}
       {markerChoice && (
         <div className="marker-choice">
           <span className="hint">{t('source.pickCall')}</span>

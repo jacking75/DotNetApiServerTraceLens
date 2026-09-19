@@ -61,7 +61,8 @@ public sealed record TraceLensConfig(
     DataAccessOptions Db)
 {
     public static TraceLensConfig Default { get; } = new(
-        ["HttpGet", "HttpPost", "HttpPut", "HttpDelete", "HttpPatch"],
+        // HEAD·OPTIONS도 실제 라우트다. `[AcceptVerbs]`로 쓴 것만 잡히던 자리를 특성 이름으로도 잡는다.
+        ["HttpGet", "HttpPost", "HttpPut", "HttpDelete", "HttpPatch", "HttpHead", "HttpOptions"],
         [
             new("Controller", "ControllerBase", []),
             new("Repository", null, ["Repository"]),

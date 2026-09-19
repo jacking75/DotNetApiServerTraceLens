@@ -1,5 +1,6 @@
 import type { WalkthroughStepId } from '../components/GuidedWalkthrough'
 import type { DiagramLayoutMode } from '../graph/classDiagram'
+import { entrySorts, type EntrySort } from '../graph/entryGroups'
 import type { RelationType } from '../graph/relations'
 import type { TreeDirection } from '../graph/treeLayout'
 import type { FindingSeverity, Selection, ViewMode } from '../types/graph'
@@ -72,6 +73,54 @@ export interface PersistedState {
   fontScale: number
   /** 접어 둔 좌·우 패널. 접히면 세로 띠만 남고 캔버스가 그만큼 넓어진다. */
   collapsed: { left: boolean; right: boolean }
+  /** 진입점 목록의 정렬. 세 보기가 같은 값을 쓴다. */
+  entryListSort: EntrySort
+  /** 우측 열에서 보고 있던 탭. */
+  rightTab: RightTab
+  /** ★로 찍어 둔 자리. 대상 경로별로 최대 50개. */
+  bookmarks: Bookmark[]
+  /** 통합 찾기에서 최근에 고른 항목. 빈 입력일 때 보여 준다. */
+  quickFindRecent: string[]
+  /** 시작 흐름·미들웨어에서 고른 실행 프로젝트. */
+  projectKey: string | null
+}
+
+/** 우측 열의 탭. 코드 보기는 탭 위에 고정이라 여기 없다. */
+export type RightTab = 'detail' | 'impact' | 'ask'
+
+const rightTabs: readonly RightTab[] = ['detail', 'impact', 'ask']
+
+/** ★로 찍어 둔 자리. 어제 보던 자리로 돌아가는 가장 싼 방법이다. */
+export interface Bookmark {
+  /** 어느 분석 대상에서 찍었는지. 대상이 바뀌면 다른 목록을 본다. */
+  target: string
+  selection: Selection
+  label: string
+  at: string
+}
+
+/** 보관하는 북마크 수. 대상 하나당 이만큼이다. */
+export const maxBookmarks = 50
+
+/** 보관하는 최근 찾기 항목 수. */
+export const maxQuickFindRecent = 5
+
+/**
+ * 북마크를 더한다. 같은 선택은 위로 올리고 상한을 넘으면 오래된 것부터 버린다.
+ * 대상이 다른 북마크는 건드리지 않는다(대상을 오가며 써도 서로를 밀어내지 않게).
+ */
+export function addBookmark(current: readonly Bookmark[], item: Bookmark): Bookmark[] {
+  const sameTarget = current.filter((entry) => entry.target === item.target)
+  const others = current.filter((entry) => entry.target !== item.target)
+  const rest = sameTarget.filter((entry) =>
+    !(entry.selection.type === item.selection.type && entry.selection.key === item.selection.key))
+  return [...others, ...[item, ...rest].slice(0, maxBookmarks)]
+}
+
+/** 최근 찾기 항목을 더한다. 같은 항목은 위로 올린다. */
+export function pushRecentFind(current: readonly string[], id: string): string[] {
+  if (id.trim().length === 0) return [...current]
+  return [id, ...current.filter((item) => item !== id)].slice(0, maxQuickFindRecent)
 }
 
 export type ThemeSetting = 'system' | 'dark' | 'light'
@@ -131,6 +180,11 @@ export const defaultState: PersistedState = {
   theme: 'system',
   fontScale: 1,
   collapsed: { left: false, right: false },
+  entryListSort: 'route',
+  rightTab: 'detail',
+  bookmarks: [],
+  quickFindRecent: [],
+  projectKey: null,
 }
 
 /** 저장값에서 읽은 안내 진행. 알 수 없는 단계 ID는 버린다(단계가 바뀌어도 깨지지 않게). */
@@ -167,6 +221,16 @@ export function loadState(): PersistedState {
       theme: parsed.theme === 'dark' || parsed.theme === 'light' ? parsed.theme : 'system',
       fontScale: fontScales.includes(parsed.fontScale as typeof fontScales[number]) ? parsed.fontScale! : 1,
       collapsed: { ...defaultState.collapsed, ...parsed.collapsed },
+      entryListSort: entrySorts.includes(parsed.entryListSort as EntrySort) ? parsed.entryListSort! : 'route',
+      rightTab: rightTabs.includes(parsed.rightTab as RightTab) ? parsed.rightTab! : 'detail',
+      bookmarks: Array.isArray(parsed.bookmarks)
+        ? parsed.bookmarks.filter((item): item is Bookmark =>
+          typeof item?.target === 'string' && typeof item?.label === 'string' && item?.selection?.key !== undefined)
+        : [],
+      quickFindRecent: Array.isArray(parsed.quickFindRecent)
+        ? parsed.quickFindRecent.filter((item): item is string => typeof item === 'string').slice(0, maxQuickFindRecent)
+        : [],
+      projectKey: typeof parsed.projectKey === 'string' ? parsed.projectKey : null,
     }
   } catch {
     return defaultState

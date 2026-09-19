@@ -20,6 +20,7 @@ import type {
   BrowseResponse,
   EditorResponse,
   EntryPoint,
+  Finding,
   FreshnessResponse,
   GraphClass,
   GraphDocument,
@@ -122,6 +123,14 @@ export async function getGraph(): Promise<GraphDocument> {
  * 화면 코드가 `members`/`callSites`/`diagnostics`의 존재를 매번 확인하지 않아도 되게 하는 것이 목적이다.
  * 없던 정보를 추정으로 채우지는 않는다(모르는 것은 빈 값·null로 남긴다).
  */
+/** 근거 줄의 `파일:줄`은 v7 중간에 더했다. 없으면 링크를 그리지 않도록 빈 값으로 읽는다. */
+function normalizeFinding(finding: Finding): Finding {
+  return {
+    ...finding,
+    evidence: (finding.evidence ?? []).map((item) => ({ ...item, file: item.file ?? '', line: item.line ?? 0 })),
+  }
+}
+
 export function normalizeGraph(graph: GraphDocument): GraphDocument {
   const base: GraphDocument = {
     ...graph,
@@ -137,6 +146,8 @@ export function normalizeGraph(graph: GraphDocument): GraphDocument {
       ? {
           ...graph.middleware,
           steps: (graph.middleware.steps ?? []).map((item) => ({ ...item, kind: item.kind ?? 'Middleware' })),
+          findings: (graph.middleware.findings ?? []).map(normalizeFinding),
+          filters: graph.middleware.filters ?? [],
         }
       : graph.middleware,
     manifest: graph.manifest ?? null,
@@ -146,6 +157,7 @@ export function normalizeGraph(graph: GraphDocument): GraphDocument {
     dataAccess: graph.dataAccess
       ? {
           ...graph.dataAccess,
+          findings: (graph.dataAccess.findings ?? []).map(normalizeFinding),
           accesses: (graph.dataAccess.accesses ?? []).map((item) => ({
             ...item,
             confidence: item.confidence ?? 'Certain',
@@ -175,6 +187,9 @@ export function normalizeGraph(graph: GraphDocument): GraphDocument {
       registrationLine: item.registrationLine ?? 0,
       handlerDisplayName: item.handlerDisplayName ?? '',
       projectKey: item.projectKey ?? '',
+      groupKey: item.groupKey ?? '',
+      hiddenFromApiExplorer: item.hiddenFromApiExplorer ?? false,
+      authorization: item.authorization ?? null,
       notes: item.notes ?? [],
     })),
     nodes: (graph.nodes ?? []).map((item): GraphNode => ({
@@ -247,8 +262,12 @@ export function buildReport(body: {
   return postJson('/api/report', body)
 }
 
-export function getImpact(nodeIds: string[], expectedSnapshotId?: string): Promise<ImpactResult> {
-  return postJson('/api/impact', { nodeIds, expectedSnapshotId })
+export function getImpact(
+  nodeIds: string[],
+  expectedSnapshotId?: string,
+  timeoutMs?: number,
+): Promise<ImpactResult> {
+  return postJson('/api/impact', { nodeIds, expectedSnapshotId, timeoutMs })
 }
 
 export function listSnapshots(): Promise<SnapshotListResponse> {

@@ -1,0 +1,26 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+# 테스트 프로젝트를 함께 여는 솔루션이다. 기존 FixtureApp.sln의 기준 수치(노드·엣지 개수)를 흔들지 않도록
+# 분리해 둔다 — T59(테스트 더블이 유일 구현체 판정을 깨지 않는지)만 이 솔루션을 쓴다.
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FixtureApp", "FixtureApp\FixtureApp.csproj", "{A58A966A-F2FE-4D44-ABCB-C3B006227815}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FixtureApp.Tests", "FixtureApp.Tests\FixtureApp.Tests.csproj", "{6D2F5A1B-9C43-4A7E-8B21-0F4E5C7D8A90}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A58A966A-F2FE-4D44-ABCB-C3B006227815}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A58A966A-F2FE-4D44-ABCB-C3B006227815}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A58A966A-F2FE-4D44-ABCB-C3B006227815}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A58A966A-F2FE-4D44-ABCB-C3B006227815}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6D2F5A1B-9C43-4A7E-8B21-0F4E5C7D8A90}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6D2F5A1B-9C43-4A7E-8B21-0F4E5C7D8A90}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6D2F5A1B-9C43-4A7E-8B21-0F4E5C7D8A90}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6D2F5A1B-9C43-4A7E-8B21-0F4E5C7D8A90}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

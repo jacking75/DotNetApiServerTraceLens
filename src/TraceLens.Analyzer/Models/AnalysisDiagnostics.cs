@@ -6,7 +6,15 @@ public sealed record AnalyzedProject(
     string Path,
     bool Loaded,
     int ErrorCount,
-    IReadOnlyList<string> SampleErrors);
+    IReadOnlyList<string> SampleErrors)
+{
+    /// <summary>
+    /// 테스트 프로젝트로 보이는지(xunit·nunit·MSTest 참조 또는 <c>IsTestProject</c>).
+    /// 제외하지는 않는다 — 사용자가 테스트 코드의 호출도 보고 싶을 수 있다.
+    /// 유일 구현체 판정에서 테스트 더블을 후보에서 빼는 데만 쓴다(T59).
+    /// </summary>
+    public bool IsTest { get; init; }
+}
 
 /// <summary>
 /// 솔루션 밖(프레임워크·패키지) 호출을 네임스페이스로 묶은 집계다.

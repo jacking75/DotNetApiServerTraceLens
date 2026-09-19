@@ -66,7 +66,9 @@ public sealed class InvocationResolver(DiResolver diResolver, ILogger<Invocation
             }
 
             var call = Resolve(model, syntax, solutionDirectory, config, cancellationToken);
-            var extra = ResolveOverrideCall(call, solutionDirectory, config);
+            var extra = IsBaseQualifiedCall(syntax)
+                ? null
+                : ResolveOverrideCall(call, solutionDirectory, config);
             if (lambda is null)
             {
                 result.Add(call);
@@ -104,6 +106,17 @@ public sealed class InvocationResolver(DiResolver diResolver, ILogger<Invocation
     }
 
     /// <summary>
+    /// <c>base.Foo()</c>처럼 수신 객체가 <c>base</c>인 호출인지.
+    /// 이런 호출은 런타임 타입과 무관하게 <b>기반 선언</b>이 실행된다 — 재정의 추정 엣지를 만들면 안 된다.
+    /// 만들면 <c>Derived.Foo</c> 안의 <c>base.Foo()</c>가 자기 자신으로 가는 순환 엣지가 되어 재귀처럼 보인다.
+    /// </summary>
+    private static bool IsBaseQualifiedCall(SyntaxNode syntax) =>
+        syntax is InvocationExpressionSyntax
+        {
+            Expression: MemberAccessExpressionSyntax { Expression: BaseExpressionSyntax }
+        };
+
+    /// <summary>
     /// virtual·abstract 대상 호출이면 솔루션 안 재정의로 가는 <b>추가</b> 엣지를 만든다.
     /// 기반 선언으로 가는 직접 엣지는 그대로 둔다 — 실제로 어느 쪽이 실행될지는 런타임 타입이 정한다.
     /// 재정의가 여럿이면 확정하지 않고 경계로만 남긴다.
@@ -116,6 +129,12 @@ public sealed class InvocationResolver(DiResolver diResolver, ILogger<Invocation
         }
 
         if (!target.IsVirtual && !target.IsAbstract)
+        {
+            return null;
+        }
+
+        // sealed override는 더 아래로 재정의될 수 없다. 이 선언이 곧 실행될 것이라 추정 엣지가 필요 없다.
+        if (target.IsSealed)
         {
             return null;
         }

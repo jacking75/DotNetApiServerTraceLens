@@ -1,46 +1,63 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { searchGraph, type SearchHit } from '../graph/search'
+import { useModal } from '../hooks/useModal'
 import { useI18n } from '../i18n/I18nProvider'
+import type { Bookmark } from '../state/viewState'
 import type { GraphDocument } from '../types/graph'
 
 interface QuickFindProps {
   graph: GraphDocument | null
+  /** 최근에 고른 항목(`kind:id`). 빈 입력일 때 보여 준다. */
+  recent: string[]
+  /** ★로 찍어 둔 자리. 빈 입력일 때 최근과 함께 보여 준다. */
+  bookmarks: Bookmark[]
+  onPickBookmark: (bookmark: Bookmark) => void
   onPick: (hit: SearchHit) => void
   onClose: () => void
 }
 
 /**
- * `Ctrl+K` 통합 찾기. 진입점·클래스·메서드를 한 입력칸에서 찾는다.
+ * `Ctrl+K` 통합 찾기. 진입점·메서드·클래스·규칙·파일을 한 입력칸에서 찾는다.
  * 파일 트리 탐색기를 만들지 않고(설계 제약 1) 기존 탐색 축 안에서 검색만 넓히는 장치다.
  * 계산은 `graph/search.ts`의 순수 함수가 하고 여기서는 그리기만 한다.
  */
-export function QuickFind({ graph, onPick, onClose }: QuickFindProps) {
+export function QuickFind({ graph, recent, bookmarks, onPickBookmark, onPick, onClose }: QuickFindProps) {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
+  /** 구현체를 펼친 결과 줄. 인터페이스 멤버를 고르면 어디로 갈지 먼저 고르게 한다. */
+  const [expanded, setExpanded] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const modalRef = useModal<HTMLDivElement>(onClose)
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
   const result = useMemo(() => searchGraph(graph, query), [graph, query])
   const flat = useMemo(
-    () => [...result.entryPoints, ...result.methods, ...result.classes],
+    () => [...result.entryPoints, ...result.methods, ...result.classes, ...result.rules, ...result.files],
     [result])
 
-  useEffect(() => { setActive(0) }, [query])
+  useEffect(() => { setActive(0); setExpanded(null) }, [query])
 
   const groups: { key: string; label: string; hits: SearchHit[] }[] = [
     { key: 'entryPoints', label: t('panel.entryPoints'), hits: result.entryPoints },
     { key: 'methods', label: t('detail.methods'), hits: result.methods },
     { key: 'classes', label: t('detail.classes'), hits: result.classes },
+    { key: 'rules', label: `${t('quickFind.kindRule')} · ${t('quickFind.kindFinding')}`, hits: result.rules },
+    { key: 'files', label: t('quickFind.kindFile'), hits: result.files },
   ]
 
-  const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      onClose()
+  const pick = (hit: SearchHit) => {
+    // 구현체가 여럿이면 어디로 갈지 먼저 고르게 한다. 하나면 바로 간다.
+    if ((hit.implementations?.length ?? 0) > 1) {
+      setExpanded((current) => (current === hit.id ? null : hit.id))
       return
     }
 
+    onPick(hit)
+  }
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       if (flat.length === 0) return
@@ -51,9 +68,21 @@ export function QuickFind({ graph, onPick, onClose }: QuickFindProps) {
 
     if (event.key === 'Enter' && flat[active]) {
       event.preventDefault()
-      onPick(flat[active])
+      pick(flat[active])
     }
   }
+
+  /** 저장해 둔 `kind:id` 문자열을 결과 줄로 되돌린다. 그래프가 바뀌어 없어진 것은 고르면 조용히 넘어간다. */
+  const recentHits = useMemo(() => {
+    if (query.trim().length > 0) return []
+    return recent
+      .map((entry) => {
+        const colon = entry.indexOf(':')
+        if (colon <= 0) return null
+        return { kind: entry.slice(0, colon) as SearchHit['kind'], id: entry.slice(colon + 1) }
+      })
+      .filter((item): item is { kind: SearchHit['kind']; id: string } => item !== null)
+  }, [recent, query])
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -62,6 +91,7 @@ export function QuickFind({ graph, onPick, onClose }: QuickFindProps) {
         role="dialog"
         aria-modal="true"
         aria-label={t('find.title')}
+        ref={modalRef}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={onKeyDown}
       >
@@ -72,7 +102,43 @@ export function QuickFind({ graph, onPick, onClose }: QuickFindProps) {
           placeholder={t('find.placeholder')}
           aria-label={t('find.title')}
         />
-        {query.trim().length === 0 && <div className="hint">{t('find.hint')}</div>}
+        {query.trim().length === 0 && (
+          <>
+            <div className="hint">{t('find.hint')}</div>
+            <div className="hint">{t('quickFind.filterHint')}</div>
+            {bookmarks.length > 0 && (
+              <>
+                <div className="side-group">{t('bookmark.section')}</div>
+                {bookmarks.slice(0, 10).map((bookmark) => (
+                  <button
+                    key={`${bookmark.selection.type}:${bookmark.selection.key}`}
+                    type="button"
+                    className="find-row"
+                    onClick={() => onPickBookmark(bookmark)}
+                  >
+                    <span className="grow">{bookmark.label}</span>
+                    <span className="hint">{t(`selection.${bookmark.selection.type}` as const)}</span>
+                  </button>
+                ))}
+              </>
+            )}
+            {recentHits.length > 0 && (
+              <>
+                <div className="side-group">{t('quickFind.recent')}</div>
+                {recentHits.map((item) => (
+                  <button
+                    key={`${item.kind}:${item.id}`}
+                    type="button"
+                    className="find-row"
+                    onClick={() => onPick({ kind: item.kind, id: item.id, label: item.id, detail: '' })}
+                  >
+                    <span className="grow">{item.id}</span>
+                  </button>
+                ))}
+              </>
+            )}
+          </>
+        )}
         {query.trim().length > 0 && flat.length === 0 && (
           <div className="panel-message tight">{t('find.empty')}</div>
         )}
@@ -80,15 +146,31 @@ export function QuickFind({ graph, onPick, onClose }: QuickFindProps) {
           <div key={group.key}>
             <div className="side-group">{group.label}</div>
             {group.hits.map((hit) => (
-              <button
-                key={`${hit.kind}:${hit.id}`}
-                type="button"
-                className={`find-row${flat[active] === hit ? ' selected' : ''}`}
-                onClick={() => onPick(hit)}
-              >
-                <span className="grow">{hit.label}</span>
-                <span className="hint">{hit.detail}</span>
-              </button>
+              <div key={`${hit.kind}:${hit.id}`}>
+                <button
+                  type="button"
+                  className={`find-row${flat[active] === hit ? ' selected' : ''}`}
+                  onClick={() => pick(hit)}
+                >
+                  <span className="grow">{hit.label}</span>
+                  {(hit.implementations?.length ?? 0) > 0 && (
+                    <span className="chip small">
+                      {t('quickFind.implementations', { count: hit.implementations!.length })}
+                    </span>
+                  )}
+                  <span className="hint">{hit.detail}</span>
+                </button>
+                {expanded === hit.id && hit.implementations?.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="find-row nested"
+                    onClick={() => onPick({ kind: 'method', id: item.id, label: item.label, detail: '' })}
+                  >
+                    <span className="grow">{item.label}</span>
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
         ))}

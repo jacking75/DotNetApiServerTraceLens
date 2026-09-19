@@ -1,10 +1,19 @@
 import { useMemo, useState } from 'react'
 import { filterFindings } from '../graph/dataView'
 import type { MiddlewareViewState } from '../state/viewState'
-import type { MiddlewarePipelineDocument, MiddlewareStepInfo, Selection } from '../types/graph'
+import type {
+  Finding,
+  FindingSeverity,
+  MiddlewarePipelineDocument,
+  MiddlewareStepInfo,
+  MvcFilterInfo,
+  Selection,
+} from '../types/graph'
 import { useI18n } from '../i18n/I18nProvider'
 import { FindingTable, ruleName, SeverityBadge } from './DataAccessView'
 import { HelpLink, type GlossaryTerm } from './HelpDialog'
+import { ProjectPicker } from './ProjectPicker'
+import { SourceLink, type SourceLocation } from './SourceLink'
 
 interface MiddlewareViewProps {
   pipeline: MiddlewarePipelineDocument
@@ -12,19 +21,65 @@ interface MiddlewareViewProps {
   selection: Selection | null
   onSelect: (selection: Selection) => void
   onExplain: (term: GlossaryTerm) => void
+  onOpenSource: (location: SourceLocation) => void
+  onOpenInEditor: (location: SourceLocation) => void
+  projectKeys: string[]
+  projectKey: string | null
+  onChangeProject: (key: string) => void
 }
 
-export function MiddlewareView({ pipeline, view, selection, onSelect, onExplain }: MiddlewareViewProps) {
+/** 파이프라인 한 줄. 연속된 엔드포인트 등록은 한 묶음으로 접는다. */
+export type PipelineRow =
+  | { kind: 'step'; step: MiddlewareStepInfo }
+  | { kind: 'group'; steps: MiddlewareStepInfo[] }
+
+/**
+ * 연속된 엔드포인트 등록을 한 묶음으로 접는다.
+ * `MapControllers`·`MapGroup`·`MapGet` 50개가 각각 전체 카드로 그려지면 파이프라인이 50장이 된다.
+ * 한 개짜리 묶음은 접는 의미가 없어 그대로 카드로 둔다.
+ */
+export function foldEndpointRegistrations(steps: readonly MiddlewareStepInfo[]): PipelineRow[] {
+  const result: PipelineRow[] = []
+  for (const step of steps) {
+    if (step.kind !== 'EndpointRegistration') {
+      result.push({ kind: 'step', step })
+      continue
+    }
+
+    const last = result[result.length - 1]
+    if (last?.kind === 'group') last.steps.push(step)
+    else result.push({ kind: 'group', steps: [step] })
+  }
+
+  return result.map((item) =>
+    item.kind === 'group' && item.steps.length === 1 ? { kind: 'step' as const, step: item.steps[0] } : item)
+}
+
+export function MiddlewareView({
+  pipeline,
+  view,
+  selection,
+  onSelect,
+  onExplain,
+  onOpenSource,
+  onOpenInEditor,
+  projectKeys,
+  projectKey,
+  onChangeProject,
+}: MiddlewareViewProps) {
   const { t, lang } = useI18n()
   /** 펼쳐 둔 확장 메서드 단계. 기본은 접힘이라 파이프라인 한 줄이 한 등록으로 읽힌다. */
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  /** 펼쳐 둔 엔드포인트 등록 묶음. 묶음의 첫 단계 ID로 구분한다. */
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(() => new Set())
   const childCount = (stepId: string) => pipeline.steps.filter((item) => item.parentId === stepId).length
   const visibleSteps = pipeline.steps.filter((step) => !step.parentId || expanded.has(step.parentId))
+  const rows = useMemo(() => foldEndpointRegistrations(visibleSteps), [visibleSteps])
   const findings = useMemo(
     () => filterFindings(pipeline.findings, { severity: view.severity, onlyCertain: false }),
     [pipeline.findings, view.severity])
   const findingsByStep = useMemo(() => {
-    const map = new Map<string, typeof pipeline.findings>()
+    const map = new Map<string, Finding[]>()
     for (const finding of pipeline.findings) {
       if (!finding.stepId) continue
       const list = map.get(finding.stepId)
@@ -43,102 +98,177 @@ export function MiddlewareView({ pipeline, view, selection, onSelect, onExplain 
     return <ShortCircuitView pipeline={pipeline} onExplain={onExplain} />
   }
 
+  const toggleGroup = (id: string) => setOpenGroups((current) => {
+    const next = new Set(current)
+    if (!next.delete(id)) next.add(id)
+    return next
+  })
+
   return (
     <div className="data-view">
       <div className="pipe-head">
         <h3>{t('mw.title')}</h3>
         <span className="sub">{t('mw.lead')}</span>
+        <ProjectPicker projectKeys={projectKeys} projectKey={projectKey} onChange={onChangeProject} />
       </div>
 
-      {visibleSteps.map((step, index) => (
-        <div key={step.id} className={step.parentId ? 'mw-nested' : undefined}>
-          <div className="mwrow">
-            <div className="mwnum">{step.order}</div>
-            <button
-              type="button"
-              className={[
-                'mw-card',
-                step.kind !== 'Middleware' ? 'endpoint' : '',
-                step.kind === 'EndpointRegistration' ? 'registration' : '',
-                step.isDead ? 'dim' : '',
-                findingsByStep.get(step.id)?.some((finding) => finding.severity === 'Critical') ? 'bad' : '',
-                findingsByStep.get(step.id)?.some((finding) => finding.severity === 'Warning') ? 'warn' : '',
-                selection?.type === 'middlewareStep' && selection.key === step.id ? 'selected' : '',
-              ].filter(Boolean).join(' ')}
-              onClick={() => {
-                onSelect({ type: 'middlewareStep', key: step.id })
-                if (step.type !== 'Extension') return
-                setExpanded((current) => {
-                  const next = new Set(current)
-                  if (!next.delete(step.id)) next.add(step.id)
-                  return next
-                })
-              }}
-            >
-              <div className="mw-top">
-                <span className="mw-name">{step.name}</span>
-                <span className="tag">
-                  {step.type === 'Custom'
-                    ? t('mw.custom')
-                    : step.type === 'Extension' ? t('mw.extension') : t('mw.framework')}
-                </span>
-                {step.type === 'Extension' && childCount(step.id) > 0 && (
-                  <span className="tag">
-                    {expanded.has(step.id)
-                      ? t('data.collapse')
-                      : t('mw.expandChildren', { count: childCount(step.id) })}
-                  </span>
-                )}
-                {step.kind === 'EndpointRegistration' && <span className="tag">{t('mw.registration')}</span>}
-                {step.kind === 'Terminal' && <span className="tag">{t('mw.terminal')}</span>}
-                {step.condition && <span className="tag replica">{t('mw.conditional')}</span>}
-                {step.isDead && <span className="sev warn">{t('mw.dead')}</span>}
-                {findingsByStep.get(step.id)?.map((finding) => (
-                  <span
-                    className={`sev ${finding.severity.toLowerCase()}`}
-                    key={finding.id}
-                    title={[finding.ruleId, ruleName(finding.ruleId, pipeline.rules, lang)].filter(Boolean).join(' · ')}
+      {rows.map((row, index) => (
+        <div key={row.kind === 'group' ? `group-${row.steps[0].id}` : row.step.id}>
+          {row.kind === 'group'
+            ? (
+              <>
+                <div className="mwrow">
+                  <div className="mwnum">{row.steps[0].order}</div>
+                  <button
+                    type="button"
+                    className="mw-card endpoint registration"
+                    aria-expanded={openGroups.has(row.steps[0].id)}
+                    onClick={() => toggleGroup(row.steps[0].id)}
                   >
-                    {finding.ruleId} {ruleName(finding.ruleId, pipeline.rules, lang)}
-                  </span>
-                ))}
-                <span className="mw-reg">{step.registrationFile}:{step.registrationLine}</span>
+                    <div className="mw-top">
+                      <span className="mw-name">{t('mw.endpointGroup', { count: row.steps.length })}</span>
+                      <span className="tag">
+                        {openGroups.has(row.steps[0].id) ? t('mw.collapseGroup') : t('mw.expandGroup')}
+                      </span>
+                    </div>
+                    <div className="mw-line pre">
+                      <span className="dir">{t('mw.request')}</span>
+                      <span>{row.steps.map((item) => item.name).join(', ')}</span>
+                    </div>
+                  </button>
+                  <div className="mw-branch" />
+                </div>
+                {openGroups.has(row.steps[0].id) && (
+                  <ul className="mw-group-list">
+                    {row.steps.map((item) => (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => onSelect({ type: 'middlewareStep', key: item.id })}
+                        >
+                          {item.order}. {item.name}
+                        </button>{' '}
+                        <SourceLink
+                          file={item.registrationFile}
+                          line={item.registrationLine}
+                          onOpen={onOpenSource}
+                          onOpenInEditor={onOpenInEditor}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )
+            : (
+              <div className={row.step.parentId ? 'mw-nested' : undefined}>
+                <div className="mwrow">
+                  <div className="mwnum">{row.step.order}</div>
+                  <button
+                    type="button"
+                    className={[
+                      'mw-card',
+                      row.step.kind !== 'Middleware' ? 'endpoint' : '',
+                      row.step.kind === 'EndpointRegistration' ? 'registration' : '',
+                      row.step.isDead ? 'dim' : '',
+                      findingsByStep.get(row.step.id)?.some((finding) => finding.severity === 'Critical') ? 'bad' : '',
+                      findingsByStep.get(row.step.id)?.some((finding) => finding.severity === 'Warning') ? 'warn' : '',
+                      selection?.type === 'middlewareStep' && selection.key === row.step.id ? 'selected' : '',
+                    ].filter(Boolean).join(' ')}
+                    onClick={() => {
+                      onSelect({ type: 'middlewareStep', key: row.step.id })
+                      if (row.step.type !== 'Extension') return
+                      setExpanded((current) => {
+                        const next = new Set(current)
+                        if (!next.delete(row.step.id)) next.add(row.step.id)
+                        return next
+                      })
+                    }}
+                  >
+                    <div className="mw-top">
+                      <span className="mw-name">{row.step.name}</span>
+                      <span className="tag">
+                        {row.step.type === 'Custom'
+                          ? t('mw.custom')
+                          : row.step.type === 'Extension' ? t('mw.extension') : t('mw.framework')}
+                      </span>
+                      {row.step.type === 'Extension' && childCount(row.step.id) > 0 && (
+                        <span className="tag">
+                          {expanded.has(row.step.id)
+                            ? t('data.collapse')
+                            : t('mw.expandChildren', { count: childCount(row.step.id) })}
+                        </span>
+                      )}
+                      {row.step.kind === 'Terminal' && <span className="tag">{t('mw.terminal')}</span>}
+                      {row.step.condition && <span className="tag replica">{t('mw.conditional')}</span>}
+                      {row.step.isDead && <span className="sev warn">{t('mw.dead')}</span>}
+                      {findingsByStep.get(row.step.id)?.map((finding) => (
+                        <span
+                          className={`sev ${finding.severity.toLowerCase()}`}
+                          key={finding.id}
+                          title={[finding.ruleId, ruleName(finding.ruleId, pipeline.rules, lang)]
+                            .filter(Boolean).join(' · ')}
+                        >
+                          {finding.ruleId} {ruleName(finding.ruleId, pipeline.rules, lang)}
+                        </span>
+                      ))}
+                    </div>
+                    {row.step.pre && (
+                      <div className="mw-line pre">
+                        <span className="dir">{t('mw.request')}</span><span>{row.step.pre}</span>
+                      </div>
+                    )}
+                    {view.showPost && row.step.post && (
+                      <div className="mw-line post">
+                        <span className="dir">{t('mw.response')}</span><span>{row.step.post}</span>
+                      </div>
+                    )}
+                    {(row.step.contextAccesses.length > 0 || row.step.storeAccesses.length > 0) && (
+                      <div className="mw-io">
+                        {row.step.contextAccesses.map((access) => (
+                          <span
+                            className={`io ${access.mode === 'Read' ? 'r' : 'w'}`}
+                            key={`${access.mode}${access.target}`}
+                          >
+                            {access.mode === 'Read' ? t('mw.read') : t('mw.write')} {access.target}
+                          </span>
+                        ))}
+                        {row.step.storeAccesses.map((access) => (
+                          <span className="io store" key={access}>{access}</span>
+                        ))}
+                      </div>
+                    )}
+                    {row.step.filters.length > 0 && (
+                      <div className="mw-filters">
+                        {row.step.filters.map((filter) => (
+                          <span key={filter.name}>└ {filter.name} <span className="dim">{filter.detail}</span></span>
+                        ))}
+                      </div>
+                    )}
+                  </button>
+                  <div className="mw-branch">
+                    {row.step.shortCircuit && (
+                      // 조건식이 길면 배지 밖으로 넘친다. 두 줄까지 줄바꿈하고 나머지는 툴팁에 둔다.
+                      <div className="branch" title={row.step.shortCircuit.condition}>
+                        <span className="code">{row.step.shortCircuit.statusCode}</span>
+                        <span className="cond">{row.step.shortCircuit.condition}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {/* 등록 줄은 위 묶음 카드가 대신 그린다. `파일:줄`은 카드 밖에 둔다(버튼 안의 버튼을 피한다). */}
+                <div className="mw-reg">
+                  <SourceLink
+                    file={row.step.registrationFile}
+                    line={row.step.registrationLine}
+                    onOpen={onOpenSource}
+                    onOpenInEditor={onOpenInEditor}
+                  />
+                </div>
               </div>
-              {step.pre && (
-                <div className="mw-line pre"><span className="dir">{t('mw.request')}</span><span>{step.pre}</span></div>
-              )}
-              {view.showPost && step.post && (
-                <div className="mw-line post"><span className="dir">{t('mw.response')}</span><span>{step.post}</span></div>
-              )}
-              {(step.contextAccesses.length > 0 || step.storeAccesses.length > 0) && (
-                <div className="mw-io">
-                  {step.contextAccesses.map((access) => (
-                    <span className={`io ${access.mode === 'Read' ? 'r' : 'w'}`} key={`${access.mode}${access.target}`}>
-                      {access.mode === 'Read' ? t('mw.read') : t('mw.write')} {access.target}
-                    </span>
-                  ))}
-                  {step.storeAccesses.map((access) => (
-                    <span className="io store" key={access}>{access}</span>
-                  ))}
-                </div>
-              )}
-              {step.filters.length > 0 && (
-                <div className="mw-filters">
-                  {step.filters.map((filter) => (
-                    <span key={filter.name}>└ {filter.name} <span className="dim">{filter.detail}</span></span>
-                  ))}
-                </div>
-              )}
-            </button>
-            <div className="mw-branch">
-              {step.shortCircuit && (
-                <div className="branch">
-                  <span className="code">{step.shortCircuit.statusCode}</span> {step.shortCircuit.condition}
-                </div>
-              )}
-            </div>
-          </div>
-          {index < visibleSteps.length - 1 && <div className="pipe-arrow">↓</div>}
+            )}
+          {index < rows.length - 1 && <div className="pipe-arrow">↓</div>}
         </div>
       ))}
 
@@ -169,6 +299,14 @@ export function MiddlewareView({ pipeline, view, selection, onSelect, onExplain 
         </>
       )}
 
+      <FilterSection
+        filters={pipeline.filters ?? []}
+        selection={selection}
+        onSelect={onSelect}
+        onOpenSource={onOpenSource}
+        onOpenInEditor={onOpenInEditor}
+      />
+
       <div className="pipe-legend">
         <span><b className="pre-mark">{t('mw.request')}</b> {t('mw.legendPre')}</span>
         <span><b className="post-mark">{t('mw.response')}</b> {t('mw.legendPost')}</span>
@@ -177,6 +315,72 @@ export function MiddlewareView({ pipeline, view, selection, onSelect, onExplain 
           <span className="io w">{t('mw.write')}</span> {t('mw.legendIo')}
         </span>
       </div>
+    </div>
+  )
+}
+
+/**
+ * MVC 필터 절. 미들웨어 단계와 섞지 않고 파이프라인 아래에 전역 → 컨트롤러 → 액션 순으로 둔다.
+ * 요청이 컨트롤러에 닿기 전에 무엇이 도는지가 실행 순서 보기의 가장 큰 빈칸이었다.
+ */
+function FilterSection({
+  filters,
+  selection,
+  onSelect,
+  onOpenSource,
+  onOpenInEditor,
+}: {
+  filters: MvcFilterInfo[]
+  selection: Selection | null
+  onSelect: (selection: Selection) => void
+  onOpenSource: (location: SourceLocation) => void
+  onOpenInEditor: (location: SourceLocation) => void
+}) {
+  const { t } = useI18n()
+  if (filters.length === 0) return null
+
+  const order: Record<MvcFilterInfo['scope'], number> = { Global: 0, Controller: 1, Action: 2 }
+  const sorted = [...filters].sort((left, right) =>
+    order[left.scope] - order[right.scope] || (left.order ?? 0) - (right.order ?? 0))
+
+  return (
+    <div className="mw-filter-section">
+      <div className="pipe-head">
+        <h3>{t('mw.filters', { count: filters.length })}</h3>
+        <span className="sub">{t('mw.filtersHint')}</span>
+      </div>
+      <ol className="mw-filter-list">
+        {sorted.map((filter) => (
+          <li key={filter.id}>
+            <button
+              type="button"
+              className={`mw-card${selection?.type === 'mvcFilter' && selection.key === filter.id ? ' selected' : ''}`}
+              onClick={() => onSelect({ type: 'mvcFilter', key: filter.id })}
+            >
+              <div className="mw-top">
+                <span className="mw-name">{filter.name}</span>
+                <span className="tag">{t(`mw.filterScope.${filter.scope}` as const)}</span>
+                {filter.appliesTo && <span className="tag">{filter.appliesTo}</span>}
+                {filter.confidence === 'Estimated' && <span className="sev warn">{t('data.estimated')}</span>}
+              </div>
+              {filter.pre && (
+                <div className="mw-line pre"><span className="dir">{t('mw.request')}</span><span>{filter.pre}</span></div>
+              )}
+              {filter.post && (
+                <div className="mw-line post">
+                  <span className="dir">{t('mw.response')}</span><span>{filter.post}</span>
+                </div>
+              )}
+            </button>
+            <SourceLink
+              file={filter.implementationFile ?? filter.registrationFile}
+              line={filter.implementationFile ? filter.implementationLine : filter.registrationLine}
+              onOpen={onOpenSource}
+              onOpenInEditor={onOpenInEditor}
+            />
+          </li>
+        ))}
+      </ol>
     </div>
   )
 }
@@ -211,11 +415,16 @@ function ShortCircuitView({
         const skipped = pipeline.steps.slice(index + 1).filter((item) => !item.isDead)
         const stillRun = pipeline.steps.slice(0, index).filter((item) => item.post).reverse()
         return (
-          <div className={`sc-card${step.shortCircuit!.statusCode.startsWith('4') || step.shortCircuit!.statusCode.startsWith('5') ? ' bad' : ''}`} key={step.id}>
+          <div
+            className={`sc-card${step.shortCircuit!.statusCode.startsWith('4') || step.shortCircuit!.statusCode.startsWith('5') ? ' bad' : ''}`}
+            key={step.id}
+          >
             <div className="sc-head">
               <span className="code">{step.shortCircuit!.statusCode}</span>
               <span className="name">{step.name}</span>
-              <span className="tag">{step.shortCircuit!.condition || t('mw.conditionUnknown')}</span>
+              <span className="tag" title={step.shortCircuit!.condition}>
+                {step.shortCircuit!.condition || t('mw.conditionUnknown')}
+              </span>
               <span className="mw-reg">{step.registrationFile}:{step.registrationLine}</span>
             </div>
             <div className="sc-cols">
@@ -255,7 +464,7 @@ export function MiddlewareStepRow({
 }: {
   step: MiddlewareStepInfo
   selected: boolean
-  severity: 'Critical' | 'Warning' | 'Info' | null
+  severity: FindingSeverity | null
   onSelect: () => void
 }) {
   const { t } = useI18n()

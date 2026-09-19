@@ -14,10 +14,21 @@ interface FlowDiagramProps {
   onSelectClass: (classId: string) => void
   onSelectRow: (key: string, rowKind: 'route' | 'method') => void
   onZoomChange?: (zoom: number) => void
+  /** 지금 깊이·진입점 상태 그대로 SVG로 저장한다. */
+  onExportSvg?: (root: HTMLElement, size: { width: number; height: number }) => void
 }
 
 /** 전체 진입점 지도와 진입점 흐름을 같은 캔버스로 그린다. 차이는 박스 줄의 내용뿐이다. */
-export function FlowDiagram({ view, selection, zoom, shellRef, onSelectClass, onSelectRow, onZoomChange }: FlowDiagramProps) {
+export function FlowDiagram({
+  view,
+  selection,
+  zoom,
+  shellRef,
+  onSelectClass,
+  onSelectRow,
+  onZoomChange,
+  onExportSvg,
+}: FlowDiagramProps) {
   const { t } = useI18n()
   const layout = useMemo(() => layoutFlow(view), [view])
   const selectedKey = selection?.key ?? null
@@ -65,6 +76,7 @@ export function FlowDiagram({ view, selection, zoom, shellRef, onSelectClass, on
       onZoomChange={onZoomChange}
       onFitZoom={onZoomChange ? fitZoom : undefined}
       onViewportChange={onViewportChange}
+      onExportSvg={onExportSvg}
     >
       {visibleBoxes.map((box) => {
         const placed = layout.boxes.get(box.id)

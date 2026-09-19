@@ -84,24 +84,33 @@ public sealed class EntryPointScanner(
                         // 같은 메서드에 [HttpGet("a")] [HttpGet("b")]가 붙으면 라우트마다 엔드포인트가 하나씩 나온다.
                         // 클래스 [Route]도 여러 개일 수 있고 기반 클래스에 있을 수도 있다. 그 곱만큼 라우트가 나온다.
                         // [AcceptVerbs("GET", "POST")]는 동사가 여러 개고 라우트는 명명 인자(Route)로 온다.
-                        var methodRoute = acceptVerbs ? ReadNamedRoute(attribute) : ReadRoute(attribute);
+                        //
+                        // 메서드에 붙은 [Route]도 함께 읽는다. ASP.NET Core에서 진입 특성의 템플릿과 메서드 [Route]는
+                        // 서로를 대체하지 않고 **각각 별도 라우트**가 된다 — `[Route("items")] [HttpGet]`은
+                        // 클래스 접두사 + "items"이지 클래스 접두사 하나가 아니다. 예전에는 메서드 [Route]를 읽지 않아
+                        // 존재하지 않는 라우트가 "확실"로 나왔다(T54).
+                        var attributeRoute = acceptVerbs ? ReadNamedRoute(attribute) : ReadRoute(attribute);
+                        var methodRoutes = CombineMethodRoutes(attributeRoute, ReadMethodRoutes(method));
                         var httpMethods = acceptVerbs ? ReadVerbs(attribute) : [ToHttpMethod(attributeName)];
+                        var hidden = IsHiddenFromApiExplorer(method);
+                        var authorization = ReadAuthorization(method, relativePath, line);
 
                         // 기반 클래스(abstract)에 선언한 액션은 그 클래스 이름으로 라우트를 만들면
                         // 존재하지 않는 경로가 "확실"로 나온다. 파생 컨트롤러를 찾은 뒤에 만든다.
-                        if (method.ContainingType.IsAbstract)
-                        {
-                            pending.Add(new PendingBaseAction(
-                                callable, method, methodRoute, httpMethods, projectKey, relativePath, line));
-                            continue;
-                        }
-
+                        //
+                        // 비추상 기반 컨트롤러(`class CrudController<T> : ControllerBase`)도 파생마다 라우트가 생긴다.
+                        // 그 기반 클래스 자체가 라우팅 가능한 컨트롤러이면 기반 라우트도 실제로 존재하므로 둘 다 남긴다.
                         foreach (var entry in BuildControllerEntryPoints(
-                            callable, method, method.ContainingType, methodRoute, httpMethods,
-                            projectKey, relativePath, line, usedIds, notes: null))
+                            callable, method, method.ContainingType, methodRoutes, httpMethods,
+                            projectKey, relativePath, line, usedIds, notes: null, hidden, authorization,
+                            skipSelf: method.ContainingType.IsAbstract))
                         {
                             result.Add(entry);
                         }
+
+                        pending.Add(new PendingBaseAction(
+                            callable, method, methodRoutes, httpMethods, projectKey, relativePath, line,
+                            hidden, authorization));
                     }
                 }
             }
@@ -127,17 +136,22 @@ public sealed class EntryPointScanner(
                 .ToArray();
             if (derived.Length == 0)
             {
-                baseActionNotes.Add(
-                    $"`{item.Method.ContainingType.Name}.{item.Method.Name}`은 기반 클래스 선언이라 파생 라우트를 확정하지 못했다. " +
-                    "솔루션 안에서 이 클래스를 상속한 컨트롤러를 찾지 못했다.");
+                if (item.Method.ContainingType.IsAbstract)
+                {
+                    baseActionNotes.Add(
+                        $"`{item.Method.ContainingType.Name}.{item.Method.Name}`은 기반 클래스 선언이라 파생 라우트를 확정하지 못했다. " +
+                        "솔루션 안에서 이 클래스를 상속한 컨트롤러를 찾지 못했다.");
+                }
+
                 continue;
             }
 
             foreach (var type in derived)
             {
                 foreach (var entry in BuildControllerEntryPoints(
-                    item.Callable, item.Method, type, item.MethodRoute, item.HttpMethods,
-                    item.ProjectKey, item.RelativePath, item.Line, usedIds, baseActionNotes))
+                    item.Callable, item.Method, type, item.MethodRoutes, item.HttpMethods,
+                    item.ProjectKey, item.RelativePath, item.Line, usedIds, baseActionNotes,
+                    item.Hidden, item.Authorization, skipSelf: false))
                 {
                     result.Add(entry);
                 }
@@ -172,15 +186,20 @@ public sealed class EntryPointScanner(
         return new EntryPointScanResult(result, notes) { Candidates = candidates };
     }
 
-    /// <summary>기반 클래스에 선언돼 파생 컨트롤러를 찾은 뒤에야 라우트를 확정할 수 있는 액션.</summary>
+    /// <summary>
+    /// 기반 클래스에 선언돼 파생 컨트롤러를 찾은 뒤에야 라우트를 확정할 수 있는 액션.
+    /// 추상 기반뿐 아니라 <b>비추상</b> 기반 컨트롤러도 여기 들어온다(파생마다 라우트가 하나씩 더 생긴다).
+    /// </summary>
     private sealed record PendingBaseAction(
         AnalysisCallable Callable,
         IMethodSymbol Method,
-        string? MethodRoute,
+        IReadOnlyList<string?> MethodRoutes,
         IReadOnlyList<string> HttpMethods,
         string ProjectKey,
         string RelativePath,
-        int Line);
+        int Line,
+        bool Hidden,
+        EndpointAuthorization? Authorization);
 
     /// <summary>
     /// 액션 하나에서 진입점을 만든다. 클래스 라우트·<c>[controller]</c> 치환은 <paramref name="declaringType"/> 기준이다.
@@ -193,18 +212,29 @@ public sealed class EntryPointScanner(
         AnalysisCallable callable,
         IMethodSymbol method,
         INamedTypeSymbol declaringType,
-        string? methodRoute,
+        IReadOnlyList<string?> methodRoutes,
         IReadOnlyList<string> httpMethods,
         string projectKey,
         string relativePath,
         int line,
         HashSet<string> usedIds,
-        List<string>? notes)
+        List<string>? notes,
+        bool hiddenFromApiExplorer,
+        EndpointAuthorization? authorization,
+        bool skipSelf)
     {
+        // 추상 기반 클래스 자신은 라우팅 대상이 아니다. 그 이름으로 라우트를 만들면 존재하지 않는 경로가 나온다.
+        if (skipSelf)
+        {
+            yield break;
+        }
+
         var versions = ReadApiVersions(method, declaringType);
         var isBaseDeclared = !SymbolEqualityComparer.Default.Equals(method.ContainingType, declaringType);
+        var typeAuthorization = ReadAuthorization(declaringType, relativePath, line);
         foreach (var httpMethod in httpMethods)
         foreach (var classRoute in GetClassRoutes(declaringType))
+        foreach (var methodRoute in methodRoutes)
         {
             var template = CombineRoute(classRoute, methodRoute, declaringType, method);
             foreach (var (route, version) in ExpandVersions(template, versions))
@@ -237,7 +267,10 @@ public sealed class EntryPointScanner(
                         HandlerDisplayName = callable.DisplayName,
                         ProjectKey = projectKey,
                         Notes = entryNotes,
-                        ApiVersions = versions
+                        ApiVersions = versions,
+                        HiddenFromApiExplorer = hiddenFromApiExplorer || IsHiddenFromApiExplorer(declaringType),
+                        // 메서드 쪽 인가가 있으면 그것이 이긴다. 없으면 컨트롤러 쪽을 쓴다.
+                        Authorization = authorization ?? typeAuthorization
                     });
             }
         }
@@ -324,6 +357,108 @@ public sealed class EntryPointScanner(
 
     private static string? ReadRoute(AttributeData attribute) =>
         attribute.ConstructorArguments.FirstOrDefault().Value as string;
+
+    /// <summary>메서드에 붙은 <c>[Route]</c> 템플릿들. 없으면 빈 목록이다.</summary>
+    private static IReadOnlyList<string> ReadMethodRoutes(IMethodSymbol method) => method.GetAttributes()
+        .Where(item => TrimAttributeSuffix(item.AttributeClass?.Name) == "Route")
+        .Select(ReadRoute)
+        .Where(route => route is not null)
+        .Select(route => route!)
+        .Distinct(StringComparer.Ordinal)
+        .ToArray();
+
+    /// <summary>
+    /// 진입 특성의 템플릿과 메서드 <c>[Route]</c>를 합쳐 만들 라우트 목록을 만든다.
+    /// 둘 다 있으면 서로를 대체하지 않고 각각 별도 라우트가 된다(ASP.NET Core 라우팅 규칙).
+    /// 둘 다 없으면 클래스 라우트만 쓰는 하나(null)를 돌려준다.
+    /// </summary>
+    private static IReadOnlyList<string?> CombineMethodRoutes(
+        string? attributeRoute, IReadOnlyList<string> methodRoutes)
+    {
+        var routes = new List<string?>();
+        if (attributeRoute is not null)
+        {
+            routes.Add(attributeRoute);
+        }
+
+        foreach (var route in methodRoutes)
+        {
+            if (!routes.Contains(route, StringComparer.Ordinal))
+            {
+                routes.Add(route);
+            }
+        }
+
+        return routes.Count > 0 ? routes : [null];
+    }
+
+    /// <summary>
+    /// <c>[ApiExplorerSettings(IgnoreApi = true)]</c>로 문서에서 숨겼는지.
+    /// 숨겨도 라우트는 실제로 존재하므로 진입점을 지우지 않고 구분만 한다.
+    /// </summary>
+    private static bool IsHiddenFromApiExplorer(ISymbol symbol) => symbol.GetAttributes()
+        .Where(item => TrimAttributeSuffix(item.AttributeClass?.Name) == "ApiExplorerSettings")
+        .SelectMany(item => item.NamedArguments)
+        .Any(argument => string.Equals(argument.Key, "IgnoreApi", StringComparison.Ordinal) &&
+                         argument.Value.Value is true);
+
+    /// <summary>
+    /// <c>[Authorize]</c>·<c>[AllowAnonymous]</c>를 읽는다. 정책·역할이 상수가 아니면 추정으로 낮춘다.
+    /// 아무 특성도 없으면 null이다 — "인가가 없다"가 아니라 "확인하지 못했다"는 뜻이다.
+    /// </summary>
+    private static EndpointAuthorization? ReadAuthorization(ISymbol symbol, string file, int line)
+    {
+        var attributes = symbol.GetAttributes().ToArray();
+        var allowAnonymous = attributes.Any(item => TrimAttributeSuffix(item.AttributeClass?.Name) == "AllowAnonymous");
+        var authorize = attributes
+            .Where(item => TrimAttributeSuffix(item.AttributeClass?.Name) == "Authorize")
+            .ToArray();
+        if (!allowAnonymous && authorize.Length == 0)
+        {
+            return null;
+        }
+
+        var policies = new List<string>();
+        var roles = new List<string>();
+        var schemes = new List<string>();
+        var certain = true;
+        foreach (var attribute in authorize)
+        {
+            if (attribute.ConstructorArguments.FirstOrDefault().Value is string positional)
+            {
+                policies.Add(positional);
+            }
+            else if (attribute.ConstructorArguments.Length > 0)
+            {
+                certain = false;
+            }
+
+            foreach (var (key, value) in attribute.NamedArguments)
+            {
+                var text = value.Value as string;
+                if (text is null)
+                {
+                    certain = false;
+                    continue;
+                }
+
+                if (key == "Policy") policies.Add(text);
+                else if (key == "Roles") roles.AddRange(text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+                else if (key == "AuthenticationSchemes") schemes.AddRange(text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+            }
+        }
+
+        return new EndpointAuthorization
+        {
+            Policies = policies.Distinct(StringComparer.Ordinal).ToArray(),
+            Roles = roles.Distinct(StringComparer.Ordinal).ToArray(),
+            Schemes = schemes.Distinct(StringComparer.Ordinal).ToArray(),
+            AllowAnonymous = allowAnonymous,
+            Confidence = certain ? CallConfidence.Certain : CallConfidence.Estimated,
+            File = file,
+            Line = line
+        };
+    }
 
     /// <summary><c>[AcceptVerbs("GET", "POST", Route = "x")]</c>의 Route 명명 인자.</summary>
     private static string? ReadNamedRoute(AttributeData attribute) => attribute.NamedArguments

@@ -1,11 +1,13 @@
-import { useEffect } from 'react'
+import { useModal } from '../hooks/useModal'
 import { useI18n } from '../i18n/I18nProvider'
-import type { AnalysisDiagnostics } from '../types/graph'
+import type { AnalysisDiagnostics, AnalysisManifest } from '../types/graph'
 
 interface DiagnosticsPanelProps {
   diagnostics: AnalysisDiagnostics | null
   /** DB·캐시에서 인식했지만 해석하지 않은 입력. 빈 보기의 원인을 여기서 말한다. */
   dataAccessNotes: readonly string[]
+  /** 분석 입력 목록. "왜 이 프로젝트가 빠졌나"에 답한다. */
+  manifest: AnalysisManifest | null
   /** 요약 줄에서 온 부가 수치. 진단에는 없지만 같은 화면에서 보는 편이 낫다. */
   minimalApiCount: number
   entryPointCount: number
@@ -20,20 +22,17 @@ interface DiagnosticsPanelProps {
 export function DiagnosticsPanel({
   diagnostics,
   dataAccessNotes,
+  manifest,
   minimalApiCount,
   entryPointCount,
   onClose,
 }: DiagnosticsPanelProps) {
   const { t, formatPercent } = useI18n()
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  const modalRef = useModal<HTMLDivElement>(onClose)
 
   const failedProjects = (diagnostics?.projects ?? []).filter(
     (project) => !project.loaded || project.errorCount > 0)
+  const testProjects = (diagnostics?.projects ?? []).filter((project) => project.isTest)
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -42,6 +41,7 @@ export function DiagnosticsPanel({
         role="dialog"
         aria-modal="true"
         aria-label={t('diagPanel.title')}
+        ref={modalRef}
         onClick={(event) => event.stopPropagation()}
       >
         <header>
@@ -62,6 +62,11 @@ export function DiagnosticsPanel({
                   errors: diagnostics.projectsWithCompileErrors,
                 })}
               </div>
+              {testProjects.length > 0 && (
+                <div className="hint">
+                  {t('diagPanel.testProject')}: {testProjects.map((project) => project.name).join(', ')}
+                </div>
+              )}
               {failedProjects.length === 0 ? (
                 <div className="hint ok">{t('diagPanel.projectsOk')}</div>
               ) : (
@@ -104,6 +109,9 @@ export function DiagnosticsPanel({
                 <li>{t('detail.resolution.external')}: {diagnostics.calls.external}</li>
               </ul>
               <div className="hint">{t('diagPanel.externalExcluded', { count: diagnostics.calls.external })}</div>
+              {(diagnostics.droppedEdges ?? 0) > 0 && (
+                <div className="hint warn">{t('diagPanel.droppedEdges', { count: diagnostics.droppedEdges ?? 0 })}</div>
+              )}
               {diagnostics.calls.externalByNamespace?.length ? (
                 <>
                   <h5>{t('diagPanel.externalByNamespace')}</h5>
@@ -123,9 +131,17 @@ export function DiagnosticsPanel({
               <h4>{t('diagPanel.scope')}</h4>
               <ul className="diag-kv">
                 <li>{t('diagPanel.analysisScope', { scope: diagnostics.analysisScope })}</li>
-                <li>{t('diagPanel.maxDepth', { depth: diagnostics.maxCallDepth })}
-                  {diagnostics.depthLimitReached ? ` — ${t('diagPanel.depthReached')}` : ''}</li>
+                {/* 깊이 제한은 진입점 스캔에서만 의미가 있다. 솔루션 전체 스캔에서 보이면 오해를 만든다. */}
+                {diagnostics.analysisScope === 'entryPoints' && (
+                  <li>{t('diagPanel.maxDepth', { depth: diagnostics.maxCallDepth })}
+                    {diagnostics.depthLimitReached ? ` — ${t('diagPanel.depthReached')}` : ''}</li>
+                )}
                 <li>{t('summary.entryPoints', { count: entryPointCount })} · {t('summary.minimalApi', { count: minimalApiCount })}</li>
+                {(diagnostics.droppedEntryPoints ?? 0) > 0 && (
+                  <li className="warn">
+                    {t('diagPanel.droppedEntryPoints', { count: diagnostics.droppedEntryPoints ?? 0 })}
+                  </li>
+                )}
                 {diagnostics.excludedNamespacePrefixes.length > 0 && (
                   <li>{t('diagPanel.excluded', { list: diagnostics.excludedNamespacePrefixes.join(', ') })}</li>
                 )}
@@ -146,6 +162,26 @@ export function DiagnosticsPanel({
                 </ul>
               </section>
             ) : null}
+
+            {manifest && (
+              <section>
+                <h4>{t('diagPanel.manifest')}</h4>
+                <ul className="diag-kv">
+                  <li>{t('diagPanel.manifestInputs', { count: manifest.inputs.length })}</li>
+                  <li>
+                    {t('diagPanel.sourceRoots')}:{' '}
+                    {manifest.sourceRoots.map((root) => <code key={root}>{root}</code>)}
+                  </li>
+                  {manifest.excludedDirectories.length > 0 && (
+                    <li>{t('diagPanel.excludedDirectories')}: {manifest.excludedDirectories.join(', ')}</li>
+                  )}
+                  {manifest.linkedSources.length > 0 && (
+                    <li>{t('diagPanel.linkedSources')}: {manifest.linkedSources.length}</li>
+                  )}
+                  {manifest.limitations.map((line) => <li key={line}>{line}</li>)}
+                </ul>
+              </section>
+            )}
 
             {dataAccessNotes.length > 0 && (
               <section>

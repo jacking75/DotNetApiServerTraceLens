@@ -62,6 +62,41 @@ public sealed class DiResolverTests
             edge.To.Contains("FirstAmbiguous.PingAsync", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 테스트 더블이 구현체 후보로 세어지면 "구현체 2개"가 되어 유일 구현체 추정이 꺼진다.
+    /// `excludeProjectNamePatterns` 기본값이 빈 배열이라 대부분의 사용자가 이 상태로 쓴다(T59).
+    /// </summary>
+    [Fact]
+    public async Task Resolve_IgnoresTestDoublesWhenPickingSingleImplementation()
+    {
+        var graph = await AnalyzeSolutionAsync();
+
+        // 테스트 프로젝트에 FakeAuditService가 있어도 주 프로젝트의 AuditService로 이어져야 한다.
+        Assert.Contains(graph.Edges, edge =>
+            edge.From == "FixtureApp.Controllers.OrdersController.Create(int)" &&
+            edge.To == "FixtureApp.Services.AuditService.RecordAsync(int)");
+
+        // 뺐다는 사실이 근거에 남아야 한다. 조용히 빼면 "왜 이 구현체인가"를 알 수 없다.
+        var site = Assert.Single(graph.CallSites, item =>
+            item.From == "FixtureApp.Controllers.OrdersController.Create(int)" &&
+            item.DeclaredTarget.Contains("IAuditService.RecordAsync", StringComparison.Ordinal));
+        Assert.Contains("FakeAuditService", site.Note);
+
+        // 테스트 프로젝트는 진단에 표시된다(제외가 아니라 표시다).
+        Assert.Contains(graph.Diagnostics!.Projects, project => project.IsTest && project.Name == "FixtureApp.Tests");
+    }
+
+    private static async Task<GraphDocument> AnalyzeSolutionAsync()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddTraceLensAnalyzer();
+        await using var provider = services.BuildServiceProvider();
+        var path = Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "Fixtures", "FixtureAppWithTests.sln");
+        return (await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(path)).Graph;
+    }
+
     private static async Task<GraphDocument> AnalyzeAsync()
     {
         var services = new ServiceCollection();

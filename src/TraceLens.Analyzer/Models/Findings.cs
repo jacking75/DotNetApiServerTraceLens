@@ -18,7 +18,16 @@ public enum FindingConfidence
 }
 
 /// <param name="Tone">근거 한 줄의 성격. <c>ok</c>는 확인된 사실, <c>bad</c>는 문제의 근거, 빈 값은 중립이다.</param>
-public sealed record FindingEvidence(string Tone, string Head, string Detail, string Note);
+public sealed record FindingEvidence(string Tone, string Head, string Detail, string Note)
+{
+    /// <summary>
+    /// 이 근거를 읽은 자리. 화면이 <c>파일:줄</c> 링크로 그려 코드 패널을 그 구간으로 옮긴다.
+    /// 모든 근거에 자리가 있는 것은 아니라(집계·설정 등) 비어 있을 수 있다.
+    /// </summary>
+    public string File { get; init; } = string.Empty;
+
+    public int Line { get; init; }
+}
 
 /// <summary>
 /// 규칙 하나가 잡아낸 항목. DB·캐시 보기와 미들웨어 보기가 같은 모양을 쓴다.
@@ -66,4 +75,28 @@ public sealed record RuleInfo(
     FindingConfidence Judge,
     string Description,
     bool ShardOnly,
-    bool Enabled);
+    bool Enabled)
+{
+    /// <summary>
+    /// 이 규칙이 <b>무엇을 보고</b> 판정하는지. 화면이 규칙 설명 아래에 한 줄로 붙인다.
+    /// "규칙이 통과했다"와 "그 입력을 애초에 읽지 않았다"를 구분하게 하는 것이 목적이다(T55).
+    /// 값은 번역 키로 쓰므로 영문 식별자다.
+    /// </summary>
+    public RuleScope Scope { get; init; } = RuleScope.SqlAndConfiguredApis;
+}
+
+/// <summary>규칙이 보는 입력의 종류.</summary>
+public enum RuleScope
+{
+    /// <summary>SQL 리터럴·Dapper·SqlKata·설정한 <c>db.queryApis</c>만 본다.</summary>
+    SqlAndConfiguredApis,
+
+    /// <summary>설정한 <c>db.cacheApis</c>·<c>cacheWrappers</c>와 알려진 캐시 클라이언트만 본다.</summary>
+    CacheApis,
+
+    /// <summary>시작 흐름에서 읽은 DI 등록만 본다.</summary>
+    StartupRegistrations,
+
+    /// <summary><c>app.UseXxx()</c> 파이프라인과 미들웨어 본문만 본다.</summary>
+    MiddlewarePipeline
+}

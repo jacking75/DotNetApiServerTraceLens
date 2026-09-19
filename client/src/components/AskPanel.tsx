@@ -23,14 +23,23 @@ export interface AskContext {
 interface AskPanelProps {
   context: AskContext | null
   snapshotId: string
-  /** 레시피 배너·프리셋 칩이 밀어 넣는 질문. `token`이 바뀔 때마다 입력칸을 채운다(편집은 그대로 된다). */
-  presetQuestion?: { text: string; token: number } | null
+  /**
+   * 질문 초안. 우측 열을 접었다 펴거나 탭을 바꿔도 남아야 하므로 App이 들고 있는다.
+   * 레시피 배너·프리셋 칩도 이 값을 바꿔서 입력칸을 채운다.
+   */
+  question: string
+  onChangeQuestion: (value: string) => void
+  /** 최근 답변. 같은 이유로 App이 들고 있는다(새로고침 전까지 유지). */
+  recentAnswers: RecentAnswer[]
+  onPushRecentAnswer: (item: RecentAnswer) => void
   /** 문맥 복사를 마치면 첫 사용 안내의 마지막 단계가 끝난다. */
   onContextCopied?: () => void
   /** 용어집으로 보내는 `?` 링크. */
   onExplain: (term: GlossaryTerm) => void
   /** 문맥 미리보기의 `파일:줄`을 누르면 코드 보기를 그 위치로 옮긴다. */
-  onOpenSource?: (location: SourceLocation) => void
+  onOpenSource: (location: SourceLocation) => void
+  /** Shift+클릭·컨텍스트 메뉴로 에디터에서 연다. */
+  onOpenInEditor: (location: SourceLocation) => void
 }
 
 const modeKeys: Record<AskMode, TranslationKey> = {
@@ -53,9 +62,9 @@ const budgets: ReadonlyArray<{ value: ContextBudget; key: TranslationKey; hintKe
 ]
 
 /** 보관하는 최근 답변 개수. 소스 본문이 섞일 수 있어 localStorage에는 쓰지 않는다(새로고침하면 사라진다). */
-const maxRecentAnswers = 5
+export const maxRecentAnswers = 5
 
-interface RecentAnswer {
+export interface RecentAnswer {
   selectionLabel: string
   question: string
   answer: string
@@ -66,13 +75,24 @@ interface RecentAnswer {
  * 선택한 위치를 "작업 문맥"으로 바꿔 AI에 전달한다.
  * 문맥은 서버의 `POST /api/context` 하나에서 나오므로 클립보드·인앱 실행·MCP가 같은 내용을 쓴다.
  */
-export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied, onExplain, onOpenSource }: AskPanelProps) {
+export function AskPanel({
+  context,
+  snapshotId,
+  question,
+  onChangeQuestion,
+  recentAnswers,
+  onPushRecentAnswer,
+  onContextCopied,
+  onExplain,
+  onOpenSource,
+  onOpenInEditor,
+}: AskPanelProps) {
   const { t, lang } = useI18n()
   const [mode, setMode] = useState<AskMode>('context')
   const [intent, setIntent] = useState<ContextIntent>('Explain')
   const [budget, setBudget] = useState<ContextBudget>('Balanced')
   const [includeSource, setIncludeSource] = useState(true)
-  const [question, setQuestion] = useState('')
+  const setQuestion = onChangeQuestion
   const [preview, setPreview] = useState<ContextDocument | null>(null)
   const [answer, setAnswer] = useState('')
   const [logs, setLogs] = useState<string[]>([])
@@ -91,11 +111,6 @@ export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied,
   const [agentMissing, setAgentMissing] = useState<boolean | null>(null)
   /** 에디터 열기가 실패했을 때의 폴백. 자동 이동 대신 사용자가 고른다. */
   const [editorFallback, setEditorFallback] = useState<{ uri: string; location: string } | null>(null)
-  /**
-   * 최근 답변. 선택이 바뀌면 지금 답은 비워지지만 이 목록은 남는다.
-   * 답을 읽다 다른 노드를 눌렀다고 답이 사라지면 안 된다.
-   */
-  const [recentAnswers, setRecentAnswers] = useState<RecentAnswer[]>([])
   /** 서버가 알려 준 실행 ID. 중단하면 SSE만 끊는 것이 아니라 프로세스도 끝낸다. */
   const runIdRef = useRef<string | null>(null)
   const abortController = useRef<AbortController | null>(null)
@@ -118,13 +133,17 @@ export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied,
     label: context ? `${context.kind} · ${context.id}` : '',
   }
 
+  const pushRecentRef = useRef(onPushRecentAnswer)
+  pushRecentRef.current = onPushRecentAnswer
   useEffect(() => () => {
     const current = answerRef.current
     if (!current.answer.trim()) return
-    setRecentAnswers((list) => [
-      { selectionLabel: current.label, question: current.question, answer: current.answer, at: new Date().toISOString() },
-      ...list,
-    ].slice(0, maxRecentAnswers))
+    pushRecentRef.current({
+      selectionLabel: current.label,
+      question: current.question,
+      answer: current.answer,
+      at: new Date().toISOString(),
+    })
   }, [contextKey])
 
   useEffect(() => {
@@ -156,14 +175,11 @@ export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied,
 
   useEffect(() => () => abortController.current?.abort(), [])
 
-  // 밖에서 밀어 넣은 질문을 입력칸에 채운다. 같은 문장을 다시 눌러도 반영되도록 token으로 구분한다.
-  const presetToken = presetQuestion?.token ?? 0
-  const presetText = presetQuestion?.text ?? ''
-  useEffect(() => {
-    if (presetToken > 0) setQuestion(presetText)
-  }, [presetToken]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 선택·목적·예산이 바뀌면 미리보기를 다시 만든다. 이 단계에는 LLM 호출이 없다.
+  /**
+   * 선택·목적·예산이 바뀌면 미리보기를 다시 만든다. 이 단계에는 LLM 호출이 없다.
+   * 질문 본문은 여기 넣지 않는다 — 넣으면 한 글자 칠 때마다 서버가 소스를 다시 읽는다.
+   * 질문은 실제로 보낼 때(`ask`) 합친다.
+   */
   useEffect(() => {
     if (!context) return
     let active = true
@@ -175,7 +191,6 @@ export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied,
             id: context.id,
             intent,
             budget,
-            question: question.trim(),
             includeSource,
             excludeFiles: excludedFiles,
             expectedSnapshotId: snapshotId || undefined,
@@ -196,7 +211,7 @@ export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied,
       active = false
       window.clearTimeout(timer)
     }
-  }, [context, contextKey, intent, budget, question, includeSource, excludedFiles, snapshotId, describe])
+  }, [context, contextKey, intent, budget, includeSource, excludedFiles, snapshotId, describe])
 
   const copy = async () => {
     if (!preview) return
@@ -432,6 +447,7 @@ export function AskPanel({ context, snapshotId, presetQuestion, onContextCopied,
           <ContextPreview
             context={preview}
             onOpenSource={onOpenSource}
+            onOpenInEditor={onOpenInEditor}
             excludedFiles={excludedFiles}
             onToggleFile={(file, include) => setExcludedFiles((current) =>
               include ? current.filter((item) => item !== file) : [...current, file])}

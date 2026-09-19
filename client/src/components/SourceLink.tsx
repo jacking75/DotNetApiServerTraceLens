@@ -10,8 +10,11 @@ export interface SourceLocation {
 interface SourceLinkProps extends SourceLocation {
   /** 누르면 코드 보기를 그 위치로 옮긴다. */
   onOpen: (location: SourceLocation) => void
-  /** Shift+클릭이나 컨텍스트 메뉴로 에디터에서 연다. 없으면 그 동작만 빠진다. */
-  onOpenInEditor?: (location: SourceLocation) => void
+  /**
+   * Shift+클릭이나 컨텍스트 메뉴로 에디터에서 연다.
+   * 필수다 — 패널마다 동작과 툴팁이 다르면 "같은 링크"로 읽히지 않는다.
+   */
+  onOpenInEditor: (location: SourceLocation) => void
 }
 
 /**
@@ -27,10 +30,10 @@ export function SourceLink({ file, line, endLine, onOpen, onOpenInEditor }: Sour
     <button
       type="button"
       className="source-link"
-      title={onOpenInEditor ? t('source.openHintWithEditor') : t('source.openHint')}
+      title={t('source.openHintWithEditor')}
       onClick={(event) => {
         event.stopPropagation()
-        if (event.shiftKey && onOpenInEditor) {
+        if (event.shiftKey) {
           onOpenInEditor(location)
           return
         }
@@ -38,7 +41,6 @@ export function SourceLink({ file, line, endLine, onOpen, onOpenInEditor }: Sour
         onOpen(location)
       }}
       onContextMenu={(event) => {
-        if (!onOpenInEditor) return
         event.preventDefault()
         event.stopPropagation()
         onOpenInEditor(location)

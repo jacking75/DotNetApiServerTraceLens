@@ -1,19 +1,31 @@
 import { useState } from 'react'
-import { startupStepKey, type StartupGroup } from '../graph/startupFlow'
+import { countSteps, startupStepKey, type StartupGroup } from '../graph/startupFlow'
 import type { Selection, StartupFlowDocument, StartupStep } from '../types/graph'
 import { useI18n } from '../i18n/I18nProvider'
+import { ProjectPicker } from './ProjectPicker'
 
 interface StartupFlowViewProps {
   flow: StartupFlowDocument
   selection: Selection | null
   onSelect: (key: string) => void
+  /** 실행 프로젝트가 여럿이면 골라 본다. 하나뿐이면 선택이 보이지 않는다. */
+  projectKeys: string[]
+  projectKey: string | null
+  onChangeProject: (key: string) => void
 }
 
 /**
  * "시작 흐름" 보기. Program.cs를 소스 순서대로 읽어 서비스 등록(builder.Services)과
  * 미들웨어 파이프라인(app)을 타임라인 두 단으로 보여준다. 확장 메서드 호출은 접혀 있다가 누르면 펼쳐진다.
  */
-export function StartupFlowView({ flow, selection, onSelect }: StartupFlowViewProps) {
+export function StartupFlowView({
+  flow,
+  selection,
+  onSelect,
+  projectKeys,
+  projectKey,
+  onChangeProject,
+}: StartupFlowViewProps) {
   const { t } = useI18n()
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const toggle = (key: string) => setExpanded((current) => {
@@ -26,8 +38,16 @@ export function StartupFlowView({ flow, selection, onSelect }: StartupFlowViewPr
   const selectedKey = selection?.type === 'startupStep' ? selection.key : null
   const isEmpty = flow.serviceSteps.length === 0 && flow.middlewareSteps.length === 0
 
+  // 단계 수는 한 정의만 쓴다. 좌측이 "22개", 가운데가 "19단계"면 어느 쪽을 믿어야 할지 알 수 없다.
+  const topLevel = flow.serviceSteps.length + flow.middlewareSteps.length
+  const total = countSteps(flow)
+
   return (
     <div className="graph-shell">
+      <div className="view-intro">
+        <ProjectPicker projectKeys={projectKeys} projectKey={projectKey} onChange={onChangeProject} />
+        <span className="sub">{t('startup.topLevelSteps', { top: topLevel, all: total })}</span>
+      </div>
       {isEmpty && <div className="panel-message canvas-empty">{t('startup.empty')}</div>}
       {!isEmpty && (
         <div className="startup-flow">

@@ -124,7 +124,7 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
             steps.Count,
             findings.Count,
             relativeProgram);
-        return new MiddlewarePipelineDocument(relativeProgram, steps, findings, Catalog)
+        return new MiddlewarePipelineDocument(relativeProgram, steps, findings, ScopedCatalog)
         {
             ProjectKey = host.ProjectKey
         };
@@ -970,4 +970,12 @@ public sealed class MiddlewareScanner(ILogger<MiddlewareScanner> logger)
         new("MW-012", "순서", "등록됐지만 실행되지 않는 미들웨어", FindingSeverity.Warning, FindingConfidence.Certain,
             "종단(UseEndpoints·app.Run(delegate)) 뒤에 등록되어 실행 순서에 들어가지 않는다. MapControllers 같은 엔드포인트 등록은 종단이 아니므로 그 뒤 미들웨어는 정상 실행된다.", false, true)
     ];
+
+    /// <summary>
+    /// 검사 범위를 붙인 카탈로그. 화면이 "무엇을 보고 판정하는지"를 규칙마다 한 줄로 보여 준다.
+    /// 정적 초기화 순서가 선언 순서라 <see cref="Catalog"/> 뒤에 있어야 한다.
+    /// </summary>
+    public static IReadOnlyList<RuleInfo> ScopedCatalog { get; } = Catalog
+        .Select(rule => rule with { Scope = RuleScope.MiddlewarePipeline })
+        .ToArray();
 }

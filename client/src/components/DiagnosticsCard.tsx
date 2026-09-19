@@ -47,6 +47,14 @@ function buildReportInfo(report: DiagnosticsReport, errorId: string | null): str
 }
 
 /**
+ * `.NET 8.0.30`처럼 접두사가 이미 든 값에 `.NET`을 또 붙이지 않는다.
+ * 서버가 주는 문자열 형식이 런타임마다 달라 값을 보고 판단한다.
+ */
+function runtimeLabel(runtimeVersion: string): string {
+  return runtimeVersion.trim().startsWith('.NET') ? runtimeVersion : `.NET ${runtimeVersion}`
+}
+
+/**
  * 환경 점검 결과 카드다. 첫 화면과 헤더의 모달이 같은 컴포넌트를 쓴다.
  * 점검 문장은 code로 번역하고, 경로·포트 같은 값은 서버가 준 그대로 보여 준다.
  */
@@ -80,13 +88,23 @@ export function DiagnosticsCard({ report, className, errorId = null }: Diagnosti
           </li>
         ))}
       </ul>
-      <small>{t('diagnostics.supported', { list: report.supportedTargets.join(', ') })}</small>
-      <small>
-        TraceLens {report.toolVersion} · .NET {report.runtimeVersion} · {report.operatingSystem}
-      </small>
-      {report.log?.logFilePath && (
-        <small>{t('diagnostics.logFile')}: <code>{report.log.logFilePath}</code></small>
-      )}
+      {/*
+        예전에는 `<small>` 세 개를 줄바꿈 없이 이어 붙여
+        `.sln, .csprojTraceLens 0.9.0 · .NET .NET 8.0.30 …로그 파일:`처럼 한 줄로 뭉쳤다(E10).
+        항목과 값을 `<dl>`로 나누고 `.NET` 접두사는 한 번만 쓴다.
+      */}
+      <dl className="diagnostics-facts">
+        <dt>{t('diagnostics.supportedLabel')}</dt>
+        <dd>{report.supportedTargets.join(', ')}</dd>
+        <dt>{t('diagnostics.versionLabel')}</dt>
+        <dd>TraceLens {report.toolVersion} · {runtimeLabel(report.runtimeVersion)} · {report.operatingSystem}</dd>
+        {report.log?.logFilePath && (
+          <>
+            <dt>{t('diagnostics.logFile')}</dt>
+            <dd><code>{report.log.logFilePath}</code></dd>
+          </>
+        )}
+      </dl>
       {(report.log?.recentErrors ?? []).length > 0 && (
         <details>
           <summary>{t('diagnostics.recentErrors', { count: report.log!.recentErrors.length })}</summary>

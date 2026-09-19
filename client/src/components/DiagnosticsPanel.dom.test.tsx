@@ -57,6 +57,7 @@ describe('DiagnosticsPanel', () => {
         <DiagnosticsPanel
           diagnostics={diagnostics}
           dataAccessNotes={['저장소 접근을 한 건도 찾지 못했지만 솔루션에 DbContext가 있다.']}
+          manifest={null}
           minimalApiCount={4}
           entryPointCount={8}
           onClose={() => {}}
@@ -78,6 +79,7 @@ describe('DiagnosticsPanel', () => {
         <DiagnosticsPanel
           diagnostics={null}
           dataAccessNotes={[]}
+        manifest={null}
           minimalApiCount={0}
           entryPointCount={0}
           onClose={() => {}}

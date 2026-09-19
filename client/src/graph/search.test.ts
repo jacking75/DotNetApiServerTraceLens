@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { searchGraph } from './search'
+import { parseQuery, searchGraph } from './search'
 import type { GraphClass, GraphDocument, GraphNode } from '../types/graph'
 
-function node(id: string, displayName: string): GraphNode {
+function node(id: string, displayName: string, classId = 'Shop.OrderService'): GraphNode {
   return {
     id,
     displayName,
     kind: 'Method',
-    classId: 'Shop.OrderService',
+    classId,
     namespace: 'Shop',
     file: 'src/OrderService.cs',
     startLine: 1,
@@ -39,34 +39,93 @@ const graph = {
       handlerDisplayName: 'OrdersController.Create()',
       projectKey: 'Shop',
       notes: [],
+      groupKey: '',
+      hiddenFromApiExplorer: false,
+      authorization: null,
+    },
+    {
+      nodeId: 'Shop.OrdersController.List()',
+      httpMethod: 'GET',
+      route: '/api/orders',
+      endpointId: 'Shop|GET|/api/orders|List',
+      normalizedRoute: '/api/orders',
+      source: 'Controller',
+      handlerKind: 'Method',
+      confidence: 'Certain',
+      registrationFile: 'src/OrdersController.cs',
+      registrationLine: 20,
+      handlerDisplayName: 'OrdersController.List()',
+      projectKey: 'Shop',
+      notes: [],
+      groupKey: '',
+      hiddenFromApiExplorer: false,
+      authorization: null,
     },
   ],
   classes: [
     {
+      id: 'Shop.IInventoryRepository',
+      name: 'IInventoryRepository',
+      namespace: 'Shop',
+      typeKind: 'Interface',
+      interfaceIds: [],
+      members: [{ memberKind: 'Method', name: 'ReserveAsync', signature: 'ReserveAsync(int)', nodeId: null }],
+    } as unknown as GraphClass,
+    {
+      id: 'Shop.InventoryRepository',
+      name: 'InventoryRepository',
+      namespace: 'Shop',
+      typeKind: 'Class',
+      interfaceIds: ['Shop.IInventoryRepository'],
+      members: [{ memberKind: 'Method', name: 'ReserveAsync', signature: 'ReserveAsync(int)', nodeId: null }],
+    } as unknown as GraphClass,
+    {
       id: 'Shop.OrderService',
       name: 'OrderService',
       namespace: 'Shop',
+      typeKind: 'Class',
+      interfaceIds: [],
       members: [
         { memberKind: 'Method', name: 'CreateOrderAsync', signature: 'CreateOrderAsync(int)', nodeId: null },
         { memberKind: 'Method', name: 'TryCreateOrderAsyncCore', signature: 'TryCreateOrderAsyncCore(int)', nodeId: null },
       ],
     } as unknown as GraphClass,
   ],
-  nodes: [node('Shop.OrderService.CreateOrderAsync(int)', 'OrderService.CreateOrderAsync(int)')],
+  nodes: [
+    node('Shop.OrderService.CreateOrderAsync(int)', 'OrderService.CreateOrderAsync(int)'),
+    node('Shop.InventoryRepository.ReserveAsync(int)', 'InventoryRepository.ReserveAsync(int)', 'Shop.InventoryRepository'),
+  ],
+  dataAccess: {
+    rules: [{ id: 'COMP-001', name: '보상 처리 없음' }],
+    findings: [],
+  },
+  middleware: { rules: [], findings: [] },
 } as unknown as GraphDocument
 
 describe('searchGraph', () => {
   /**
-   * 티켓에 적힌 메서드 이름으로 찾을 수 없으면 신입은 파일을 하나씩 열어야 한다.
-   * 노드가 없는 멤버(인터페이스 선언 등)도 찾을 수 있어야 한다.
+   * 고른 결과가 "이 메서드는 마지막 분석 결과에 없다"로 끝나면 찾기를 믿지 않게 된다.
+   * 메서드 그룹에는 실행 가능한 그래프 노드만 넣는다.
    */
-  it('메서드 이름으로 노드와 멤버를 모두 찾는다', () => {
+  it('노드가 없는 멤버는 메서드 그룹에 넣지 않는다', () => {
     const result = searchGraph(graph, 'createorder')
 
-    // 실행 가능한 노드가 있으면 그것을 쓰고, 같은 멤버를 두 번 보여 주지 않는다.
     expect(result.methods.map((hit) => hit.label)).toContain('OrderService.CreateOrderAsync(int)')
-    // 노드가 없는 멤버도 찾을 수 있어야 한다(인터페이스 선언 등).
-    expect(result.methods.map((hit) => hit.label)).toContain('TryCreateOrderAsyncCore')
+    expect(result.methods.map((hit) => hit.label)).not.toContain('TryCreateOrderAsyncCore')
+    // 대신 클래스 결과의 부제로 남는다 — 찾을 수는 있되 막다른 길로 보내지 않는다.
+    expect(result.classes.find((hit) => hit.id === 'Shop.OrderService')?.detail).toContain('TryCreateOrderAsyncCore')
+  })
+
+  /** 인터페이스 멤버를 고르면 구현 노드로 가야 한다. 인터페이스 선언에는 볼 것이 없다. */
+  it('인터페이스 멤버는 구현 노드를 달아 준다', () => {
+    const result = searchGraph(graph, 'ReserveAsync')
+
+    const hit = result.methods.find((item) => item.label === 'IInventoryRepository.ReserveAsync')
+    expect(hit).toBeTruthy()
+    expect(hit!.id).toBe('Shop.InventoryRepository.ReserveAsync(int)')
+    expect(hit!.implementations).toEqual([
+      { id: 'Shop.InventoryRepository.ReserveAsync(int)', label: 'InventoryRepository.ReserveAsync' },
+    ])
   })
 
   /**
@@ -80,14 +139,28 @@ describe('searchGraph', () => {
   })
 
   it('라우트와 동사로 진입점을 찾는다', () => {
-    expect(searchGraph(graph, '/api/orders').entryPoints).toHaveLength(1)
+    expect(searchGraph(graph, '/api/orders').entryPoints).toHaveLength(2)
     expect(searchGraph(graph, 'post').entryPoints).toHaveLength(1)
   })
 
-  it('상한을 넘으면 잘랐다는 사실을 남긴다', () => {
-    const result = searchGraph(graph, 'createorder', 1)
+  /** 접두사 필터가 없으면 결과 20개가 한 종류로 차 버린다. */
+  it('접두사로 범위를 좁힌다', () => {
+    expect(parseQuery('GET /orders')).toEqual({ scope: 'entryPoint', httpMethod: 'GET', needle: '/orders' })
+    expect(parseQuery('ns:Shop')).toEqual({ scope: 'namespace', httpMethod: '', needle: 'shop' })
+    expect(parseQuery('rule:COMP')).toEqual({ scope: 'rule', httpMethod: '', needle: 'comp' })
 
-    expect(result.methods).toHaveLength(1)
+    const verbs = searchGraph(graph, 'GET /api/orders')
+    expect(verbs.entryPoints.map((hit) => hit.label)).toEqual(['GET /api/orders'])
+    expect(verbs.methods).toEqual([])
+
+    expect(searchGraph(graph, 'rule:COMP').rules.map((hit) => hit.id)).toEqual(['COMP-001'])
+    expect(searchGraph(graph, 'file:OrderService').files.map((hit) => hit.detail)).toEqual(['src/OrderService.cs'])
+  })
+
+  it('상한을 넘으면 잘랐다는 사실을 남긴다', () => {
+    const result = searchGraph(graph, '/api/orders', 1)
+
+    expect(result.entryPoints).toHaveLength(1)
     expect(result.truncated).toBe(true)
   })
 

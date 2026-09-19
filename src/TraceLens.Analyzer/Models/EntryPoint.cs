@@ -56,6 +56,13 @@ public sealed record EntryPoint(string NodeId, string HttpMethod, string Route)
     /// <summary>프로젝트 구분 키(어셈블리 이름). 같은 라우트가 여러 프로젝트에 있을 때 구분한다.</summary>
     public string ProjectKey { get; init; } = string.Empty;
 
+    /// <summary>
+    /// 목록에서 묶는 기준. Minimal API는 <c>MapGroup</c> 접두사를 넣고, 없으면 빈 문자열이다
+    /// (그때는 화면이 등록 파일로 묶는다). 컨트롤러는 선언 클래스로 묶으므로 항상 빈 문자열이다.
+    /// v7 이전 문서에는 없고, 없으면 빈 문자열로 읽는다.
+    /// </summary>
+    public string GroupKey { get; init; } = string.Empty;
+
     /// <summary>추정으로 남긴 부분이나 지원하지 않는 패턴에 대한 설명.</summary>
     public IReadOnlyList<string> Notes
     {
@@ -69,4 +76,36 @@ public sealed record EntryPoint(string NodeId, string HttpMethod, string Route)
     /// v7 이전 문서에는 없고, 없으면 빈 목록으로 읽는다.
     /// </summary>
     public IReadOnlyList<string> ApiVersions { get; init; } = [];
+
+    /// <summary>
+    /// <c>[ApiExplorerSettings(IgnoreApi = true)]</c>로 문서에서 숨긴 API인지. 라우트는 실제로 존재하므로
+    /// 목록에서 지우지 않고 구분만 한다. v7 이전 문서에는 없고, 없으면 false로 읽는다.
+    /// </summary>
+    public bool HiddenFromApiExplorer { get; init; }
+
+    /// <summary>
+    /// <c>[Authorize]</c>·<c>[AllowAnonymous]</c>·<c>RequireAuthorization()</c>로 확인한 인가.
+    /// 확인하지 못했으면 null이다(인가가 없다는 뜻이 아니다).
+    /// </summary>
+    public EndpointAuthorization? Authorization { get; init; }
+}
+
+/// <summary>진입점에 걸린 인가. 정책 이름이 상수가 아니면 <see cref="Confidence"/>가 Estimated다.</summary>
+public sealed record EndpointAuthorization
+{
+    public IReadOnlyList<string> Policies { get; init; } = [];
+
+    public IReadOnlyList<string> Roles { get; init; } = [];
+
+    public IReadOnlyList<string> Schemes { get; init; } = [];
+
+    /// <summary><c>[AllowAnonymous]</c>가 붙어 인가를 건너뛴다.</summary>
+    public bool AllowAnonymous { get; init; }
+
+    public CallConfidence Confidence { get; init; } = CallConfidence.Certain;
+
+    /// <summary>인가를 읽은 자리(특성 선언 또는 <c>RequireAuthorization()</c> 호출).</summary>
+    public string File { get; init; } = string.Empty;
+
+    public int Line { get; init; }
 }
