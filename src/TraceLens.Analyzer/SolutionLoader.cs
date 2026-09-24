@@ -12,7 +12,7 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
     private static readonly object RegistrationLock = new();
 
     /// <summary>지금 로더가 여는 분석 대상 확장자.</summary>
-    public static IReadOnlyList<string> SupportedExtensions { get; } = [".sln", ".csproj"];
+    public static IReadOnlyList<string> SupportedExtensions { get; } = [".sln", ".slnx", ".csproj"];
 
     /// <summary>
     /// 아직 지원하지 않는 확장자와 그 이유. 확장자 검사만 풀고 "지원 완료"라고 하지 않기 위해 이유를 함께 둔다.
@@ -20,8 +20,6 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
     public static IReadOnlyDictionary<string, string> UnsupportedExtensions { get; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            [".slnx"] = "지금 쓰는 MSBuildWorkspace(Roslyn 4.11)가 .slnx를 열지 못한다. " +
-                        "같은 폴더의 .sln을 고르거나 분석할 .csproj를 직접 고르면 된다.",
             [".vbproj"] = "TraceLens는 C# 프로젝트만 분석한다.",
             [".fsproj"] = "TraceLens는 C# 프로젝트만 분석한다."
         };
@@ -53,20 +51,21 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
         }
 
         var isProject = string.Equals(extension, ".csproj", StringComparison.OrdinalIgnoreCase);
-        var isSolution = string.Equals(extension, ".sln", StringComparison.OrdinalIgnoreCase);
+        var isSolution = string.Equals(extension, ".sln", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(extension, ".slnx", StringComparison.OrdinalIgnoreCase);
         if (!File.Exists(fullPath) || (!isSolution && !isProject))
         {
-            throw new FileNotFoundException("분석할 .sln 또는 .csproj 파일을 찾을 수 없다.", fullPath);
+            throw new FileNotFoundException("분석할 .sln, .slnx 또는 .csproj 파일을 찾을 수 없다.", fullPath);
         }
 
         EnsureMsBuildRegistered();
         var workspace = MSBuildWorkspace.Create();
         var workspaceFailures = new ConcurrentBag<string>();
-        workspace.WorkspaceFailed += (_, args) =>
+        workspace.RegisterWorkspaceFailedHandler(args =>
         {
             workspaceFailures.Add(args.Diagnostic.Message);
             logger.LogWarning("MSBuildWorkspace: {Message}", args.Diagnostic.Message);
-        };
+        });
         var solution = isProject
             ? (await workspace.OpenProjectAsync(fullPath, cancellationToken: cancellationToken)).Solution
             : await workspace.OpenSolutionAsync(fullPath, cancellationToken: cancellationToken);

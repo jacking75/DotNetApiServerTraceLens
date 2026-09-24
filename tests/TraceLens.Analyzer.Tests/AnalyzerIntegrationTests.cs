@@ -30,6 +30,17 @@ public sealed class AnalyzerIntegrationTests
     }
 
     [Fact]
+    public async Task AnalyzeAsync_LoadsSlnxSolution()
+    {
+        await using var provider = CreateProvider(new ConcurrentQueue<string>());
+
+        var result = await provider.GetRequiredService<ITraceLensAnalyzer>().AnalyzeAsync(GetFixtureSlnxPath());
+
+        Assert.Equal(GetFixtureSlnxPath(), result.Graph.SolutionPath);
+        Assert.Equal(7, result.Graph.EntryPoints.Count);
+    }
+
+    [Fact]
     public async Task AnalyzeAsync_ResolvesInterfaceCallsByRegistrationAndSingleImplementation()
     {
         var logs = new ConcurrentQueue<string>();
@@ -350,6 +361,9 @@ public sealed class AnalyzerIntegrationTests
 
     private static string GetFixtureSolutionPath() =>
         Path.Combine(GetRepositoryRoot(), "tests", "TraceLens.Analyzer.Tests", "Fixtures", "FixtureApp.sln");
+
+    private static string GetFixtureSlnxPath() =>
+        Path.Combine(GetRepositoryRoot(), "tests", "TraceLens.Analyzer.Tests", "Fixtures", "FixtureApp.slnx");
 
     private static string GetRepositoryRoot([System.Runtime.CompilerServices.CallerFilePath] string sourcePath = "") =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(sourcePath)!, "..", ".."));

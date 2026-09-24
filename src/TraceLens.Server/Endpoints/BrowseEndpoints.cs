@@ -115,13 +115,12 @@ public static class BrowseEndpoints
     }
 
     /// <summary>
-    /// 목록에 보여 줄 파일 종류. 지원하지 않는 형식(<c>.slnx</c> 등)도 <see cref="BrowseEntryKind.Unsupported"/>로 보여 준다 —
-    /// 목록에서 아예 빼면 <c>.slnx</c>만 있는 폴더가 빈 폴더로 보이고, 잘 써 둔 미지원 사유에 닿을 수 없다.
+    /// 목록에 보여 줄 파일 종류. 지원하지 않는 형식도 <see cref="BrowseEntryKind.Unsupported"/>로 보여 준다.
     /// </summary>
     private static BrowseEntryKind? GetTargetKind(string fileName)
     {
         var extension = Path.GetExtension(fileName).ToLowerInvariant();
-        if (extension is ".sln")
+        if (extension is ".sln" or ".slnx")
         {
             return BrowseEntryKind.Solution;
         }

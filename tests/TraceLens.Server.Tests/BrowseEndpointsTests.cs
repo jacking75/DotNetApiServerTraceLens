@@ -27,7 +27,11 @@ public sealed class BrowseEndpointsTests
 
             Assert.Equal(directory, response.Path);
             Assert.Equal(
-                [("Fixture.Api.csproj", BrowseEntryKind.Project), ("Fixture.sln", BrowseEntryKind.Solution)],
+                [
+                    ("Fixture.Api.csproj", BrowseEntryKind.Project),
+                    ("Fixture.sln", BrowseEntryKind.Solution),
+                    ("Fixture.slnx", BrowseEntryKind.Solution)
+                ],
                 response.Entries
                     .Where(entry => entry.Kind != BrowseEntryKind.Directory)
                     .Select(entry => (entry.Name, entry.Kind))
@@ -46,7 +50,7 @@ public sealed class BrowseEndpointsTests
     /// 목록에 보여 주되 고를 수 없게 하고 사유를 함께 준다.
     /// </summary>
     [Fact]
-    public void Browse_ShowsUnsupportedTargetsWithTheReason()
+    public void Browse_ListsSlnxAsASolution()
     {
         var directory = Path.Combine(Path.GetTempPath(), "tracelens-browse-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -56,8 +60,8 @@ public sealed class BrowseEndpointsTests
             var response = GetResponse(BrowseEndpoints.Browse(directory));
 
             var entry = response.Entries.Single(item => item.Name == "Fixture.slnx");
-            Assert.Equal(BrowseEntryKind.Unsupported, entry.Kind);
-            Assert.False(string.IsNullOrWhiteSpace(entry.Reason));
+            Assert.Equal(BrowseEntryKind.Solution, entry.Kind);
+            Assert.True(string.IsNullOrWhiteSpace(entry.Reason));
         }
         finally
         {
@@ -103,6 +107,7 @@ public sealed class BrowseEndpointsTests
         Directory.CreateDirectory(Path.Combine(directory, "src"));
         Directory.CreateDirectory(Path.Combine(directory, "bin"));
         File.WriteAllText(Path.Combine(directory, "Fixture.sln"), string.Empty);
+        File.WriteAllText(Path.Combine(directory, "Fixture.slnx"), string.Empty);
         File.WriteAllText(Path.Combine(directory, "Fixture.Api.csproj"), string.Empty);
         File.WriteAllText(Path.Combine(directory, "readme.txt"), string.Empty);
         return directory;

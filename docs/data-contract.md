@@ -60,7 +60,7 @@
 | `diagnostics.entryPointCandidates` | HTTP 밖 실행 단위 후보(`HostedService`·`MessageConsumer`·`SignalRHub`·`GrpcService`·`ScheduledJob`·`AzureFunction`·`HealthCheck`·`ConventionalRouting`). 진입점·엣지를 만들지 않는다. | 빈 목록 |
 | `middleware.steps[].type = "Extension"` | 솔루션 안 확장 메서드(`app.UseCompanyAuth()`). 본문에서 등록한 미들웨어를 하위 단계로 펼치고 `parentId`로 잇는다(깊이 2). 펼치지 못하면 그 사유를 `pre`에 적는다. | `Framework`로 읽는다 |
 | `middleware.steps[].parentId` | 이 단계를 펼쳐서 나온 상위 단계 ID. 최상위면 null. | null |
-| `browse` 응답의 `kind = "Unsupported"` | 아직 지원하지 않는 형식(.slnx 등). 목록에는 보이되 고를 수 없고 `reason`에 사유가 있다. | 이 값이 없던 서버는 그 파일을 목록에서 뺐다 |
+| `browse` 응답의 `kind = "Unsupported"` | 아직 지원하지 않는 형식(.vbproj 등). 목록에는 보이되 고를 수 없고 `reason`에 사유가 있다. | 이 값이 없던 서버는 그 파일을 목록에서 뺐다 |
 | `get_analysis_status`의 `suggestedNextTools` | 지금 상태에서 다음에 부를 만한 MCP 도구. 보장이 아니라 제안이다. | 빈 목록 |
 | `get_analysis_status`의 `dataAccessNotes` | `dataAccess.notes`와 같은 내용. 에이전트가 빈 결과를 잘못 읽지 않게 한다. | 빈 목록 |
 | `entryPoints[].apiVersions` | `[ApiVersion]`으로 선언한 버전. 라우트에 `{version:apiVersion}` 토큰이 있으면 버전마다 진입점이 하나씩 나오고, 없으면 라우트는 같고 `endpointId`로만 구분한다. | 빈 목록 |

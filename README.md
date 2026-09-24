@@ -24,7 +24,7 @@ dotnet --version       # should print 10.x
 
 ```
 # Packaged build: .\tracelens.exe · From source: dotnet run --project src/TraceLens.Cli --
-1) tracelens analyze <your .sln or .csproj>       # analyzes and writes .tracelens/graph.json
+1) tracelens analyze <your .sln, .slnx, or .csproj> # analyzes and writes .tracelens/graph.json
 2) tracelens serve   --target <same path>         # opens the UI at http://127.0.0.1:25011
 3) pick an entry point → check the source → copy AI context   # evidence and limits come along
 4) after the AI edits code → "Re-analyze and compare"          # see what actually changed
@@ -440,7 +440,7 @@ splitter drag, an entry-point selection and typing a question (numbers go in the
 
 ### Pointing at a target
 
-Type the path in the header or use **Browse…**. You can point at a solution (`.sln`) or a single
+Type the path in the header or use **Browse…**. You can point at a solution (`.sln` or `.slnx`) or a single
 project (`.csproj`) — a `.csproj` analyzes that project and the projects it references, which is
 handy for looking at one slice of a large solution.
 
@@ -458,7 +458,7 @@ handy for looking at one slice of a large solution.
 | Keyed / conditional DI registrations | Not asserted | Which implementation runs cannot be decided statically, so no edge is created and the reason is recorded. |
 | Database and cache access | Supported (configurable) | Read from SQL literals and cache calls. Point `db.queryApis` at your own wrapper types. |
 | Reflection, event subscriptions, message handlers | Not supported | Never turned into call edges. |
-| Target formats | `.sln`, `.csproj` | `.slnx` is not supported yet — the MSBuildWorkspace in use cannot open it, and `doctor` says so. |
+| Target formats | `.sln`, `.slnx`, `.csproj` | `.slnx` requires the .NET 10 SDK. |
 
 ### What is not read today
 

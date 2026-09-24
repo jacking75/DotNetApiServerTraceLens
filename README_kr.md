@@ -23,7 +23,7 @@ dotnet --version       # 10.x가 나와야 한다
 
 ```
 # 배포물: .\tracelens.exe · 소스: dotnet run --project src/TraceLens.Cli --
-1) tracelens analyze <내 .sln 또는 .csproj>       # 분석하고 .tracelens/graph.json에 저장
+1) tracelens analyze <내 .sln, .slnx 또는 .csproj> # 분석하고 .tracelens/graph.json에 저장
 2) tracelens serve   --target <같은 경로>          # http://127.0.0.1:25011 에서 UI 열기
 3) 진입점 선택 → 소스 근거 확인 → AI 문맥 복사     # 근거와 한계까지 함께 복사된다
 4) AI가 코드를 고친 뒤 → "재분석하고 비교"         # 무엇이 달라졌는지 확인
@@ -442,7 +442,7 @@ cd tracelens
 | keyed·조건부 DI 등록 | 확정하지 않음 | 실행 시 어느 구현체가 쓰일지 정적으로 알 수 없어 엣지를 만들지 않고 이유를 남긴다. |
 | DB·캐시 접근 | 지원(설정으로 조정) | SQL 리터럴과 캐시 호출에서 읽는다. `db.queryApis`에 사내 래퍼를 적으면 된다. |
 | reflection·이벤트 구독·메시지 핸들러 | 미지원 | 호출 엣지로 만들지 않는다. |
-| 대상 형식 | `.sln`, `.csproj` | `.slnx`는 지금 쓰는 MSBuildWorkspace가 열지 못해 아직 지원하지 않고, `doctor`가 그 이유를 알려 준다. |
+| 대상 형식 | `.sln`, `.slnx`, `.csproj` | `.slnx`를 열려면 .NET 10 SDK가 필요하다. |
 
 ### 지금 읽지 않는 것
 

@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace TraceLens.Analyzer.Models;
 
-/// <param name="SolutionPath">분석 대상으로 고른 파일의 전체 경로(.sln 또는 .csproj).</param>
+/// <param name="SolutionPath">분석 대상으로 고른 파일의 전체 경로(.sln, .slnx 또는 .csproj).</param>
 public sealed record GraphDocument(
     int SchemaVersion,
     string SolutionPath,

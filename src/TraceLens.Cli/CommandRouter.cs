@@ -146,7 +146,7 @@ public static class CommandRouter
         var target = args.FirstOrDefault(item => !item.StartsWith('-'));
         if (string.IsNullOrWhiteSpace(target))
         {
-            Console.Error.WriteLine("분석할 .sln 또는 .csproj 경로가 필요하다.");
+            Console.Error.WriteLine("분석할 .sln, .slnx 또는 .csproj 경로가 필요하다.");
             return 2;
         }
 

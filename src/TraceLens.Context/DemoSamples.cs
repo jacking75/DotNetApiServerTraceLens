@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace TraceLens.Context;
 
-/// <param name="RelativeTargetPath">복사한 폴더 기준으로 분석할 대상(.sln 또는 .csproj)의 상대 경로.</param>
+/// <param name="RelativeTargetPath">복사한 폴더 기준으로 분석할 대상(.sln, .slnx 또는 .csproj)의 상대 경로.</param>
 /// <param name="Expected">이 예제를 분석하면 무엇이 보이는지. 사용자가 결과를 스스로 확인할 수 있게 적어 둔다.</param>
 public sealed record DemoSample(
     string Id,

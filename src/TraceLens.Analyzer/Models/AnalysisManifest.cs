@@ -20,7 +20,7 @@ public sealed record ManifestInput(string Path, string Hash, ManifestInputKind K
 /// 신선도 확인은 <see cref="GraphDocument.FileHashes"/>의 해시 비교뿐 아니라
 /// <see cref="SourceRoots"/> 아래의 <c>.cs</c> 파일 집합 비교로 "새로 생긴 파일"까지 잡는다.
 /// </summary>
-/// <param name="Inputs">.sln/.csproj와 설정 파일들. 내용이 바뀌면 분석 결과가 달라질 수 있다.</param>
+/// <param name="Inputs">.sln/.slnx/.csproj와 설정 파일들. 내용이 바뀌면 분석 결과가 달라질 수 있다.</param>
 /// <param name="SourceRoots">새 소스 파일을 찾을 때 훑는 디렉터리(분석 루트 기준 상대 경로).</param>
 /// <param name="ExcludedDirectories">위 훑기에서 건너뛰는 디렉터리 이름.</param>
 /// <param name="LinkedSources">분석 루트 밖에서 링크로 들어온 소스. 해시는 추적하지만 새 파일 검사는 하지 않는다.</param>

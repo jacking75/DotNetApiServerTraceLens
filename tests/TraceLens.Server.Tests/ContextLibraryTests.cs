@@ -132,14 +132,14 @@ public sealed class ContextLibraryTests : IDisposable
     }
 
     [Fact]
-    public void Diagnostics_RejectsUnsupportedTargetFormat()
+    public void Diagnostics_AcceptsSlnxTargetFormat()
     {
         var report = new EnvironmentDiagnostics().Run(new DiagnosticsOptions
         {
             TargetPath = Path.Combine(root, "Fixture.slnx")
         });
 
-        Assert.Contains(report.Items, item => item.Code == "UNSUPPORTED_TARGET_FORMAT");
+        Assert.DoesNotContain(report.Items, item => item.Code == "UNSUPPORTED_TARGET_FORMAT");
     }
 
     /* ---------------------------------------------------------------- 공유 보고서 */

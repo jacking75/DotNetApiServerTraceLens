@@ -630,10 +630,8 @@ cd tracelens
             <td>Copies the example into a folder you choose and explains what to look at.</td></tr>
       </table>
       <div class="callout note">
-        <strong>Supported formats.</strong> <code>.sln</code> and <code>.csproj</code>.
-        <code>.slnx</code> is not supported yet because the MSBuildWorkspace in use cannot open it;
-        <code>doctor</code> reports <code>UNSUPPORTED_TARGET_FORMAT</code> with that reason rather than
-        failing obscurely. Support is not "added" by loosening an extension check.
+        <strong>Supported formats.</strong> <code>.sln</code>, <code>.slnx</code>, and <code>.csproj</code>.
+        Opening <code>.slnx</code> requires the .NET 10 SDK.
       </div>
 
       <div class="callout warn">

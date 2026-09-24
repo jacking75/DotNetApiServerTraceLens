@@ -35,7 +35,9 @@ public sealed class AnalysisManifestBuilder
         var inputs = new Dictionary<string, ManifestInput>(StringComparer.OrdinalIgnoreCase);
         var limitations = new List<string>();
 
-        var targetKind = string.Equals(Path.GetExtension(targetPath), ".sln", StringComparison.OrdinalIgnoreCase)
+        var extension = Path.GetExtension(targetPath);
+        var targetKind = string.Equals(extension, ".sln", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(extension, ".slnx", StringComparison.OrdinalIgnoreCase)
             ? ManifestInputKind.Solution
             : ManifestInputKind.Project;
         await AddInputAsync(inputs, rootDirectory, targetPath, targetKind, cancellationToken);

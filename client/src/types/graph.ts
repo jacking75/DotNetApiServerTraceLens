@@ -406,7 +406,7 @@ export interface FreshnessResponse {
 }
 
 /** 분석 대상 선택 대화상자가 다루는 파일 시스템 항목. */
-/** `Unsupported`는 아직 지원하지 않는 형식(.slnx 등)이다. 목록에는 보이되 고를 수 없다. */
+/** `Unsupported`는 아직 지원하지 않는 형식(.vbproj 등)이다. 목록에는 보이되 고를 수 없다. */
 export type BrowseEntryKind = 'Directory' | 'Solution' | 'Project' | 'Unsupported'
 
 export interface BrowseEntry {

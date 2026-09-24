@@ -62,7 +62,7 @@ export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: 
       return
     }
 
-    // 지원하지 않는 형식은 고를 수 없다. 목록에서 빼면 .slnx만 있는 폴더가 빈 폴더로 보인다.
+    // 지원하지 않는 형식은 고를 수 없다. 목록에서 빼면 대상 후보만 있는 폴더가 빈 폴더로 보인다.
     if (entry.kind === 'Unsupported') return
 
     setSelected(entry)

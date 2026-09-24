@@ -219,7 +219,7 @@ public static class GraphCommands
         var target = Options.FirstPositional(args);
         if (string.IsNullOrWhiteSpace(target))
         {
-            error.WriteLine("분석 대상(.sln/.csproj) 또는 그 폴더 경로가 필요하다.");
+            error.WriteLine("분석 대상(.sln/.slnx/.csproj) 또는 그 폴더 경로가 필요하다.");
             return new LoadedGraph(BadArguments, null, null, false);
         }
 
