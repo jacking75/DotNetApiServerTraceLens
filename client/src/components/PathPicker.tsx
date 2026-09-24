@@ -33,28 +33,65 @@ export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: 
   const { t } = useI18n()
   const [listing, setListing] = useState<BrowseResponse | null>(null)
   const [selected, setSelected] = useState<BrowseEntry | null>(null)
+  const [addressPath, setAddressPath] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [historyPosition, setHistoryPosition] = useState({ index: -1, length: 0 })
+  const historyRef = useRef<Array<string | undefined>>([])
+  const historyIndexRef = useRef(-1)
+  const requestIdRef = useRef(0)
+  const addressRef = useRef<HTMLInputElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const modalRef = useModal<HTMLDivElement>(onClose, closeRef)
 
-  const load = useCallback(async (path?: string) => {
+  const load = useCallback(async (path?: string, recordHistory = true) => {
+    const requestId = ++requestIdRef.current
     setBusy(true)
     setError(null)
     try {
       const next = await browsePath(path)
+      if (requestId !== requestIdRef.current) return false
+
       setListing(next)
       setSelected(null)
+      setAddressPath(next.path ?? '')
+      if (recordHistory) {
+        const canonicalPath = next.path ?? undefined
+        const currentPath = historyRef.current[historyIndexRef.current]
+        if (historyIndexRef.current < 0 || currentPath !== canonicalPath) {
+          historyRef.current = [
+            ...historyRef.current.slice(0, historyIndexRef.current + 1),
+            canonicalPath,
+          ]
+          historyIndexRef.current = historyRef.current.length - 1
+          setHistoryPosition({ index: historyIndexRef.current, length: historyRef.current.length })
+        }
+      }
+      return true
     } catch (reason) {
+      if (requestId !== requestIdRef.current) return false
       setError(reason instanceof Error ? reason.message : t('picker.openFailed'))
+      return false
     } finally {
-      setBusy(false)
+      if (requestId === requestIdRef.current) setBusy(false)
     }
   }, [t])
 
   useEffect(() => {
+    historyRef.current = []
+    historyIndexRef.current = -1
+    setHistoryPosition({ index: -1, length: 0 })
     void load(initialPath.trim() || undefined)
   }, [initialPath, load])
+
+  const moveHistory = async (offset: number) => {
+    const nextIndex = historyIndexRef.current + offset
+    if (nextIndex < 0 || nextIndex >= historyRef.current.length) return
+    if (await load(historyRef.current[nextIndex], false)) {
+      historyIndexRef.current = nextIndex
+      setHistoryPosition({ index: nextIndex, length: historyRef.current.length })
+    }
+  }
 
   const openEntry = (entry: BrowseEntry) => {
     if (entry.kind === 'Directory') {
@@ -82,6 +119,22 @@ export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: 
         aria-modal="true"
         aria-label={title}
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'l') {
+            event.preventDefault()
+            addressRef.current?.focus()
+            addressRef.current?.select()
+            return
+          }
+          if (!event.altKey || event.key === 'Alt') return
+          if (event.key === 'ArrowLeft' && historyPosition.index > 0) {
+            event.preventDefault()
+            void moveHistory(-1)
+          } else if (event.key === 'ArrowRight' && historyPosition.index + 1 < historyPosition.length) {
+            event.preventDefault()
+            void moveHistory(1)
+          }
+        }}
       >
         <header>
           <span>{title}</span>
@@ -99,13 +152,61 @@ export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: 
         <div className="picker-path">
           <button
             type="button"
+            className="picker-nav-button"
+            onClick={() => void moveHistory(-1)}
+            disabled={busy || historyPosition.index <= 0}
+            title={t('picker.back')}
+            aria-label={t('picker.back')}
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            className="picker-nav-button"
+            onClick={() => void moveHistory(1)}
+            disabled={busy || historyPosition.index < 0 || historyPosition.index + 1 >= historyPosition.length}
+            title={t('picker.forward')}
+            aria-label={t('picker.forward')}
+          >
+            →
+          </button>
+          <button
+            type="button"
+            className="picker-nav-button"
             onClick={() => void load(listing?.parentPath ?? undefined)}
             disabled={busy || !listing?.path}
             title={t('picker.up')}
+            aria-label={t('picker.up')}
           >
-            ↑ {t('picker.up')}
+            ↑
           </button>
-          <span title={listing?.path ?? ''}>{listing?.path ?? t('picker.drives')}</span>
+          <button
+            type="button"
+            className="picker-drives-button"
+            onClick={() => void load(undefined)}
+            disabled={busy || !listing?.path}
+            title={t('picker.drives')}
+          >
+            {t('picker.drives')}
+          </button>
+          <form
+            className="picker-address"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void load(addressPath.trim() || undefined)
+            }}
+          >
+            <input
+              ref={addressRef}
+              value={addressPath}
+              onChange={(event) => setAddressPath(event.target.value)}
+              onFocus={(event) => event.currentTarget.select()}
+              placeholder={t('picker.addressPlaceholder')}
+              aria-label={t('picker.address')}
+              spellCheck={false}
+            />
+            <button type="submit" disabled={busy} title={t('picker.go')}>{t('picker.go')}</button>
+          </form>
         </div>
 
         {error && <div className="panel-message error">{error}</div>}

@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "ASP.NET Core 시작 흐름",
+    "subtitle": "등록과 실행 파이프라인을 구분한 코드 진행 순서",
+    "quality_profile": "showcase",
+    "visual_preset": "editorial",
+    "viewBox": [1200, 680]
+  },
+  "lanes": [
+    { "id": "app", "label": "앱 준비" },
+    { "id": "services", "label": "서비스 구성" },
+    { "id": "pipeline", "label": "요청 파이프라인" }
+  ],
+  "phases": [
+    { "id": "prepare", "label": "준비", "fromCol": 0, "toCol": 0 },
+    { "id": "register", "label": "등록", "fromCol": 1, "toCol": 2, "variant": "emphasis" },
+    { "id": "compose", "label": "연결", "fromCol": 3, "toCol": 4 },
+    { "id": "serve", "label": "실행", "fromCol": 5, "toCol": 5, "variant": "emphasis" }
+  ],
+  "nodes": [
+    { "id": "program", "lane": "app", "col": 0, "type": "backend", "label": "Program.cs", "width": 76 },
+    { "id": "services", "lane": "services", "col": 1, "type": "database", "label": "서비스 등록", "sublabel": "builder.Services", "width": 84 },
+    { "id": "build", "lane": "app", "col": 2, "type": "backend", "label": "앱 빌드", "sublabel": "Build()", "width": 72 },
+    { "id": "middleware", "lane": "pipeline", "col": 3, "type": "security", "label": "검사", "sublabel": "Use...", "width": 42 },
+    { "id": "routing", "lane": "pipeline", "col": 4, "type": "backend", "label": "라우팅", "sublabel": "Map...", "width": 42 },
+    { "id": "run", "lane": "app", "col": 5, "type": "cloud", "label": "서버 실행", "sublabel": "Run()", "width": 72 }
+  ],
+  "edges": [
+    { "id": "edge_01", "from": "program", "to": "services", "role": "main" },
+    { "id": "edge_02", "from": "services", "to": "build", "role": "main" },
+    { "id": "edge_03", "from": "build", "to": "middleware", "role": "main" },
+    { "id": "edge_04", "from": "middleware", "to": "routing", "role": "main" },
+    { "id": "edge_05", "from": "routing", "to": "run", "role": "main" }
+  ],
+  "mainPath": ["program", "services", "build", "middleware", "routing", "run"]
+}
