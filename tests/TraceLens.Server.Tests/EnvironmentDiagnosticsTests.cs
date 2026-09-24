@@ -10,7 +10,7 @@ namespace TraceLens.Server.Tests;
 /// </summary>
 public sealed class EnvironmentDiagnosticsTests
 {
-    /// <summary>SDK 6.0만 있어도 net8.0 프로젝트는 열리지 않는다. 버전 판정은 폴더 이름에서 읽는다.</summary>
+    /// <summary>SDK 6.0만 있어도 net10.0 프로젝트는 열리지 않는다. 버전 판정은 폴더 이름에서 읽는다.</summary>
     [Theory]
     [InlineData("6.0.428", 6)]
     [InlineData("8.0.404", 8)]
@@ -24,10 +24,10 @@ public sealed class EnvironmentDiagnosticsTests
     }
 
     [Fact]
-    public void MinimumSdkMajor_IsEightOrHigher()
+    public void MinimumSdkMajor_IsTen()
     {
         // 이 값이 낮아지면 SDK_TOO_OLD가 조용히 무력해진다.
-        Assert.True(SolutionLoader.MinimumSdkMajor >= 8);
+        Assert.Equal(10, SolutionLoader.MinimumSdkMajor);
     }
 
     /// <summary>
@@ -92,7 +92,7 @@ public sealed class EnvironmentDiagnosticsTests
         var directory = Path.Combine(Path.GetTempPath(), "tracelens-doctor-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var project = Path.Combine(directory, "Current.csproj");
-        File.WriteAllText(project, "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>");
+        File.WriteAllText(project, "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
 
         try
         {

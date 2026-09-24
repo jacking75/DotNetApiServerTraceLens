@@ -47,7 +47,7 @@ function buildReportInfo(report: DiagnosticsReport, errorId: string | null): str
 }
 
 /**
- * `.NET 8.0.30`처럼 접두사가 이미 든 값에 `.NET`을 또 붙이지 않는다.
+ * `.NET 10.0.9`처럼 접두사가 이미 든 값에 `.NET`을 또 붙이지 않는다.
  * 서버가 주는 문자열 형식이 런타임마다 달라 값을 보고 판단한다.
  */
 function runtimeLabel(runtimeVersion: string): string {
@@ -90,7 +90,7 @@ export function DiagnosticsCard({ report, className, errorId = null }: Diagnosti
       </ul>
       {/*
         예전에는 `<small>` 세 개를 줄바꿈 없이 이어 붙여
-        `.sln, .csprojTraceLens 0.9.0 · .NET .NET 8.0.30 …로그 파일:`처럼 한 줄로 뭉쳤다(E10).
+        `.sln, .csprojTraceLens 0.9.0 · .NET .NET 10.0.9 …로그 파일:`처럼 한 줄로 뭉쳤다(E10).
         항목과 값을 `<dl>`로 나누고 `.NET` 접두사는 한 번만 쓴다.
       */}
       <dl className="diagnostics-facts">

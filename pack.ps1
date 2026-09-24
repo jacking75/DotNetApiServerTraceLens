@@ -62,9 +62,9 @@ function Assert-Command {
     }
 }
 
-Assert-Command 'dotnet' '.NET 8 이상 SDK를 설치해야 한다.'
+Assert-Command 'dotnet' '.NET 10 이상 SDK를 설치해야 한다.'
 if (-not $SkipClient) {
-    Assert-Command 'npm' 'Node.js 20 이상을 설치해야 한다. (-SkipClient로 건너뛸 수 있다)'
+    Assert-Command 'npm.cmd' 'Node.js 20 이상을 설치해야 한다. (-SkipClient로 건너뛸 수 있다)'
 }
 
 if (Test-Path $artifacts) {
@@ -76,11 +76,11 @@ New-Item -ItemType Directory -Path $artifacts -Force | Out-Null
 if (-not $SkipClient) {
     if (-not (Test-Path (Join-Path $clientPath 'node_modules'))) {
         Push-Location $clientPath
-        try { Invoke-Step '클라이언트 의존성 설치' { npm install } } finally { Pop-Location }
+        try { Invoke-Step '클라이언트 의존성 설치' { npm.cmd install } } finally { Pop-Location }
     }
 
     Push-Location $clientPath
-    try { Invoke-Step '클라이언트 빌드' { npm run build } } finally { Pop-Location }
+    try { Invoke-Step '클라이언트 빌드' { npm.cmd run build } } finally { Pop-Location }
 }
 
 $wwwroot = Join-Path $repositoryRoot 'src\TraceLens.Server\wwwroot\index.html'

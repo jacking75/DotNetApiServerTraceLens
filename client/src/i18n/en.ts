@@ -345,7 +345,7 @@ export const en: Dictionary = {
   'diag.MSBUILD_REGISTERED': 'Registered the MSBuild used for analysis.',
   'diag.OS_UNVERIFIED': 'This operating system has not been verified yet.',
   'diag.NUGET_UNREACHABLE': 'Some project is not restored and the NuGet host name could not be resolved.',
-  'diagAction.SDK_TOO_OLD': 'Install .NET 8 or newer.',
+  'diagAction.SDK_TOO_OLD': 'Install .NET 10 or newer.',
   'diagAction.TFM_NOT_INSTALLED': 'Install that .NET SDK version, or check with `dotnet --list-sdks`.',
   'diagAction.OS_UNVERIFIED': 'If it works or fails, reporting it in the CONTRIBUTING format helps.',
   'diagAction.NUGET_UNREACHABLE': 'Configure an internal NuGet source, or analyze a folder that is already restored.',
@@ -369,7 +369,7 @@ export const en: Dictionary = {
   'diag.CLI_CODEX_FOUND': 'Found the codex command.',
   'diag.CLI_CODEX_MISSING': 'The codex command is missing. It is optional and does not affect analysis.',
 
-  'diagAction.SDK_NOT_FOUND': 'Install a .NET 8+ SDK and confirm with `dotnet --info`.',
+  'diagAction.SDK_NOT_FOUND': 'Install a .NET 10+ SDK and confirm with `dotnet --info`.',
   'diagAction.SDK_MISMATCH': 'Run `dotnet --list-sdks` to check that the version global.json pins is installed.',
   'diagAction.TARGET_NOT_FOUND': 'Check the path, or re-check with `tracelens doctor --target <path>`.',
   'diagAction.UNSUPPORTED_TARGET_FORMAT': 'Pick a file in one of the supported formats.',

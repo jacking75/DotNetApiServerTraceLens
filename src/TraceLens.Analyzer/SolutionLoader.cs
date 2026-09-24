@@ -186,10 +186,10 @@ public sealed class SolutionLoader(ILogger<SolutionLoader> logger)
     }
 
     /// <summary>
-    /// 분석에 필요한 최소 SDK 메이저 버전. 이보다 낮으면 net8.0 프로젝트를 열지 못한다.
+    /// 분석에 필요한 최소 SDK 메이저 버전. 이보다 낮으면 net10.0 프로젝트를 열지 못한다.
     /// doctor가 <c>SDK_TOO_OLD</c>를 판정할 때 쓴다.
     /// </summary>
-    public const int MinimumSdkMajor = 8;
+    public const int MinimumSdkMajor = 10;
 
     /// <summary>
     /// 마지막으로 등록한 MSBuild 인스턴스 설명(이름·버전·경로).

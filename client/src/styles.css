@@ -283,8 +283,9 @@ main { padding: 14px 18px 18px; }
   min-height: 420px;
 }
 
-/* main을 세로 flex로 두면 배너 높이가 달라져도 workspace가 남은 높이를 그대로 받는다. */
-main { display: flex; flex-direction: column; min-height: 100vh; }
+/* main을 화면 높이로 고정해야 workspace가 콘텐츠 높이가 아니라 남은 높이를 받는다.
+   그렇지 않으면 호출 흐름 캔버스의 `height: 100%`가 문서 전체를 키워 fit 배율도 함께 틀어진다. */
+main { display: flex; flex-direction: column; height: 100vh; min-height: 600px; overflow: hidden; }
 
 /* 오류·진행·공지·요약·레시피 배너를 한 덩어리로 묶는다. 많이 쌓이면 이 안에서만 스크롤한다. */
 .banner-stack { display: flex; flex-direction: column; gap: 6px; max-height: 30vh; overflow-y: auto; flex: none; }
@@ -341,6 +342,7 @@ main { display: flex; flex-direction: column; min-height: 100vh; }
 .breadcrumb-separator { color: var(--ink-accent-7); margin: 0 3px; }
 .canvas-notice { flex: none; padding: 7px 12px; color: var(--ink-warn-3); background: var(--surface-warn-2); border-bottom: 1px solid var(--line-warn-1); font-size: calc(11.5px * var(--fs-scale)); }
 .graph-shell { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 18px; }
+.callflow-shell { overflow: hidden; }
 .graph-shell .canvas-empty { position: absolute; top: 34%; left: 0; right: 0; text-align: center; }
 /* diagram-wrap은 스크롤하지 않는 고정 틀이라, 그 위에 얹는 줌 컨트롤이 스크롤 위치와 무관하게 한 자리에 머문다. */
 .diagram-wrap { position: relative; flex: 1; min-height: 0; }

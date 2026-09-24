@@ -7,6 +7,20 @@
 여기 나오는 모든 결과는 소스를 **정적으로** 읽어 만든 것이다. 실행 중인 요청의 이력이나 시간(런타임
 분산 추적)은 수집하지 않는다 — 이름의 "Trace"는 코드의 호출 경로를 따라간다는 뜻이다.
 
+## 빌드하고 실행하기
+
+**.NET 10 SDK**와 Node.js 20 이상을 설치한 뒤 PowerShell에서 아래 명령을 실행하면 된다.
+
+```powershell
+git clone https://github.com/jacking75/DotNetApiServerTraceLens.git tracelens
+cd tracelens
+dotnet --version       # 10.x가 나와야 한다
+.\run.ps1
+```
+
+`run.ps1`이 클라이언트 의존성 설치, TraceLens 빌드, 서버 실행, 브라우저 열기까지 처리한다.
+<http://127.0.0.1:25011>을 열고, 종료할 때는 터미널에서 `Ctrl+C`를 누르면 된다.
+
 ```
 # 배포물: .\tracelens.exe · 소스: dotnet run --project src/TraceLens.Cli --
 1) tracelens analyze <내 .sln 또는 .csproj>       # 분석하고 .tracelens/graph.json에 저장
@@ -361,7 +375,7 @@ tracelens config  --show [--target <경로>]     기본값과 파일을 합친 �
 
 | 항목 | 필요 시점 |
 |---|---|
-| .NET 8 이상 SDK | 항상 필요하다. 분석 대상 프로젝트를 여는 데 쓴다. |
+| .NET 10 이상 SDK | 항상 필요하다. TraceLens를 빌드·실행하고 분석 대상 프로젝트를 여는 데 쓴다. |
 | Node.js 20 이상 | **소스에서 빌드할 때만** 필요하다. 배포물(ZIP·.NET tool)을 쓰면 필요 없다. |
 | Claude Code CLI | "Claude Code로 실행"에만 필요하다. 문맥 복사는 없어도 된다. |
 | Codex CLI · VS Code | MCP를 직접 등록해 쓸 때만 필요하다([docs/mcp-setup_kr.md](docs/mcp-setup_kr.md)). |
@@ -449,8 +463,8 @@ cd tracelens
 
 | 운영체제 | 확인 상태 |
 |---|---|
-| Windows 11 x64 · .NET 8 런타임 + .NET SDK | portable ZIP으로 doctor·analyze·serve·소스 보기까지 확인했다 |
-| macOS · Linux | 아직 확인하지 않았다. 코드는 net8.0이라 동작할 가능성이 높지만 지원 완료로 표기하지 않는다 |
+| Windows 11 x64 · .NET 10 런타임 + .NET SDK | 소스 빌드와 자동 테스트를 확인했다. portable ZIP은 수동 재검증이 필요하다 |
+| macOS · Linux | 아직 확인하지 않았다. 코드는 net10.0이라 동작할 가능성이 높지만 지원 완료로 표기하지 않는다 |
 
 ---
 

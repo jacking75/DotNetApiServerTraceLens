@@ -84,16 +84,16 @@ function Start-BrowserWhenReady {
     } | Out-Null
 }
 
-Assert-Command 'dotnet' '.NET 8 이상 SDK를 설치해야 한다.'
+Assert-Command 'dotnet' '.NET 10 이상 SDK를 설치해야 한다.'
 # -SkipBuild면 클라이언트를 빌드하지 않으므로 npm이 없어도 된다(배포물만 쓰는 사용자를 막지 않는다).
 if (-not $SkipBuild) {
-    Assert-Command 'npm' 'Node.js 20 이상을 설치해야 한다. 빌드 없이 실행하려면 -SkipBuild를 준다.'
+    Assert-Command 'npm.cmd' 'Node.js 20 이상을 설치해야 한다. 빌드 없이 실행하려면 -SkipBuild를 준다.'
 }
 
 if (-not $SkipBuild) {
     if (-not (Test-Path (Join-Path $clientPath 'node_modules'))) {
         Push-Location $clientPath
-        try { Invoke-Step '클라이언트 의존성 설치' { npm install } } finally { Pop-Location }
+        try { Invoke-Step '클라이언트 의존성 설치' { npm.cmd install } } finally { Pop-Location }
     }
 
     Invoke-Step '서버 빌드' { dotnet build $solutionPath --nologo -v q }
@@ -101,7 +101,7 @@ if (-not $SkipBuild) {
     if (-not $Dev) {
         # vite 빌드 결과가 src/TraceLens.Server/wwwroot로 들어가서 서버가 그대로 호스팅한다.
         Push-Location $clientPath
-        try { Invoke-Step '클라이언트 빌드' { npm run build } } finally { Pop-Location }
+        try { Invoke-Step '클라이언트 빌드' { npm.cmd run build } } finally { Pop-Location }
     }
 }
 
@@ -112,7 +112,7 @@ if (-not $Dev) {
     exit $LASTEXITCODE
 }
 
-$serverAssembly = Join-Path $serverProject 'bin\Debug\net8.0\TraceLens.Server.dll'
+$serverAssembly = Join-Path $serverProject 'bin\Debug\net10.0\TraceLens.Server.dll'
 if (-not (Test-Path $serverAssembly)) {
     throw "서버 빌드 결과를 찾을 수 없다: $serverAssembly (-SkipBuild 없이 다시 실행한다.)"
 }
@@ -126,7 +126,7 @@ try {
     Write-Host "==> Vite 개발 서버 실행: $devUrl (Ctrl+C로 둘 다 종료)" -ForegroundColor Green
     Start-BrowserWhenReady $devUrl
     Push-Location $clientPath
-    try { npm run dev } finally { Pop-Location }
+    try { npm.cmd run dev } finally { Pop-Location }
 }
 finally {
     if ($serverProcess -and -not $serverProcess.HasExited) {

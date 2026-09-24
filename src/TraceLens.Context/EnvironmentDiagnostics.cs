@@ -92,7 +92,7 @@ public sealed class EnvironmentDiagnostics
                 "SDK_NOT_FOUND",
                 DiagnosticSeverity.Error,
                 $"분석에 쓸 .NET SDK를 찾지 못했다: {exception.Message}",
-                ".NET 8 이상 SDK를 설치하고 `dotnet --info`로 확인해야 한다.") { Detail = exception.Message });
+                ".NET 10 이상 SDK를 설치하고 `dotnet --info`로 확인해야 한다.") { Detail = exception.Message });
         }
 
         CheckSdkVersion(sdkPath, items);
@@ -117,7 +117,7 @@ public sealed class EnvironmentDiagnostics
     }
 
     /// <summary>
-    /// SDK를 찾았더라도 버전이 낮으면 net8.0 프로젝트를 열지 못한다.
+    /// SDK를 찾았더라도 버전이 낮으면 net10.0 프로젝트를 열지 못한다.
     /// 예전에는 SDK 6.0만 있어도 "분석할 수 있다"고 말했다 — doctor가 통과시킨 뒤 실제로 실패하는 대표 사례다.
     /// </summary>
     private static void CheckSdkVersion(string? sdkPath, List<DiagnosticItem> items)
@@ -202,7 +202,7 @@ public sealed class EnvironmentDiagnostics
         }
 
         // SDK N은 netX(X ≤ N)를 빌드할 수 있다. 그래서 "정확히 같은 메이저가 있는가"가 아니라
-        // "가장 높은 SDK보다 새 프레임워크를 요구하는가"만 본다. 반대로 보면 net8.0 프로젝트에
+        // "가장 높은 SDK보다 새 프레임워크를 요구하는가"만 본다. 반대로 보면 net10.0 프로젝트에
         // SDK 10만 깔린 정상 환경이 경고로 뜬다.
         var newestSdkMajor = SolutionLoader.ListSdkDirectories()
             .Select(path => SolutionLoader.ReadSdkVersion(Path.GetFileName(path)))

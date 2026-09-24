@@ -5,7 +5,7 @@
     패키지를 받지 않아도 되게 테스트 프레임워크 참조 없이 이름 규칙(`.Tests`)으로만 판정하게 둔다.
   -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsTestProject>true</IsTestProject>

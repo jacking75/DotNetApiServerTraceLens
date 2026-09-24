@@ -342,7 +342,7 @@ export const ko = {
   'diag.MSBUILD_REGISTERED': '분석에 쓸 MSBuild를 등록했다.',
   'diag.OS_UNVERIFIED': '이 운영체제는 아직 검증하지 않았다.',
   'diag.NUGET_UNREACHABLE': '복원되지 않은 프로젝트가 있는데 NuGet 이름을 해석하지 못했다.',
-  'diagAction.SDK_TOO_OLD': '.NET 8 이상 SDK를 설치해야 한다.',
+  'diagAction.SDK_TOO_OLD': '.NET 10 이상 SDK를 설치해야 한다.',
   'diagAction.TFM_NOT_INSTALLED': '해당 버전의 .NET SDK를 설치하거나 `dotnet --list-sdks`로 확인해야 한다.',
   'diagAction.OS_UNVERIFIED': '동작하거나 실패하면 CONTRIBUTING의 신고 형식으로 알려 주면 도움이 된다.',
   'diagAction.NUGET_UNREACHABLE': '사내 NuGet 소스를 설정하거나 복원된 폴더에서 분석해야 한다.',
@@ -366,7 +366,7 @@ export const ko = {
   'diag.CLI_CODEX_FOUND': 'codex 명령을 찾았다.',
   'diag.CLI_CODEX_MISSING': 'codex 명령이 없다. 선택 기능이라 분석에는 영향이 없다.',
 
-  'diagAction.SDK_NOT_FOUND': '.NET 8 이상 SDK를 설치하고 `dotnet --info`로 확인해야 한다.',
+  'diagAction.SDK_NOT_FOUND': '.NET 10 이상 SDK를 설치하고 `dotnet --info`로 확인해야 한다.',
   'diagAction.SDK_MISMATCH': '`dotnet --list-sdks`로 global.json이 요구하는 버전이 있는지 확인해야 한다.',
   'diagAction.TARGET_NOT_FOUND': '경로를 확인하거나 `tracelens doctor --target <경로>`로 다시 확인해야 한다.',
   'diagAction.UNSUPPORTED_TARGET_FORMAT': '지원 형식의 파일을 골라야 한다.',

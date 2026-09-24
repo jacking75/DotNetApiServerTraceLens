@@ -581,7 +581,7 @@
 
       <h4 class="mini-h">Requirements</h4>
       <ul>
-        <li>.NET 8 SDK or later</li>
+        <li>.NET 10 SDK or later</li>
         <li>Node.js 20 or later</li>
         <li>Claude Code CLI — only needed for the ask panel's <b>Run with Claude Code</b> button (that button is the one Claude Code-specific piece). Copying context works without it.</li>
         <li>Codex CLI / VS Code — separate from the button above, needed only if you want to register the TraceLens MCP server directly (see <a href="#ask-mcp">Run with Claude Code</a> for how to connect it)</li>
@@ -673,7 +673,7 @@ dotnet publish src/TraceLens.Server -c Release -o publish</code></pre>
         (TraceLens.Analyzer · TraceLens.Mcp), and the <code>wwwroot/</code> folder holding the
         React build you just made — <b>this one folder runs on its own, with no source code or
         Node.js needed</b>. The default publish is framework-dependent rather than
-        self-contained, though, so the .NET 8 runtime still needs to be installed on the machine
+        self-contained, though, so the .NET 10 runtime still needs to be installed on the machine
         you run it on.
       </p>
       <pre><code># 3. Run it (Windows)
@@ -700,7 +700,7 @@ dotnet .\publish\TraceLens.Server.dll</code></pre>
         If you had registered a path to <code>TraceLens.Mcp.dll</code> for MCP integration
         (<a href="#ask-mcp">Run with Claude Code</a>, <code>docs/mcp-setup.md</code>), you'll need to
         re-register it with the published folder's path — before publishing it was probably
-        pointing at <code>bin/Debug/net8.0/TraceLens.Mcp.dll</code>. To publish TraceLens.Mcp the
+        pointing at <code>bin/Debug/net10.0/TraceLens.Mcp.dll</code>. To publish TraceLens.Mcp the
         same way, run <code>dotnet publish src/TraceLens.Mcp -c Release -o publish-mcp</code>
         separately.
       </p>

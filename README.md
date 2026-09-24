@@ -8,6 +8,20 @@ Everything here comes from reading your source **statically**. TraceLens does no
 traces or timings — the "Trace" in the name means following call paths through code, not distributed
 tracing.
 
+## Build and run
+
+Install the **.NET 10 SDK** and Node.js 20 or later, then run these commands in PowerShell:
+
+```powershell
+git clone https://github.com/jacking75/DotNetApiServerTraceLens.git tracelens
+cd tracelens
+dotnet --version       # should print 10.x
+.\run.ps1
+```
+
+`run.ps1` installs the client dependencies, builds TraceLens, starts it, and opens
+<http://127.0.0.1:25011>. Press `Ctrl+C` in the terminal to stop it.
+
 ```
 # Packaged build: .\tracelens.exe · From source: dotnet run --project src/TraceLens.Cli --
 1) tracelens analyze <your .sln or .csproj>       # analyzes and writes .tracelens/graph.json
@@ -375,7 +389,7 @@ counts — no invented percentage — and can be **canceled**, which keeps the p
 
 | Requirement | When it is needed |
 |---|---|
-| .NET 8 SDK or later | Always. It is what opens the project you analyze. |
+| .NET 10 SDK or later | Always. It builds and runs TraceLens, and opens the project you analyze. |
 | Node.js 20 or later | **Only when building from source.** Not needed with the released ZIP or .NET tool. |
 | Claude Code CLI | Only for "Run with Claude Code". Copying context works without it. |
 | Codex CLI / VS Code | Only if you want to register the MCP server directly ([docs/mcp-setup.md](docs/mcp-setup.md)). |
@@ -466,8 +480,8 @@ Only verified platform combinations are listed:
 
 | Platform | Status |
 |---|---|
-| Windows 11 x64, .NET 8 runtime + .NET SDK | Verified with the portable ZIP: doctor, analyze, serve, source viewing |
-| macOS / Linux | Not verified yet. The code targets net8.0 and will likely run, but it is not listed as supported |
+| Windows 11 x64, .NET 10 runtime + .NET SDK | Source build and automated tests verified; the portable ZIP still needs manual re-verification |
+| macOS / Linux | Not verified yet. The code targets net10.0 and will likely run, but it is not listed as supported |
 
 ---
 

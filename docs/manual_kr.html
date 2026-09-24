@@ -576,7 +576,7 @@
 
       <h4 class="mini-h">요구사항</h4>
       <ul>
-        <li>.NET 8 이상 SDK</li>
+        <li>.NET 10 이상 SDK</li>
         <li>Node.js 20 이상</li>
         <li>Claude Code CLI — 질문 패널의 <b>Claude Code로 실행</b> 버튼을 쓸 경우에만 필요하다(이 버튼만 Claude Code 전용이다). 문맥 복사는 없어도 된다.</li>
         <li>Codex CLI · VS Code — 위 버튼과는 별개로, TraceLens MCP를 직접 등록해서 쓰고 싶을 때 필요하다(<a href="#ask-mcp">Claude Code로 실행</a> 절의 연결 방법 참고)</li>
@@ -661,7 +661,7 @@ dotnet publish src/TraceLens.Server -c Release -o publish</code></pre>
         프로젝트(TraceLens.Analyzer · TraceLens.Mcp)까지 포함한 종속 파일, 그리고 방금 빌드한 React
         결과물이 든 <code>wwwroot/</code>가 함께 들어간다 — <b>소스 코드나 Node.js 없이</b> 이 폴더
         하나만으로 동작한다. 다만 기본 게시는 self-contained가 아니라 프레임워크 종속 방식이라, 실행할
-        PC에 .NET 8 런타임은 설치되어 있어야 한다.
+        PC에 .NET 10 런타임은 설치되어 있어야 한다.
       </p>
       <pre><code># 3. 실행 (Windows)
 .\publish\TraceLens.Server.exe
@@ -684,7 +684,7 @@ dotnet .\publish\TraceLens.Server.dll</code></pre>
       <p class="text-soft">
         MCP 연동(<a href="#ask-mcp">Claude Code로 실행</a>, <code>docs/mcp-setup_kr.md</code>)에서
         <code>TraceLens.Mcp.dll</code> 경로를 등록해 썼다면, 게시 폴더의 경로로 다시 등록해야 한다 —
-        게시 전에는 보통 <code>bin/Debug/net8.0/TraceLens.Mcp.dll</code>을 가리키고 있었을 것이다.
+        게시 전에는 보통 <code>bin/Debug/net10.0/TraceLens.Mcp.dll</code>을 가리키고 있었을 것이다.
         TraceLens.Mcp도 같은 방식으로 게시하려면 <code>dotnet publish src/TraceLens.Mcp -c Release -o publish-mcp</code>를
         따로 실행한다.
       </p>

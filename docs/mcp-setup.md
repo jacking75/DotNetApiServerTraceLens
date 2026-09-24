@@ -47,7 +47,7 @@ From source:
 
 ```text
 command: dotnet
-args:    ["C:\\repos\\tracelens\\src\\TraceLens.Mcp\\bin\\Debug\\net8.0\\TraceLens.Mcp.dll",
+args:    ["C:\\repos\\tracelens\\src\\TraceLens.Mcp\\bin\\Debug\\net10.0\\TraceLens.Mcp.dll",
           "--graph", "C:\\repos\\MyApp\\.tracelens\\graph.json"]
 ```
 

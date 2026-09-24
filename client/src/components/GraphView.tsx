@@ -29,6 +29,22 @@ function cssVariable(name: string, fallback: string): string {
   return value.length > 0 ? value : fallback
 }
 
+/**
+ * 호출 흐름은 한 진입점 주변의 작은 창이므로, 빈 폭을 채우려고 노드를 100% 이상 확대하지 않는다.
+ * 가로로 갈래가 있는 짧은 흐름은 기존 `fit()`만 쓰면 가로 폭에 맞춰 과도하게 커지고,
+ * 세로 단계가 화면 밖으로 밀려나는 문제가 있었다.
+ */
+function fitCallFlow(instance: cytoscape.Core): number {
+  instance.fit(undefined, 32)
+  const zoom = Math.min(1, instance.zoom())
+  if (zoom < instance.zoom()) {
+    instance.zoom(zoom)
+    instance.center()
+  }
+
+  return Number(instance.zoom().toFixed(2))
+}
+
 export function GraphView({
   graphWindow,
   entryPoints,
@@ -71,8 +87,9 @@ export function GraphView({
         edge: cssVariable('--canvas-edge', '#657086'),
         accent: cssVariable('--accent', '#8ddcff'),
       }, kindColors),
-      // 레벨 간 간격을 줄인다. 예전에는 노드 6개가 화면을 다 썼다.
-      layout: { name: 'breadthfirst', directed: true, spacingFactor: 0.85, padding: 24 },
+      // 첫 분기까지의 흐름은 한 화면에서 읽는 것이 목적이다. 계층 간 간격을 촘촘히 두고
+      // 이후 fitCallFlow가 가로 여백만으로 노드를 과도하게 키우지 않게 한다.
+      layout: { name: 'breadthfirst', directed: true, spacingFactor: 0.5, padding: 20 },
       // 맨 휠은 스크롤, Ctrl+휠이 줌이다. 세 캔버스에서 같게 맞춘다.
       userZoomingEnabled: false,
     })
@@ -96,17 +113,24 @@ export function GraphView({
 
     // 창이 바뀌면 화면을 맞춘다. 파고든 뒤 포커스가 화면 아래에 걸리던 문제가 여기서 사라진다.
     instance.ready(() => {
-      instance.fit(undefined, 28)
-      setZoom(Number(instance.zoom().toFixed(2)))
+      window.requestAnimationFrame(() => setZoom(fitCallFlow(instance)))
     })
     instance.on('zoom', () => setZoom(Number(instance.zoom().toFixed(2))))
 
+    // 좌우 패널을 접거나 창 크기를 바꿔도 기존 배율을 유지하면 세로 흐름이 잘린다.
+    // 캔버스의 실제 크기가 바뀐 다음 프레임에만 다시 맞춘다.
+    const observer = new ResizeObserver(() => {
+      window.requestAnimationFrame(() => setZoom(fitCallFlow(instance)))
+    })
+    observer.observe(containerRef.current)
+
     instanceRef.current = instance
     return () => {
+      observer.disconnect()
       instanceRef.current = null
       instance.destroy()
     }
-  }, [graphWindow])
+  }, [graphWindow, t])
 
   // Ctrl+휠만 줌으로 받는다. 맨 휠은 캔버스를 위아래로 옮긴다.
   useEffect(() => {
@@ -137,7 +161,8 @@ export function GraphView({
   }, [])
 
   const fit = useCallback(() => {
-    instanceRef.current?.fit(undefined, 28)
+    const instance = instanceRef.current
+    if (instance) setZoom(fitCallFlow(instance))
   }, [])
 
   /** 호출 흐름은 Cytoscape가 그리므로 SVG 대신 PNG로 저장한다. */
@@ -173,7 +198,7 @@ export function GraphView({
     selectedNodeId && graphWindow && !graphWindow.nodes.some((node) => node.id === selectedNodeId))
 
   return (
-    <div className="graph-shell">
+    <div className="graph-shell callflow-shell">
       <div className="graph-help">
         {t('graph.expandHint')}
         {graphWindow?.hiddenCount
