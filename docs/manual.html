@@ -495,6 +495,7 @@
       <a href="#build">Build &amp; run</a>
       <a class="sub" href="#build-dev">While developing</a>
       <a class="sub" href="#build-prod">For everyday use</a>
+      <a class="sub" href="#build-desktop">Windows 11 desktop app</a>
       <a class="sub" href="#build-package">Released build &amp; CLI</a>
       <a class="sub" href="#build-publish">Build output only</a>
       <a class="sub" href="#build-manual">Running without the script</a>
@@ -599,6 +600,25 @@ cd tracelens
         <code>src/TraceLens.Server/wwwroot</code>, so all you need is
         <code>http://127.0.0.1:25011</code> in a browser (opens automatically once ready). Stop
         with <span class="kbd">Ctrl</span>+<span class="kbd">C</span>.
+      </p>
+
+      <h3 class="sub-h" id="build-desktop">Windows 11 desktop app</h3>
+      <p>
+        On Windows 11 x64, you can package the existing UI as a one-file EXE in a WebView2 window.
+        Run <code>.\pack-desktop.ps1</code> on the build machine to create
+        <code>artifacts/TraceLens.Desktop-win-x64.exe</code>. The run machine needs the .NET 10 Desktop
+        Runtime, ASP.NET Core Runtime, and WebView2 Runtime; analyzing a project also needs a suitable
+        .NET SDK. It does not need Node.js or the TraceLens source.
+      </p>
+      <pre><code>.\pack-desktop.ps1
+.\artifacts\TraceLens.Desktop-win-x64.exe
+.\artifacts\TraceLens.Desktop-win-x64.exe --target 'C:\repos\MyApi\MyApi.sln'</code></pre>
+      <p>
+        <code>--target</code> loads a saved analysis without re-analyzing. The app uses
+        <code>127.0.0.1:25011</code> by default and selects another loopback port when it is busy.
+        Closing the window stops its server. Keep using <code>run.ps1</code> and Vite during development.
+        For build order, cache locations, and MCP/CLI details, see the
+        <a href="https://github.com/jacking75/DotNetApiServerTraceLens/blob/main/docs/desktop.md">Windows 11 desktop guide</a>.
       </p>
 
       <h3 class="sub-h" id="build-package">Running the released build &amp; the CLI</h3>

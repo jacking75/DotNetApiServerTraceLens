@@ -29,9 +29,12 @@ public static class DemoSamples
 {
     private static readonly string[] MetadataFileNames = ["samples.json"];
 
-    public static IReadOnlyList<DemoSample> Find()
+    public static IReadOnlyList<DemoSample> Find(string? contentRoot = null)
     {
-        foreach (var root in CandidateRoots())
+        var roots = contentRoot is null
+            ? CandidateRoots()
+            : new[] { Path.Combine(contentRoot, "samples") }.Concat(CandidateRoots());
+        foreach (var root in roots)
         {
             foreach (var fileName in MetadataFileNames)
             {

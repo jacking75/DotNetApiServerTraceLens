@@ -21,6 +21,22 @@ dotnet --version       # 10.x가 나와야 한다
 `run.ps1`이 클라이언트 의존성 설치, TraceLens 빌드, 서버 실행, 브라우저 열기까지 처리한다.
 <http://127.0.0.1:25011>을 열고, 종료할 때는 터미널에서 `Ctrl+C`를 누르면 된다.
 
+### Windows 11 단일 실행 앱
+
+Windows 11 x64에서 브라우저 대신 앱 창으로 쓰려면 `.\pack-desktop.ps1`을 실행한다.
+`artifacts/TraceLens.Desktop-win-x64.exe` 하나를 배포하면 된다. 더블클릭하면 내부 루프백 서버와
+WebView2 창이 함께 열리고, 창을 닫으면 서버도 종료된다. 저장된 분석 결과를 바로 열려면
+`TraceLens.Desktop-win-x64.exe --target <.sln 또는 .csproj 경로>`로 시작한다. 재분석은 화면에서
+명시적으로 실행한다.
+
+사용처에는 **.NET 10 Desktop Runtime, ASP.NET Core Runtime, WebView2 Runtime**이 필요하다.
+솔루션이나 프로젝트를 직접 분석하려면 대상 프로젝트를 빌드할 수 있는 **.NET SDK**도 필요하다.
+Node.js와 소스 저장소는 필요하지 않다. 첫 실행 때 화면·설명서·예제 등 내장 자산을
+`%LOCALAPPDATA%\TraceLens\desktop-assets`에 풀며, 이 경로는 분석 대상의 `.tracelens`와 별개다.
+개발 중에는 기존 `run.ps1`과 Vite 경로를 그대로 쓴다. 데스크톱 EXE는 현재 Windows 11 x64만 만든다.
+처음 빌드부터 `-SkipClient` 옵션, 실행 예시, 캐시 위치, 기존 CLI와의 관계는
+[Windows 11 데스크톱 앱 안내](docs/desktop_kr.md)에 정리했다.
+
 ```
 # 배포물: .\tracelens.exe · 소스: dotnet run --project src/TraceLens.Cli --
 1) tracelens analyze <내 .sln, .slnx 또는 .csproj> # 분석하고 .tracelens/graph.json에 저장
@@ -375,8 +391,8 @@ tracelens config  --show [--target <경로>]     기본값과 파일을 합친 �
 
 | 항목 | 필요 시점 |
 |---|---|
-| .NET 10 이상 SDK | 항상 필요하다. TraceLens를 빌드·실행하고 분석 대상 프로젝트를 여는 데 쓴다. |
-| Node.js 20 이상 | **소스에서 빌드할 때만** 필요하다. 배포물(ZIP·.NET tool)을 쓰면 필요 없다. |
+| .NET 10 이상 SDK | 소스 빌드와 대상 프로젝트 분석에 필요하다. 배포된 앱 창만 여는 경우에는 해당 .NET 런타임이 필요하다. |
+| Node.js 20 이상 | **소스에서 빌드할 때만** 필요하다. 배포물(ZIP·.NET tool·데스크톱 EXE)을 쓰면 필요 없다. |
 | Claude Code CLI | "Claude Code로 실행"에만 필요하다. 문맥 복사는 없어도 된다. |
 | Codex CLI · VS Code | MCP를 직접 등록해 쓸 때만 필요하다([docs/mcp-setup_kr.md](docs/mcp-setup_kr.md)). |
 
@@ -463,7 +479,7 @@ cd tracelens
 
 | 운영체제 | 확인 상태 |
 |---|---|
-| Windows 11 x64 · .NET 10 런타임 + .NET SDK | 소스 빌드와 자동 테스트를 확인했다. portable ZIP은 수동 재검증이 필요하다 |
+| Windows 11 x64 · .NET 10 런타임 + .NET SDK | 소스 빌드와 자동 테스트, 데스크톱 단일 EXE의 실행·분석을 확인했다. portable ZIP은 수동 재검증이 필요하다 |
 | macOS · Linux | 아직 확인하지 않았다. 코드는 net10.0이라 동작할 가능성이 높지만 지원 완료로 표기하지 않는다 |
 
 ---
@@ -541,11 +557,12 @@ flowchart TB
 | 프런트엔드 | React + TypeScript (Vite) | 호출 흐름은 Cytoscape.js, 나머지 다이어그램은 DOM+SVG, 코드 보기는 Monaco |
 | 저장 | `.tracelens/` 아래 JSON | 임시 파일에 쓰고 검증한 뒤 교체한다 |
 | 에이전트 연동 | 로컬 stdio MCP + 선택적 Claude Code CLI 호출 | 원격 노출 없음 |
-| 배포 | .NET tool + Windows portable ZIP | 웹 자원과 예제를 함께 담는다. 실행에 Node.js가 필요 없다 |
+| 배포 | .NET tool + Windows portable ZIP + Windows 11 데스크톱 EXE | 웹 자원과 예제를 함께 담는다. 실행에 Node.js가 필요 없다 |
 
 ## 문서
 
 - [docs/manual_kr.html](docs/manual_kr.html) — 화면 구성, 여섯 보기, AI 연동, 실제 사용 절차를 한 곳에 모은 사용 설명서
+- [docs/desktop_kr.md](docs/desktop_kr.md) — Windows 11 앱의 빌드·실행·배포와 개발 흐름
 - [docs/mcp-setup_kr.md](docs/mcp-setup_kr.md) — Claude Code · Codex CLI · VS Code에 MCP 등록하기
 - [docs/data-contract.md](docs/data-contract.md) — `graph.json` 스키마(v7)와 API·MCP 계약, 오류 코드, 버전 이행 규칙
 - [CONTRIBUTING.md](CONTRIBUTING.md) — 분석 누락을 신고하는 방법과 기여 범위

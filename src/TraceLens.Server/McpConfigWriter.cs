@@ -81,9 +81,15 @@ public sealed class McpConfigWriter : IMcpConfigWriter
     {
         var baseDirectory = AppContext.BaseDirectory;
         var executableName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "tracelens.exe" : "tracelens";
+        var desktopExecutable = Environment.ProcessPath;
+        var desktopName = Path.GetFileNameWithoutExtension(desktopExecutable);
+        var executable = desktopExecutable is not null && desktopName is not null &&
+            desktopName.StartsWith("TraceLens.Desktop", StringComparison.OrdinalIgnoreCase)
+            ? desktopExecutable
+            : Path.Combine(baseDirectory, executableName);
         return
         [
-            Path.Combine(baseDirectory, executableName),
+            executable,
             Path.Combine(baseDirectory, "TraceLens.Mcp.dll")
         ];
     }

@@ -22,6 +22,19 @@ dotnet --version       # should print 10.x
 `run.ps1` installs the client dependencies, builds TraceLens, starts it, and opens
 <http://127.0.0.1:25011>. Press `Ctrl+C` in the terminal to stop it.
 
+### Single executable for Windows 11
+
+Run `.\pack-desktop.ps1` to produce `artifacts/TraceLens.Desktop-win-x64.exe`.
+The EXE opens the existing UI in a WebView2 window and stops its loopback server when the window closes.
+Use `TraceLens.Desktop-win-x64.exe --target <solution or project path>` to load a saved analysis at startup;
+re-analysis remains an explicit UI action. The target machine needs the **.NET 10 Desktop Runtime,
+ASP.NET Core Runtime, and WebView2 Runtime**, but neither Node.js nor the source repository.
+Analyzing a solution or project also requires a **.NET SDK** capable of building that target.
+On first launch, bundled assets are extracted under `%LOCALAPPDATA%\TraceLens\desktop-assets`.
+The existing browser and Vite development workflow remains available. This desktop build targets Windows 11 x64.
+See the [Windows 11 desktop guide](docs/desktop.md) for first-time builds, `-SkipClient`, run commands,
+cache locations, and the relationship to the existing CLI.
+
 ```
 # Packaged build: .\tracelens.exe · From source: dotnet run --project src/TraceLens.Cli --
 1) tracelens analyze <your .sln, .slnx, or .csproj> # analyzes and writes .tracelens/graph.json
@@ -480,7 +493,7 @@ Only verified platform combinations are listed:
 
 | Platform | Status |
 |---|---|
-| Windows 11 x64, .NET 10 runtime + .NET SDK | Source build and automated tests verified; the portable ZIP still needs manual re-verification |
+| Windows 11 x64, .NET 10 runtime + .NET SDK | Source build and automated tests, plus launching and analyzing with the desktop EXE, verified; the portable ZIP still needs manual re-verification |
 | macOS / Linux | Not verified yet. The code targets net10.0 and will likely run, but it is not listed as supported |
 
 ---
@@ -560,11 +573,12 @@ policy.
 | Frontend | React + TypeScript (Vite) | Call flow uses Cytoscape.js; other diagrams are DOM+SVG; the code view is Monaco |
 | Storage | JSON under `.tracelens/` | Written to a temp file, verified, then swapped in |
 | Agent integration | Local stdio MCP plus optional Claude Code CLI invocation | Nothing is exposed remotely |
-| Distribution | .NET tool + Windows portable ZIP | Carries the web assets and examples; no Node.js needed to run |
+| Distribution | .NET tool + Windows portable ZIP + Windows 11 desktop EXE | Carries the web assets and examples; no Node.js needed to run |
 
 ## Documentation
 
 - [docs/manual.html](docs/manual.html) — the manual: screen layout, all six views, AI integration, real usage walkthroughs
+- [docs/desktop.md](docs/desktop.md) — building, running, and distributing the Windows 11 desktop app
 - [docs/mcp-setup.md](docs/mcp-setup.md) — registering the MCP server with Claude Code, Codex CLI, VS Code and Cursor
 - [docs/data-contract.md](docs/data-contract.md) — the `graph.json` schema (v7), the API and MCP contracts, error codes, migration rules
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to report a missed call, and what contributions are in scope

@@ -36,9 +36,9 @@ public static class SampleEndpoints
         return group;
     }
 
-    internal static IResult List()
+    internal static IResult List(IHostEnvironment environment)
     {
-        var samples = DemoSamples.Find();
+        var samples = DemoSamples.Find(environment.ContentRootPath);
         return Results.Ok(samples
             .Select(sample => new SampleView(
                 sample.Id,
@@ -51,9 +51,9 @@ public static class SampleEndpoints
             .ToArray());
     }
 
-    internal static async Task<IResult> PrepareAsync(string id, PrepareSampleRequest? request)
+    internal static async Task<IResult> PrepareAsync(string id, PrepareSampleRequest? request, IHostEnvironment environment)
     {
-        var sample = DemoSamples.Find().FirstOrDefault(item =>
+        var sample = DemoSamples.Find(environment.ContentRootPath).FirstOrDefault(item =>
             string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
         if (sample is null)
         {

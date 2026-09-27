@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>TraceLens.Desktop</AssemblyName>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TraceLens.Cli\TraceLens.Cli.csproj" />
+    <ProjectReference Include="..\TraceLens.Server\TraceLens.Server.csproj" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\TraceLens.Server\wwwroot\**\*"
+                      LogicalName="desktop-assets/wwwroot/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\docs\manual*.html"
+                      LogicalName="desktop-assets/docs/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\docs\screenshots\**\*"
+                      LogicalName="desktop-assets/docs/screenshots/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\docs\tracelens.config.schema.json"
+                      LogicalName="desktop-assets/docs/tracelens.config.schema.json" />
+    <EmbeddedResource Include="..\..\samples\samples.json"
+                      LogicalName="desktop-assets/samples/samples.json" />
+    <EmbeddedResource Include="..\..\samples\**\*"
+                      Exclude="..\..\samples\samples.json;..\..\samples\**\bin\**;..\..\samples\**\obj\**;..\..\samples\**\.tracelens\**"
+                      LogicalName="desktop-assets/samples/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <!-- WebView2 NuGet는 WinForms와 WPF DLL을 모두 참조한다. 이 셸은 WinForms만 쓴다. -->
+  <Target Name="RemoveUnusedWebView2Wpf" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)"
+                 Condition="$([System.String]::Copy('%(Reference.Identity)').EndsWith('Microsoft.Web.WebView2.Wpf.dll'))" />
+    </ItemGroup>
+  </Target>
+</Project>

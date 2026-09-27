@@ -17,6 +17,9 @@ public sealed record ServerOptions
 
     /// <summary>시작하자마자 이 대상을 불러온다(재분석하지 않고 저장된 결과만 읽는다).</summary>
     public string? InitialTargetPath { get; init; }
+
+    /// <summary>데스크톱 단일 파일이 내장 웹 자산을 풀어 둔 경로. 비우면 기존 배포 경로를 쓴다.</summary>
+    public string? ContentRootPath { get; init; }
 }
 
 /// <summary>
@@ -52,7 +55,7 @@ public static class ServerHost
         {
             Args = args,
             // 배포 패키지에서는 어느 작업 디렉터리에서 실행해도 정적 파일을 찾아야 한다.
-            ContentRootPath = ResolveContentRoot(),
+            ContentRootPath = serverOptions.ContentRootPath ?? ResolveContentRoot(),
             WebRootPath = "wwwroot"
         });
 
@@ -127,14 +130,33 @@ public static class ServerHost
 
     public static async Task<int> RunAsync(string[] args, ServerOptions? options = null)
     {
-        var app = Build(args, options);
-        if (!string.IsNullOrWhiteSpace(options?.InitialTargetPath))
-        {
-            await LoadSavedGraphAsync(app, options.InitialTargetPath);
-        }
-
-        await app.RunAsync();
+        await using var app = await StartAsync(args, options);
+        await app.WaitForShutdownAsync();
         return 0;
+    }
+
+    /// <summary>데스크톱 창이 서버의 수명과 주소를 직접 관리할 때 쓴다.</summary>
+    public static async Task<WebApplication> StartAsync(
+        string[] args,
+        ServerOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var app = Build(args, options);
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(options?.InitialTargetPath))
+            {
+                await LoadSavedGraphAsync(app, options.InitialTargetPath);
+            }
+
+            await app.StartAsync(cancellationToken);
+            return app;
+        }
+        catch
+        {
+            await app.DisposeAsync();
+            throw;
+        }
     }
 
     /// <summary>저장해 둔 분석 결과가 있으면 재분석 없이 되살린다. 없으면 조용히 넘어간다.</summary>

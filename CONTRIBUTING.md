@@ -50,7 +50,12 @@ npm run build                         # tsc -b + vite build
 cd ..
 .\pack.ps1                            # 배포물을 만들고 체크섬·검증 절차를 남긴다
 .\pack.ps1 -Runtimes @('win-x64','linux-x64','osx-arm64')   # RID별 ZIP (빌드만 한다)
+.\pack-desktop.ps1                   # Windows 11 x64 WebView2 단일 EXE
 ```
+
+데스크톱 개발·배포 절차는 [Windows 11 데스크톱 앱 안내](docs/desktop_kr.md)를 따른다.
+평소 UI 작업은 `run.ps1 -Dev`로 하고, 단일 EXE는 배포 전에 만든다.
+`pack.ps1`은 `artifacts/`를 다시 만들므로 두 배포물이 모두 필요하면 `pack-desktop.ps1`을 나중에 실행한다.
 
 `pack.ps1`이 남기는 `manifest.txt`의 **수동 검증 절차 6단계**는 사람이 직접 한다. 자동화하지 않는다 —
 "만들었다"와 "그 OS에서 동작한다"는 다른 말이기 때문이다. 5번(공백·한글이 든 경로)은 특히 빠뜨리기 쉽다:

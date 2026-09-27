@@ -162,6 +162,7 @@ export function SourceView({
           <button type="button" className="link-button" onClick={() => setMarkerChoice(null)}>{t('ask.close')}</button>
         </div>
       )}
+      <div className="source-editor">
       <Editor
         height="100%"
         language="csharp"
@@ -179,6 +180,7 @@ export function SourceView({
           automaticLayout: true,
         }}
       />
+      </div>
     </div>
   )
 }

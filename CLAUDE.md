@@ -41,6 +41,7 @@ tracelens/
 ├── CHANGELOG.md                  # 수동 갱신 릴리스 노트
 ├── run.ps1                       # 빌드 + 실행을 한 번에 하는 스크립트
 ├── pack.ps1                      # 배포물(.NET tool · portable ZIP) 생성 + 체크섬·검증 기록
+├── pack-desktop.ps1              # Windows 11 x64 WebView2 단일 EXE 게시
 ├── README.md / README_kr.md
 ├── TraceLens.sln
 ├── docs/
@@ -117,8 +118,10 @@ tracelens/
 │   │   └── wwwroot/                      # client 빌드 결과물이 빌드 시 여기로 복사됨
 │   ├── TraceLens.Mcp/            # 로컬 전용 stdio MCP 서버
 │   │   ├── McpHost.cs · Program.cs · GraphFileStore.cs · TraceLensTools.cs
-│   └── TraceLens.Cli/            # tracelens doctor|analyze|serve|mcp|demo|init|config (.NET tool)
-│       ├── CommandRouter.cs · DemoSamples.cs
+│   ├── TraceLens.Cli/            # tracelens doctor|analyze|serve|mcp|demo|init|config (.NET tool)
+│   │   └── CommandRouter.cs · DemoSamples.cs
+│   └── TraceLens.Desktop/        # Windows 11 전용 WebView2 창 + 내장 자산 추출
+│       ├── Program.cs · DesktopWindow.cs · DesktopAssets.cs
 ├── tests/
 │   ├── TraceLens.Analyzer.Tests/
 │   │   ├── Fixtures/                     # 컨트롤러·DI 해석용 미니 솔루션
@@ -165,6 +168,9 @@ tracelens/
 
 # 배포물 만들기(portable ZIP + .NET tool). 게시는 하지 않는다
 .\pack.ps1
+
+# Windows 11 x64 단일 EXE 만들기(실행 조건·자산 경로는 docs/desktop_kr.md)
+.\pack-desktop.ps1
 
 # CLI
 dotnet run --project src/TraceLens.Cli -- doctor --target <대상>

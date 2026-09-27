@@ -494,6 +494,7 @@
       <a href="#build">빌드와 실행</a>
       <a class="sub" href="#build-dev">개발할 때</a>
       <a class="sub" href="#build-prod">정식으로 쓸 때</a>
+      <a class="sub" href="#build-desktop">Windows 11 데스크톱 앱</a>
       <a class="sub" href="#build-package">배포물로 실행 · CLI</a>
       <a class="sub" href="#build-publish">빌드 결과만 배포·실행</a>
       <a class="sub" href="#build-manual">스크립트 없이 실행</a>
@@ -593,6 +594,24 @@ cd tracelens
         빌드 결과는 <code>src/TraceLens.Server/wwwroot</code>로 들어가므로 브라우저에서
         <code>http://127.0.0.1:25011</code> 하나만 열면 된다(준비되면 자동으로 열린다). 종료는
         <span class="kbd">Ctrl</span>+<span class="kbd">C</span>.
+      </p>
+
+      <h3 class="sub-h" id="build-desktop">Windows 11 데스크톱 앱</h3>
+      <p>
+        Windows 11 x64에서는 기존 화면을 WebView2 창으로 여는 단일 EXE를 만들 수 있다.
+        소스가 있는 PC에서 <code>.\pack-desktop.ps1</code>을 실행하면
+        <code>artifacts/TraceLens.Desktop-win-x64.exe</code>가 생긴다.
+        실행 PC에는 .NET 10 Desktop Runtime, ASP.NET Core Runtime, WebView2 Runtime이 필요하고,
+        프로젝트를 분석할 때는 대상에 맞는 .NET SDK도 필요하다. Node.js와 TraceLens 소스는 필요 없다.
+      </p>
+      <pre><code>.\pack-desktop.ps1
+.\artifacts\TraceLens.Desktop-win-x64.exe
+.\artifacts\TraceLens.Desktop-win-x64.exe --target 'C:\repos\MyApi\MyApi.sln'</code></pre>
+      <p>
+        <code>--target</code>은 저장된 분석 결과를 불러오며 자동 재분석하지 않는다. 기본 포트
+        <code>127.0.0.1:25011</code>이 사용 중이면 다른 루프백 포트를 선택한다. 창을 닫으면 서버도 종료된다.
+        개발 중에는 위 <code>run.ps1</code>과 Vite를 계속 쓴다. 빌드 순서, 캐시 위치, MCP·CLI 차이는
+        <a href="https://github.com/jacking75/DotNetApiServerTraceLens/blob/main/docs/desktop_kr.md">Windows 11 데스크톱 앱 안내</a>를 참고한다.
       </p>
 
       <h3 class="sub-h" id="build-package">배포물로 실행하기 · 명령줄(CLI)</h3>
