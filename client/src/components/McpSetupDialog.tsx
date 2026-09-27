@@ -5,6 +5,7 @@ import type { McpSetupPreview } from '../types/context'
 
 interface McpSetupDialogProps {
   setup: McpSetupPreview
+  preferredHost: string
   onClose: () => void
 }
 
@@ -34,10 +35,10 @@ function CopyBlock({ text, label }: { text: string; label?: string }) {
  * MCP 등록을 붙여넣기 한 번으로 끝낸다.
  * 호스트 탭 + "에이전트 안내문" 탭이고, 모든 코드 블록에 복사 버튼이 있다.
  */
-export function McpSetupDialog({ setup, onClose }: McpSetupDialogProps) {
+export function McpSetupDialog({ setup, preferredHost, onClose }: McpSetupDialogProps) {
   const { t } = useI18n()
   const tabs = [...setup.hosts.map((host) => host.host), 'agentGuide']
-  const [tab, setTab] = useState(tabs[0])
+  const [tab, setTab] = useState(tabs.includes(preferredHost) ? preferredHost : tabs[0])
   const modalRef = useModal<HTMLDivElement>(onClose)
 
   const host = setup.hosts.find((item) => item.host === tab) ?? null
@@ -83,7 +84,7 @@ export function McpSetupDialog({ setup, onClose }: McpSetupDialogProps) {
             <CopyBlock text={host.content} label={t('mcp.snippetFor', { file: host.file })} />
             <div className="hint">{host.note}</div>
             <div className="hint">{t('mcp.restart')}</div>
-            <div className="hint warn">{t('mcp.workingDirectory')}</div>
+            {host.host === 'Claude Code' && <div className="hint warn">{t('mcp.workingDirectory')}</div>}
             <CopyBlock text={setup.verifyPrompt} label={t('mcp.verify')} />
           </>
         )}

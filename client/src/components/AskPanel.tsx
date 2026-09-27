@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ApiError, askWithMcp, buildContext, cancelAskRun, getDiagnostics, getMcpSetup, openInEditor } from '../api/client'
+import { ApiError, askWithMcp, buildContext, cancelAskRun, getMcpSetup, openInEditor } from '../api/client'
+import { agentInfo, type AgentId } from '../agents'
 import { recipes } from '../content/recipes'
 import { translateError, useI18n } from '../i18n/I18nProvider'
 import type { TranslationKey } from '../i18n/ko'
-import type { ContextBudget, ContextDocument, ContextIntent, McpSetupPreview, SelectionKind } from '../types/context'
-import type { AgentChoice, AskMode } from '../types/graph'
+import type { ContextBudget, ContextDocument, ContextIntent, DiagnosticsReport, McpSetupPreview, SelectionKind } from '../types/context'
+import type { AskMode } from '../types/graph'
 import { ContextPreview } from './ContextPreview'
 import { HelpLink, type GlossaryTerm } from './HelpDialog'
 import { McpSetupDialog } from './McpSetupDialog'
@@ -22,6 +23,8 @@ export interface AskContext {
 
 interface AskPanelProps {
   context: AskContext | null
+  agent: AgentId
+  diagnostics: DiagnosticsReport | null
   snapshotId: string
   /**
    * 질문 초안. 우측 열을 접었다 펴거나 탭을 바꿔도 남아야 하므로 App이 들고 있는다.
@@ -77,6 +80,8 @@ export interface RecentAnswer {
  */
 export function AskPanel({
   context,
+  agent,
+  diagnostics,
   snapshotId,
   question,
   onChangeQuestion,
@@ -98,28 +103,23 @@ export function AskPanel({
   const [logs, setLogs] = useState<string[]>([])
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [runAgent, setRunAgent] = useState<AgentId | null>(null)
   const [setup, setSetup] = useState<McpSetupPreview | null>(null)
   /** 미리보기에서 체크를 끈 파일. 문맥 생성과 에이전트 실행 양쪽에 그대로 넘긴다. */
   const [excludedFiles, setExcludedFiles] = useState<string[]>([])
-  /** 고른 에이전트와 모델. 빈 모델은 CLI 기본값이다(T70). */
-  const [agent, setAgent] = useState('')
+  /** 빈 모델은 선택한 CLI의 기본값이다. CLI를 바꾸면 이전 모델 이름은 지운다. */
   const [model, setModel] = useState('')
-  /** 설치된 AI CLI. doctor 결과에서 만든다 — 없는 것을 고르게 하지 않는다. */
-  const [agents, setAgents] = useState<AgentChoice[]>([])
   const [shareOpen, setShareOpen] = useState(false)
   /** 오류 원문. 번역한 한 줄 아래에 접어서 남긴다. */
   const [rawError, setRawError] = useState<string | null>(null)
-  /**
-   * AI CLI가 설치돼 있는지. 보내기 전에 알 수 있어야 한다.
-   * 진단 결과는 세션 동안 한 번만 읽는다(매 탭 전환마다 프로세스를 찾지 않는다).
-   */
-  const [agentMissing, setAgentMissing] = useState<boolean | null>(null)
   /** 에디터 열기가 실패했을 때의 폴백. 자동 이동 대신 사용자가 고른다. */
   const [editorFallback, setEditorFallback] = useState<{ uri: string; location: string } | null>(null)
   /** 서버가 알려 준 실행 ID. 중단하면 SSE만 끊는 것이 아니라 프로세스도 끝낸다. */
   const runIdRef = useRef<string | null>(null)
   const abortController = useRef<AbortController | null>(null)
   const contextKey = context ? `${context.kind}:${context.id}` : null
+  const selectedAgent = agentInfo(agent)
+  const agentMissing = diagnostics?.items.some((check) => check.code === selectedAgent.missingCode) ?? false
   /** 지금 고른 목적에 맞는 레시피의 프리셋 질문. 없으면 칩을 그리지 않는다. */
   const presets = recipes.find((recipe) => recipe.intent === intent)
     ? (lang === 'ko'
@@ -158,32 +158,14 @@ export function AskPanel({
     setMessage(null)
     setPreview(null)
     setBusy(false)
+    setRunAgent(null)
     setExcludedFiles([])
     setShareOpen(false)
     setRawError(null)
     setEditorFallback(null)
   }, [contextKey])
 
-  // 탭을 처음 열 때 한 번만 확인한다. 실패하면 "모른다"로 두고 배지를 띄우지 않는다.
-  useEffect(() => {
-    if (mode !== 'mcp' || agentMissing !== null) return
-    void (async () => {
-      try {
-        const report = await getDiagnostics()
-        // doctor가 찾은 CLI만 고르게 한다. codex를 찾아 놓고도 claude 고정이던 자리다(T70).
-        const installed: AgentChoice[] = [
-          { id: 'claude-code', label: 'Claude Code', command: 'claude' },
-          { id: 'codex', label: 'Codex CLI', command: 'codex' },
-        ].filter((item) => !report.items.some(
-          (check) => check.code === `CLI_${item.command.toUpperCase()}_MISSING`))
-        setAgents(installed)
-        setAgent((current) => current || installed[0]?.id || '')
-        setAgentMissing(installed.length === 0)
-      } catch {
-        setAgentMissing(null)
-      }
-    })()
-  }, [mode, agentMissing])
+  useEffect(() => setModel(''), [agent])
 
   useEffect(() => () => abortController.current?.abort(), [])
 
@@ -242,6 +224,7 @@ export function AskPanel({
     const controller = new AbortController()
     abortController.current = controller
     setBusy(true)
+    setRunAgent(agent)
     setAnswer('')
     setLogs([])
     setMessage(null)
@@ -258,7 +241,7 @@ export function AskPanel({
           includeSource,
           excludeFiles: excludedFiles,
           expectedSnapshotId: snapshotId || undefined,
-          agent: agent || undefined,
+          agent,
           model: model.trim() || undefined,
         },
         (event) => {
@@ -270,16 +253,21 @@ export function AskPanel({
           }
           if (event.type === 'error') {
             // 서버가 code를 함께 주므로 텍스트 접두사를 파싱하지 않는다. 원문은 접어서 남긴다.
-            setMessage(event.code ? translateError(t, event.code, event.text ?? '') : t('ask.agentFailed'))
+            setMessage(event.code ? translateError(t, event.code, event.text ?? '') : t('ask.agentFailed', { agent: selectedAgent.label }))
             setRawError(event.text ?? null)
           }
         },
         controller.signal,
       )
     } catch (reason) {
-      if (!controller.signal.aborted) setMessage(describe(reason, 'ask.agentFailed'))
+      if (!controller.signal.aborted) setMessage(reason instanceof ApiError
+        ? translateError(t, reason.code, reason.message)
+        : t('ask.agentFailed', { agent: selectedAgent.label }))
     } finally {
-      if (!controller.signal.aborted) setBusy(false)
+      if (!controller.signal.aborted) {
+        setBusy(false)
+        setRunAgent(null)
+      }
       runIdRef.current = null
     }
   }
@@ -289,6 +277,7 @@ export function AskPanel({
     const runId = runIdRef.current
     abortController.current?.abort()
     setBusy(false)
+    setRunAgent(null)
     if (runId) {
       try {
         await cancelAskRun(runId)
@@ -342,7 +331,7 @@ export function AskPanel({
     <section className="panel ask-panel" id="tracelens-ask-panel">
       <header>
         <span>{t('ask.title')}</span>
-        <small>{t(modeKeys[mode])}</small>
+        <small>{t(modeKeys[mode], { agent: selectedAgent.label })}</small>
       </header>
       <div className="ask-mode-tabs" role="tablist" aria-label={t('ask.title')}>
         {(Object.keys(modeKeys) as AskMode[]).map((item) => (
@@ -354,7 +343,7 @@ export function AskPanel({
             onClick={() => { setMode(item); setMessage(null) }}
             key={item}
           >
-            {t(modeKeys[item])}
+            {t(modeKeys[item], { agent: selectedAgent.label })}
           </button>
         ))}
       </div>
@@ -369,13 +358,10 @@ export function AskPanel({
 
         {blocked && context && <div className="panel-message tight">{t('ask.needNode')}</div>}
 
-        {mode === 'mcp' && agentMissing === true && (
+        {mode === 'mcp' && agentMissing && (
           <div className="panel-message tight warn">
-            <b>{t('ask.agentMissing')}</b>
-            <div className="hint">{t('diagAction.CLI_CLAUDE_MISSING')}</div>
-            <a href="https://docs.claude.com/en/docs/claude-code" target="_blank" rel="noreferrer">
-              {t('ask.agentInstallGuide')}
-            </a>
+            <b>{t('ask.agentMissing', { command: selectedAgent.command })}</b>
+            <div className="hint">{t(`diagAction.${selectedAgent.missingCode}`)}</div>
           </div>
         )}
 
@@ -425,14 +411,8 @@ export function AskPanel({
                 />
                 {t('context.excludeSource')}
               </label>
-              {mode === 'mcp' && agents.length > 0 && (
+              {mode === 'mcp' && (
                 <>
-                  <label>
-                    {t('ask.agent')}
-                    <select value={agent} onChange={(event) => setAgent(event.target.value)}>
-                      {agents.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-                    </select>
-                  </label>
                   <label>
                     {t('ask.model')}
                     <input
@@ -490,7 +470,7 @@ export function AskPanel({
         {mode === 'mcp' && (question.trim() || answer) && (
           <div className="ask-response" aria-live="polite">
             {question.trim() && <div className="chat-bubble user">{question.trim()}</div>}
-            {(answer || busy) && <div className="chat-bubble assistant">{answer || t('ask.working')}</div>}
+            {(answer || busy) && <div className="chat-bubble assistant">{answer || t('ask.working', { agent: agentInfo(runAgent ?? agent).label })}</div>}
             {answer && (
               <button
                 type="button"
@@ -530,7 +510,7 @@ export function AskPanel({
             type="button"
             className="primary"
             onClick={run}
-            disabled={!context || busy || blocked || (needsQuestion && !question.trim()) || (mode === 'context' && !preview)}
+            disabled={!context || busy || blocked || (needsQuestion && !question.trim()) || (mode === 'context' && !preview) || (mode === 'mcp' && agentMissing)}
           >
             {busy
               ? t('app.analyzing')
@@ -560,7 +540,7 @@ export function AskPanel({
           )}
         </div>
 
-        {setup && <McpSetupDialog setup={setup} onClose={() => setSetup(null)} />}
+        {setup && <McpSetupDialog setup={setup} preferredHost={selectedAgent.label} onClose={() => setSetup(null)} />}
       </div>
 
       {shareOpen && context && (

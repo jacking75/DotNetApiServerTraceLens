@@ -763,6 +763,12 @@ table.findings .conf { color: var(--ink-13); font-size: calc(10.5px * var(--fs-s
 /* ------------------------------------------------------------------ 첫 화면 · 안내 · 문맥 (보급 개선) */
 
 .header-tools { display: flex; align-items: center; gap: 6px; }
+.agent-switch { display: flex; align-items: center; gap: 6px; margin-right: 4px; color: var(--dim); font-size: calc(11px * var(--fs-scale)); white-space: nowrap; }
+.agent-switch select { color: var(--ink-accent-36); background: var(--panel); border: 1px solid var(--line-accent-15); border-radius: 8px; padding: 9px 10px; font: inherit; }
+@media (max-width: 1500px) {
+  .app-header { flex-wrap: wrap; }
+  .header-tools { margin-left: auto; }
+}
 .header-tools .browse, .app-header .browse { color: var(--ink-accent-36); background: var(--surface-accent-20); border: 1px solid var(--line-accent-15); border-radius: 8px; padding: 9px 13px; white-space: nowrap; }
 .header-tools .browse:hover:not(:disabled) { color: var(--text); border-color: var(--line-accent-24); }
 .lang-switch select { color: var(--ink-accent-36); background: var(--surface-accent-20); border: 1px solid var(--line-accent-15); border-radius: 8px; padding: 9px 10px; }

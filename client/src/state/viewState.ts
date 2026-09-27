@@ -1,4 +1,5 @@
 import type { WalkthroughStepId } from '../components/GuidedWalkthrough'
+import type { AgentId } from '../agents'
 import type { DiagramLayoutMode } from '../graph/classDiagram'
 import { entrySorts, type EntrySort } from '../graph/entryGroups'
 import type { RelationType } from '../graph/relations'
@@ -83,6 +84,8 @@ export interface PersistedState {
   quickFindRecent: string[]
   /** 시작 흐름·미들웨어에서 고른 실행 프로젝트. */
   projectKey: string | null
+  /** 인앱 질문에 사용할 CLI. 화면 전체가 이 선택을 공유한다. */
+  agent: AgentId
 }
 
 /** 우측 열의 탭. 코드 보기는 탭 위에 고정이라 여기 없다. */
@@ -185,6 +188,7 @@ export const defaultState: PersistedState = {
   bookmarks: [],
   quickFindRecent: [],
   projectKey: null,
+  agent: 'claude-code',
 }
 
 /** 저장값에서 읽은 안내 진행. 알 수 없는 단계 ID는 버린다(단계가 바뀌어도 깨지지 않게). */
@@ -231,6 +235,7 @@ export function loadState(): PersistedState {
         ? parsed.quickFindRecent.filter((item): item is string => typeof item === 'string').slice(0, maxQuickFindRecent)
         : [],
       projectKey: typeof parsed.projectKey === 'string' ? parsed.projectKey : null,
+      agent: parsed.agent === 'codex' ? 'codex' : 'claude-code',
     }
   } catch {
     return defaultState

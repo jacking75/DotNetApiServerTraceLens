@@ -38,6 +38,9 @@
 `startupFlow`/`middleware` 단수 필드는 호환을 위해 남긴다. **새 코드는 복수 쪽을 읽는다.**
 
 `startupFlows[].serviceSteps[]`와 `middlewareSteps[]`의 각 단계에는 선택적 `conditions[]`가 있다.
+시작 흐름에는 DI·미들웨어 호출뿐 아니라 `Program.cs`의 최상위 실행 문장도 포함한다.
+`builder.Build()` 전의 문장은 `serviceSteps[]`, 그 문장부터는 `middlewareSteps[]`에 소스 순서대로 담는다.
+이 문장은 기존 `Configuration` 종류를 쓴다. 로컬 함수 본문은 펼치지 않고 호출 문장만 단계로 표시한다.
 각 원소는 `{ key, expression, whenTrue, file, line }`이며 바깥쪽 `if`부터 안쪽 순서다.
 `whenTrue`는 해당 단계가 `if` 본문에 있는지(`true`), `else` 본문에 있는지(`false`)를 뜻한다.
 정적 소스 포함 관계로, 실행 시 어떤 분기가 선택되는지 판정한 값은 아니다.

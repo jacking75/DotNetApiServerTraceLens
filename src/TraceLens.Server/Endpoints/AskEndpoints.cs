@@ -238,7 +238,7 @@ public static class AskEndpoints
                 new AskEvent(
                     "error",
                     $"{AgentNotFound}: {agentRunner.DisplayName} CLI를 찾을 수 없다({exception.Message}). " +
-                    "설치한 뒤 PATH에 있어야 한다. https://docs.claude.com/en/docs/claude-code 를 참고한다.",
+                    "선택한 CLI를 설치하고 PATH에 등록해야 한다.",
                     AgentNotFound),
                 CancellationToken.None);
         }

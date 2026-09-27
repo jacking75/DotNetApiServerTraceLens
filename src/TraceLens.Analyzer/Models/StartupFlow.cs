@@ -6,7 +6,7 @@ public enum StartupStepKind
     /// <summary><c>AddScoped</c>/<c>AddSingleton</c>/<c>AddTransient</c>(TryAdd 포함) 같은 DI 등록 호출.</summary>
     Registration,
 
-    /// <summary>DI 등록은 아니지만 시작 과정에 의미 있는 설정 호출(<c>AddControllers</c>, <c>AddDbContext&lt;T&gt;</c> 등).</summary>
+    /// <summary>DI 등록 외의 설정 호출 또는 Program.cs의 최상위 초기화 문장.</summary>
     Configuration,
 
     /// <summary>솔루션 안에 정의된 확장 메서드 호출. 그 본문에서 찾은 하위 단계를 <see cref="StartupStep.Children"/>에 담는다.</summary>
@@ -57,8 +57,8 @@ public sealed record StartupStep(
 }
 
 /// <summary>
-/// Program.cs 하나를 분석한 시작 흐름. <c>builder.Services</c> 계열 호출은 <see cref="ServiceSteps"/>에,
-/// <c>app</c> 계열 미들웨어·라우팅 호출은 <see cref="MiddlewareSteps"/>에 소스 순서대로 담는다.
+/// Program.cs 하나를 분석한 시작 흐름. 앱 생성 전 문장은 <see cref="ServiceSteps"/>에,
+/// 앱 생성 이후 문장과 미들웨어·라우팅 호출은 <see cref="MiddlewareSteps"/>에 소스 순서대로 담는다.
 /// Program.cs를 찾지 못하면(구식 Startup.cs 등) 전체가 null이다.
 /// </summary>
 public sealed record StartupFlowDocument(

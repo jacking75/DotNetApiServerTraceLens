@@ -313,12 +313,13 @@ public sealed class AnalyzerIntegrationTests
         Assert.NotNull(flow);
         Assert.Equal("FixtureApp/Program.cs", flow!.ProgramFile);
 
-        // builder.Services: AddControllers(설정) → AddScoped 두 번(등록) → AddFixtureServices(확장 메서드, 하위에 AddSingleton 하나).
-        Assert.Equal(4, flow.ServiceSteps.Count);
+        // 최상위 실행 문장도 포함하되 등록·확장 메서드의 원래 순서를 유지한다.
+        Assert.Equal(6, flow.ServiceSteps.Count);
         Assert.Equal(StartupStepKind.Configuration, flow.ServiceSteps[0].Kind);
-        Assert.Equal("AddControllers()", flow.ServiceSteps[0].Label);
+        Assert.Equal("var builder = WebApplication.CreateBuilder(args)", flow.ServiceSteps[0].Label);
+        Assert.Equal("AddControllers()", flow.ServiceSteps[1].Label);
 
-        var orderServiceStep = flow.ServiceSteps[1];
+        var orderServiceStep = flow.ServiceSteps[2];
         Assert.Equal(StartupStepKind.Registration, orderServiceStep.Kind);
         Assert.Equal("IOrderService", orderServiceStep.ServiceType);
         Assert.Equal("FixtureApp.Services.IOrderService", orderServiceStep.ServiceTypeId);
@@ -327,12 +328,12 @@ public sealed class AnalyzerIntegrationTests
         Assert.Equal(StartupLifetime.Scoped, orderServiceStep.Lifetime);
         Assert.Equal("IOrderService → OrderService", orderServiceStep.Label);
 
-        var repositoryStep = flow.ServiceSteps[2];
+        var repositoryStep = flow.ServiceSteps[3];
         Assert.Equal("IOrderRepository", repositoryStep.ServiceType);
         Assert.Equal(StartupLifetime.Scoped, repositoryStep.Lifetime);
 
         // Program.cs가 아닌 ServiceRegistration.cs 안의 AddSingleton까지 따라 들어가야 한다.
-        var extensionStep = flow.ServiceSteps[3];
+        var extensionStep = flow.ServiceSteps[4];
         Assert.Equal(StartupStepKind.ExtensionCall, extensionStep.Kind);
         Assert.Equal("AddFixtureServices()", extensionStep.Label);
         var nested = Assert.Single(extensionStep.Children);
@@ -342,11 +343,19 @@ public sealed class AnalyzerIntegrationTests
         Assert.Equal(StartupLifetime.Singleton, nested.Lifetime);
         Assert.Contains("ServiceRegistration.cs", nested.File);
 
-        // app: MapControllers() → Run().
-        Assert.Equal(2, flow.MiddlewareSteps.Count);
-        Assert.Equal("MapControllers()", flow.MiddlewareSteps[0].Label);
-        Assert.Equal(StartupStepKind.Middleware, flow.MiddlewareSteps[0].Kind);
-        Assert.Equal("Run()", flow.MiddlewareSteps[1].Label);
+        Assert.Equal("ConfigureLogger()", flow.ServiceSteps[5].Label);
+
+        // 앱 생성과 조건부 초기화, 서비스 조회도 소스 순서대로 보여 준다.
+        Assert.Equal(6, flow.MiddlewareSteps.Count);
+        Assert.Equal("var app = builder.Build()", flow.MiddlewareSteps[0].Label);
+        Assert.StartsWith("if (!await LoadStartupData())", flow.MiddlewareSteps[1].Label);
+        Assert.Contains("return", flow.MiddlewareSteps[1].Label);
+        Assert.Equal(StartupStepKind.Configuration, flow.MiddlewareSteps[1].Kind);
+        Assert.Equal("var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>()", flow.MiddlewareSteps[2].Label);
+        Assert.Equal("await LoadStartupData()", flow.MiddlewareSteps[3].Label);
+        Assert.Equal("MapControllers()", flow.MiddlewareSteps[4].Label);
+        Assert.Equal(StartupStepKind.Middleware, flow.MiddlewareSteps[4].Kind);
+        Assert.Equal("Run()", flow.MiddlewareSteps[5].Label);
     }
 
     private static ServiceProvider CreateProvider(ConcurrentQueue<string> logs)

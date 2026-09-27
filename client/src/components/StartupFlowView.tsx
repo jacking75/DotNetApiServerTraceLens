@@ -227,7 +227,7 @@ function StepNode({ step, path, sequence, expanded, onToggle, selectedKey, onSel
           onSelect(path)
           if (isExtension && step.children.length > 0) onToggle(path)
         }}
-        title={`${step.file}:${step.line}`}
+        title={`${step.label}\n${step.file}:${step.line}`}
         aria-expanded={isExtension && step.children.length > 0 ? isOpen : undefined}
       >
         <span className="startup-node-topline">

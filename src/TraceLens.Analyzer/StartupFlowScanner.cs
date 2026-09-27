@@ -7,7 +7,7 @@ namespace TraceLens.Analyzer;
 
 /// <summary>
 /// Program.cs를 훑어 "시작 흐름"(DI 등록 + 미들웨어 파이프라인)을 만든다.
-/// <c>builder.Services</c>/<c>app</c> 계열 호출만 골라 소스 순서대로 나열하고,
+/// <c>builder.Services</c>/<c>app</c> 계열 호출과 Program.cs의 최상위 실행 문장을 소스 순서대로 나열하고,
 /// 솔루션 안에 정의된 확장 메서드(<c>AddFixtureServices()</c> 등)는 그 본문까지 따라 들어가 하위 단계로 펼친다.
 /// </summary>
 public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
@@ -76,6 +76,8 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
 
             scanned++;
             var (root, model) = (semantics.Root, semantics.Model);
+            var documentSteps = new List<(StartupStep Step, int Order, Phase Phase)>();
+            var buildPosition = FindBuildPosition(root, model, cancellationToken);
             foreach (var invocation in EnumerateInvocations(root))
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -91,7 +93,44 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
                     continue;
                 }
 
-                (phase.Value == Phase.Service ? serviceSteps : middlewareSteps).Add(step);
+                var position = GetOrderKey(invocation);
+                var effectivePhase = buildPosition is not null && position >= buildPosition
+                    ? Phase.Middleware : phase.Value;
+                documentSteps.Add((step, position, effectivePhase));
+            }
+
+            // 등록·파이프라인 호출만 찾으면 Build, 시작 시 데이터 적재, 로거 설정 같은
+            // 실행 문장이 조용히 사라진다. 최상위 문장 중 아직 단계가 없는 것을 채운다.
+            foreach (var global in root.DescendantNodes().OfType<GlobalStatementSyntax>())
+            {
+                var statement = global.Statement;
+                if (statement is LocalFunctionStatementSyntax ||
+                    documentSteps.Any(item => statement.Span.Contains(item.Order)))
+                {
+                    continue;
+                }
+
+                if (context.StepCount >= MaxSteps)
+                {
+                    context.Truncated = true;
+                    break;
+                }
+
+                context.StepCount++;
+                var file = SourcePaths.ToSolutionRelative(solutionDirectory, statement.SyntaxTree.FilePath)
+                    ?? statement.SyntaxTree.FilePath ?? string.Empty;
+                var line = statement.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+                var step = new StartupStep(
+                    StartupStepKind.Configuration, FormatStatement(statement),
+                    null, null, null, null, null, file, line, []);
+                var phase = buildPosition is not null && statement.SpanStart >= buildPosition
+                    ? Phase.Middleware : Phase.Service;
+                documentSteps.Add((step, statement.SpanStart, phase));
+            }
+
+            foreach (var (step, _, phase) in documentSteps.OrderBy(item => item.Order))
+            {
+                (phase == Phase.Service ? serviceSteps : middlewareSteps).Add(step);
             }
         }
 
@@ -313,6 +352,21 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
         invocation.Expression is MemberAccessExpressionSyntax memberAccess
             ? memberAccess.Name.SpanStart
             : invocation.SpanStart;
+
+    private static int? FindBuildPosition(SyntaxNode root, SemanticModel model, CancellationToken cancellationToken) =>
+        root.DescendantNodes().OfType<GlobalStatementSyntax>()
+            .SelectMany(global => global.Statement.DescendantNodesAndSelf().OfType<InvocationExpressionSyntax>())
+            .Where(invocation => model.GetSymbolInfo(invocation, cancellationToken).Symbol is IMethodSymbol method &&
+                method.Name == "Build" && method.ReturnType.Name == "WebApplication" &&
+                method.ReturnType.ContainingNamespace?.ToDisplayString() == "Microsoft.AspNetCore.Builder")
+            .Select(invocation => (int?)invocation.Parent?.AncestorsAndSelf().OfType<GlobalStatementSyntax>().FirstOrDefault()?.Statement.SpanStart)
+            .FirstOrDefault();
+
+    private static string FormatStatement(StatementSyntax statement)
+    {
+        return statement.WithoutTrivia().NormalizeWhitespace().ToString()
+            .Replace("\r", " ").Replace("\n", " ").Trim().TrimEnd(';');
+    }
 
     private static ITypeSymbol? GetReceiverType(
         InvocationExpressionSyntax invocation, SemanticModel model, CancellationToken cancellationToken)

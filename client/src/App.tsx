@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { agents, type AgentId } from './agents'
 import {
   ApiError,
   getDiagnostics,
@@ -179,6 +180,7 @@ export default function App() {
   const [quickFindRecent, setQuickFindRecent] = useState<string[]>(initial.quickFindRecent)
   /** 시작 흐름·미들웨어에서 고른 실행 프로젝트. 하나뿐이면 화면에 선택이 나오지 않는다. */
   const [projectKey, setProjectKey] = useState<string | null>(initial.projectKey)
+  const [agent, setAgent] = useState<AgentId>(initial.agent)
   /** 서버에 연결하지 못한 상태. 복구되면 스스로 사라진다. */
   const [serverDown, setServerDown] = useState(false)
   /** 짧게 떴다 사라지는 알림(분석 취소·Markdown 복사 등). */
@@ -438,12 +440,13 @@ export default function App() {
       bookmarks,
       quickFindRecent,
       projectKey,
+      agent,
     }), saveDebounceMs)
     return () => window.clearTimeout(timer)
   }, [
     viewMode, classMap, depth, selection, columns, solutionPath, dataView, middlewareView,
     callFlowEntry, focusStack, flowEntryId, walkthroughDone, recentTargets, theme, fontScale, collapsed,
-    entrySort, rightTab, bookmarks, quickFindRecent, projectKey,
+    entrySort, rightTab, bookmarks, quickFindRecent, projectKey, agent,
   ])
 
   /* ---------------------------------------------------------------- 테마·글꼴 */
@@ -1649,6 +1652,12 @@ export default function App() {
           )}
         </form>
         <div className="header-tools">
+          <label className="agent-switch">
+            <span>{t('app.agent')}</span>
+            <select value={agent} onChange={(event) => setAgent(event.target.value as AgentId)} aria-label={t('app.agent')}>
+              {agents.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </label>
           <HeaderMenu id="tracelens-menu-result" label={t('menu.result')}>
             <button
               type="button"
@@ -2414,6 +2423,8 @@ export default function App() {
           >
             <AskPanel
               context={askContext}
+              agent={agent}
+              diagnostics={diagnostics}
               snapshotId={graph?.snapshotId ?? ''}
               question={askQuestion}
               onChangeQuestion={setAskQuestion}

@@ -134,4 +134,12 @@ describe('viewState', () => {
     expect(state.dataView).toEqual(defaultState.dataView)
     expect(state.callFlowEndpointId).toBeNull()
   })
+
+  it('선택한 AI CLI를 저장하고 알 수 없는 값은 기본값으로 돌린다', () => {
+    saveState({ ...defaultState, agent: 'codex' })
+    expect(loadState().agent).toBe('codex')
+
+    installStorage({ 'tracelens.view': JSON.stringify({ agent: 'unknown' }) })
+    expect(loadState().agent).toBe('claude-code')
+  })
 })
