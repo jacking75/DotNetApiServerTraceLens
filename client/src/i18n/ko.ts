@@ -495,6 +495,10 @@ export const ko = {
   'startup.stepCount': '{count}단계',
   'startup.expand': '내부 흐름 {count}개 펼치기',
   'startup.collapse': '내부 흐름 접기',
+  'startup.condition': '조건',
+  'startup.whenTrue': '참일 때',
+  'startup.whenFalse': '거짓일 때',
+  'startup.noCapturedSteps': '수집된 단계 없음',
 
   /* 좌측 패널 · 보기 하위 탭 · 보기 안내 */
   'side.classSearch': '클래스 검색',

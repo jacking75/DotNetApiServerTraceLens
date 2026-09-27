@@ -36,6 +36,7 @@ interface SourceViewProps {
    * 코드를 고친 직후가 도구를 가장 많이 쓰는 순간이라 이 구분이 없으면 잘못된 줄을 읽게 된다.
    */
   showVersion?: boolean
+  fullFile?: boolean
 }
 
 /** 지정한 파일 구간을 읽어 Monaco로 보여준다. 상세 패널의 "소스" 절에 끼워 넣어 쓴다. */
@@ -48,12 +49,15 @@ export function SourceView({
   markers = [],
   onSelectMarker,
   showVersion = false,
+  fullFile = false,
 }: SourceViewProps) {
   const { t } = useI18n()
   const [source, setSource] = useState<SourceResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   /** 같은 줄에 호출이 여러 개일 때 고르게 하는 작은 목록. */
   const [markerChoice, setMarkerChoice] = useState<SourceMarker[] | null>(null)
+  const [editor, setEditor] = useState<Parameters<OnMount>[0] | null>(null)
+  const decorationsRef = useRef<ReturnType<Parameters<OnMount>[0]['createDecorationsCollection']> | null>(null)
   // Monaco 콜백은 마운트 시점의 값을 잡아 둔다. 최신 값을 ref로 읽는다.
   const markersRef = useRef(markers)
   markersRef.current = markers
@@ -66,48 +70,55 @@ export function SourceView({
   const endLine = target?.endLine
   useEffect(() => {
     setSource(null)
+    setEditor(null)
     setError(null)
     setMarkerChoice(null)
     if (file === undefined || startLine === undefined || endLine === undefined) return
-    void getSource(file, startLine, endLine)
-      .then(setSource)
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : t('code.loadFailed')))
-  }, [file, startLine, endLine, t])
-
-  const handleMount: OnMount = (editor) => {
-    if (!source) return
-    const lineCount = Math.max(1, source.content.split(/\r?\n/).length)
-    const toEditorLine = (absolute: number) => absolute - source.startLine + 1
-    const inRange = (absolute: number) => {
-      const line = toEditorLine(absolute)
-      return line >= 1 && line <= lineCount
+    let active = true
+    const load = async (): Promise<SourceResponse> => {
+      if (!fullFile) return getSource(file, startLine, endLine)
+      const chunks: SourceResponse[] = []
+      let next = 1
+      while (true) {
+        const chunk = await getSource(file, next, 2147483647)
+        chunks.push(chunk)
+        if (!chunk.truncated) break
+        if (chunk.endLine < next) break
+        next = chunk.endLine + 1
+      }
+      const first = chunks[0]
+      const last = chunks.at(-1)!
+      return { ...first, endLine: last.endLine, content: chunks.map((chunk) => chunk.content).join('\n'), truncated: last.truncated,
+        sourceVersion: chunks.some((chunk) => chunk.sourceVersion === 'current') ? 'current' : 'snapshot' }
     }
+    void load()
+      .then((result) => { if (active) setSource(result) })
+      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : t('code.loadFailed')) })
+    return () => { active = false }
+  }, [file, startLine, endLine, fullFile, t])
 
-    editor.createDecorationsCollection([
+  useEffect(() => {
+    if (!editor || !source) return
+    const lineCount = editor.getModel()?.getLineCount() ?? 0
+    const toEditorLine = (absolute: number) => absolute - source.startLine + 1
+    const inRange = (absolute: number) => toEditorLine(absolute) >= 1 && toEditorLine(absolute) <= lineCount
+    decorationsRef.current?.clear()
+    decorationsRef.current = editor.createDecorationsCollection([
       ...highlightLines.filter(inRange).map((absolute) => ({
-        range: {
-          startLineNumber: toEditorLine(absolute),
-          startColumn: 1,
-          endLineNumber: toEditorLine(absolute),
-          endColumn: 1,
-        },
+        range: { startLineNumber: toEditorLine(absolute), startColumn: 1, endLineNumber: toEditorLine(absolute), endColumn: 1 },
         options: { isWholeLine: true, className: 'tracelens-highlight' },
       })),
       ...markers.filter((marker) => inRange(marker.line)).map((marker) => ({
-        range: {
-          startLineNumber: toEditorLine(marker.line),
-          startColumn: 1,
-          endLineNumber: toEditorLine(marker.line),
-          endColumn: 1,
-        },
-        options: {
-          isWholeLine: true,
-          className: 'tracelens-callsite',
-          glyphMarginClassName: 'tracelens-callsite-glyph',
-          glyphMarginHoverMessage: { value: marker.label },
-        },
+        range: { startLineNumber: toEditorLine(marker.line), startColumn: 1, endLineNumber: toEditorLine(marker.line), endColumn: 1 },
+        options: { isWholeLine: true, className: 'tracelens-callsite', glyphMarginClassName: 'tracelens-callsite-glyph', glyphMarginHoverMessage: { value: marker.label } },
       })),
     ])
+    if (fullFile && highlightLines.length > 0 && inRange(highlightLines[0])) editor.revealLineInCenter(toEditorLine(highlightLines[0]))
+  }, [editor, source, highlightLines, markers, fullFile])
+
+  const handleMount: OnMount = (editor) => {
+    if (!source) return
+    setEditor(editor)
 
     editor.onMouseDown((event) => {
       const clicked = event.target.position?.lineNumber

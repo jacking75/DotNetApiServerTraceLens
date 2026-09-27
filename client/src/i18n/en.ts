@@ -498,6 +498,10 @@ export const en: Dictionary = {
   'startup.stepCount': '{count} steps',
   'startup.expand': 'Expand {count} internal steps',
   'startup.collapse': 'Collapse internal steps',
+  'startup.condition': 'Condition',
+  'startup.whenTrue': 'True',
+  'startup.whenFalse': 'False',
+  'startup.noCapturedSteps': 'No captured steps',
 
   /* 좌측 패널 · 보기 하위 탭 · 보기 안내 */
   'side.classSearch': 'Search classes',

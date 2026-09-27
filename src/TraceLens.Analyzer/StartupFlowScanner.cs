@@ -155,6 +155,7 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
         var file = SourcePaths.ToSolutionRelative(context.SolutionDirectory, invocation.SyntaxTree.FilePath)
             ?? invocation.SyntaxTree.FilePath ?? string.Empty;
         var line = invocation.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+        var conditions = GetConditions(invocation, context.SolutionDirectory);
         var typeArguments = GetTypeArguments(invocation, model, cancellationToken);
         var lifetime = ClassifyLifetime(symbol.Name);
 
@@ -162,7 +163,7 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
         // Type 인자를 받는 비제네릭 오버로드는 v1 범위 밖이라 설정 호출로 남는다.
         if (lifetime is not null && typeArguments.Count is 1 or 2)
         {
-            return BuildRegistrationStep(typeArguments, lifetime.Value, file, line);
+            return BuildRegistrationStep(typeArguments, lifetime.Value, file, line) with { Conditions = conditions };
         }
 
         if (depth < MaxDepth && HasSolutionSource(symbol) && context.Visiting.Add(symbol))
@@ -176,7 +177,7 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
                         StartupStepKind.ExtensionCall,
                         FormatCall(symbol.Name, invocation),
                         null, null, null, null, null,
-                        file, line, children);
+                        file, line, children) { Conditions = conditions };
                 }
             }
             finally
@@ -191,7 +192,29 @@ public sealed class StartupFlowScanner(ILogger<StartupFlowScanner> logger)
             typeArguments.Count > 0 ? SymbolNames.GetClassDisplayName(typeArguments[0]) : null,
             typeArguments.Count > 0 && HasSolutionSource(typeArguments[0]) ? SymbolNames.GetClassId(typeArguments[0]) : null,
             null, null, null,
-            file, line, []);
+            file, line, []) { Conditions = conditions };
+    }
+
+    private static IReadOnlyList<StartupCondition> GetConditions(SyntaxNode invocation, string solutionDirectory)
+    {
+        var path = new List<StartupCondition>();
+        for (var node = invocation.Parent; node is not null; node = node.Parent)
+        {
+            if (node is not IfStatementSyntax branch) continue;
+            var inThen = branch.Statement.Span.Contains(invocation.Span);
+            var inElse = branch.Else?.Statement.Span.Contains(invocation.Span) == true;
+            if (!inThen && !inElse) continue;
+            var file = SourcePaths.ToSolutionRelative(solutionDirectory, branch.SyntaxTree.FilePath)
+                ?? branch.SyntaxTree.FilePath ?? string.Empty;
+            path.Add(new StartupCondition(
+                $"{file}:{branch.SpanStart}",
+                branch.Condition.ToString(),
+                inThen,
+                file,
+                branch.GetLocation().GetLineSpan().StartLinePosition.Line + 1));
+        }
+        path.Reverse();
+        return path;
     }
 
     private static StartupStep BuildRegistrationStep(

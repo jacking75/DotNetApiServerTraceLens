@@ -24,6 +24,9 @@ public enum StartupLifetime
     Transient
 }
 
+/// <summary>단계가 속한 if/else 경로. 정적 소스 구조이며 실행 여부를 뜻하지 않는다.</summary>
+public sealed record StartupCondition(string Key, string Expression, bool WhenTrue, string File, int Line);
+
 /// <param name="Label">화면에 보여줄 한 줄. 등록은 "서비스 → 구현체", 그 외에는 <c>메서드(인자)</c> 형태다.</param>
 /// <param name="ServiceType">등록의 서비스(인터페이스/추상) 타입 표시 이름. 자기 자신을 등록하면(예: <c>AddScoped&lt;Foo&gt;()</c>) null이다.</param>
 /// <param name="ServiceTypeId">서비스 타입이 솔루션 안에 있으면 그 클래스 id, 아니면 null.</param>
@@ -48,6 +51,9 @@ public sealed record StartupStep(
         get => children;
         init => children = value ?? [];
     }
+
+    /// <summary>바깥쪽부터 안쪽 순서로 나열한 조건 경로.</summary>
+    public IReadOnlyList<StartupCondition> Conditions { get; init; } = [];
 }
 
 /// <summary>

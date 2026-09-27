@@ -253,6 +253,14 @@ export type StartupStepKind = 'Registration' | 'Configuration' | 'ExtensionCall'
 
 export type StartupLifetime = 'Scoped' | 'Singleton' | 'Transient'
 
+export interface StartupCondition {
+  key: string
+  expression: string
+  whenTrue: boolean
+  file: string
+  line: number
+}
+
 /** Program.cs(또는 그 확장 메서드) 안의 한 단계. `children`은 ExtensionCall일 때만 채워진다. */
 export interface StartupStep {
   kind: StartupStepKind
@@ -265,6 +273,8 @@ export interface StartupStep {
   file: string
   line: number
   children: StartupStep[]
+  /** 정적 if/else 포함 관계. 옛 분석 결과에는 없다. */
+  conditions?: StartupCondition[]
 }
 
 /** Program.cs를 분석한 시작 흐름. Program.cs를 찾지 못했으면(구식 Startup.cs 등) null이다. */

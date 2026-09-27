@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useState, type ReactNode } from 'react'
 import { countSteps, startupStepKey, type StartupGroup } from '../graph/startupFlow'
 import type { Selection, StartupFlowDocument, StartupStep } from '../types/graph'
 import { useI18n } from '../i18n/I18nProvider'
@@ -60,7 +60,6 @@ export function StartupFlowView({
             code="builder.Services"
             steps={flow.serviceSteps}
             group="svc"
-            maxColumns={4}
             expanded={expanded}
             onToggle={toggle}
             selectedKey={selectedKey}
@@ -74,7 +73,6 @@ export function StartupFlowView({
             code="app"
             steps={flow.middlewareSteps}
             group="mw"
-            maxColumns={3}
             expanded={expanded}
             onToggle={toggle}
             selectedKey={selectedKey}
@@ -113,7 +111,6 @@ interface StartupStageProps {
   code: string
   steps: StartupStep[]
   group: StartupGroup
-  maxColumns: number
   expanded: ReadonlySet<string>
   onToggle: (key: string) => void
   selectedKey: string | null
@@ -127,16 +124,12 @@ function StartupStage({
   code,
   steps,
   group,
-  maxColumns,
   expanded,
   onToggle,
   selectedKey,
   onSelect,
 }: StartupStageProps) {
   const { t } = useI18n()
-  const columns = Math.max(1, Math.min(maxColumns, steps.length))
-  const style = { '--startup-columns': columns } as CSSProperties
-
   return (
     <section className={`startup-stage ${group === 'svc' ? 'services' : 'pipeline'}`}>
       <header className="startup-stage-header">
@@ -150,37 +143,62 @@ function StartupStage({
       </header>
       {steps.length === 0 && <div className="panel-message tight">{t('startup.noSteps')}</div>}
       {steps.length > 0 && (
-        <ol className="startup-node-grid" style={style}>
-          {steps.map((step, index) => {
-            const row = Math.floor(index / columns)
-            const offset = index % columns
-            const column = row % 2 === 0 ? offset + 1 : columns - offset
-            const isLast = index === steps.length - 1
-            const isRowEnd = offset === columns - 1
-            const direction = isLast ? 'none' : isRowEnd ? 'down' : row % 2 === 0 ? 'right' : 'left'
-
-            return (
-              <li
-                key={startupStepKey(group, [index])}
-                className={`startup-node-cell flow-${direction}`}
-                style={{ gridColumn: column, gridRow: row + 1 }}
-              >
-                <StepNode
-                  step={step}
-                  path={startupStepKey(group, [index])}
-                  sequence={index + 1}
-                  expanded={expanded}
-                  onToggle={onToggle}
-                  selectedKey={selectedKey}
-                  onSelect={onSelect}
-                />
-              </li>
-            )
-          })}
-        </ol>
+        <FlowList
+          items={steps.map((step, index) => ({ step, path: startupStepKey(group, [index]), sequence: index + 1 }))}
+          depth={0}
+          expanded={expanded}
+          onToggle={onToggle}
+          selectedKey={selectedKey}
+          onSelect={onSelect}
+        />
       )}
     </section>
   )
+}
+
+interface FlowItem { step: StartupStep; path: string; sequence?: number }
+
+function FlowList({ items, depth, expanded, onToggle, selectedKey, onSelect }: {
+  items: FlowItem[]
+  depth: number
+  expanded: ReadonlySet<string>
+  onToggle: (key: string) => void
+  selectedKey: string | null
+  onSelect: (key: string) => void
+}) {
+  const { t } = useI18n()
+  const elements: ReactNode[] = []
+  for (let index = 0; index < items.length;) {
+    const condition = items[index].step.conditions?.[depth]
+    if (!condition) {
+      const item = items[index++]
+      elements.push(<li key={item.path} className="startup-flow-item">
+        <StepNode {...item} expanded={expanded} onToggle={onToggle} selectedKey={selectedKey} onSelect={onSelect} />
+      </li>)
+      continue
+    }
+
+    const grouped: FlowItem[] = []
+    while (index < items.length && items[index].step.conditions?.[depth]?.key === condition.key) {
+      grouped.push(items[index++])
+    }
+    const arms = [true, false].map((whenTrue) => grouped.filter((item) => item.step.conditions?.[depth]?.whenTrue === whenTrue))
+    elements.push(<li key={`${condition.key}:${grouped[0].path}`} className="startup-flow-item startup-condition-item">
+      <div className="startup-condition-head" title={`${condition.file}:${condition.line}`}>
+        <span>{t('startup.condition')}</span><code>if ({condition.expression})</code>
+      </div>
+      <div className="startup-condition-arms">
+        {arms.map((arm, armIndex) => <div className="startup-condition-arm" key={armIndex}>
+          <span className="startup-arm-label">{t(armIndex === 0 ? 'startup.whenTrue' : 'startup.whenFalse')}</span>
+          {arm.length > 0
+            ? <FlowList items={arm} depth={depth + 1} expanded={expanded} onToggle={onToggle} selectedKey={selectedKey} onSelect={onSelect} />
+            : <span className="startup-arm-empty">{t('startup.noCapturedSteps')}</span>}
+        </div>)}
+      </div>
+      <span className="startup-condition-merge" aria-hidden="true">↓</span>
+    </li>)
+  }
+  return <ol className="startup-flow-list">{elements}</ol>
 }
 
 interface StepNodeProps {
@@ -227,22 +245,16 @@ function StepNode({ step, path, sequence, expanded, onToggle, selectedKey, onSel
           </span>
         )}
       </button>
-      {isExtension && isOpen && step.children.length > 0 && (
-        <ol className="startup-branch">
-          {step.children.map((child, index) => (
-            <li key={`${path}.${index}`}>
-              <StepNode
-                step={child}
-                path={`${path}.${index}`}
-                expanded={expanded}
-                onToggle={onToggle}
-                selectedKey={selectedKey}
-                onSelect={onSelect}
-              />
-            </li>
-          ))}
-        </ol>
-      )}
+      {isExtension && isOpen && step.children.length > 0 && <div className="startup-branch">
+        <FlowList
+          items={step.children.map((child, index) => ({ step: child, path: `${path}.${index}` }))}
+          depth={0}
+          expanded={expanded}
+          onToggle={onToggle}
+          selectedKey={selectedKey}
+          onSelect={onSelect}
+        />
+      </div>}
     </div>
   )
 }

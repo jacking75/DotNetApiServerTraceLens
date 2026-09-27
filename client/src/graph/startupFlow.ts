@@ -8,8 +8,8 @@ export function startupStepKey(group: StartupGroup, path: number[]): string {
 }
 
 /** 단계 키로 실제 단계를 찾는다. 재분석 후 선택을 유지할지 판단하거나(D-7), 상세 패널에서 쓴다. */
-export function findStartupStep(graph: GraphDocument, key: string): StartupStep | undefined {
-  const flow = graph.startupFlow
+export function findStartupStep(graph: GraphDocument, key: string, selectedFlow?: StartupFlowDocument | null): StartupStep | undefined {
+  const flow = selectedFlow ?? graph.startupFlow
   if (!flow) return undefined
 
   const separatorIndex = key.indexOf(':')

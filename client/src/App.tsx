@@ -2316,11 +2316,12 @@ export default function App() {
 
           <CodeArea
             graph={graph}
+            startupFlow={viewMode === 'startup' ? startupFlow : null}
             selection={selection}
             sourceTarget={sourceTarget}
             onClearSourceTarget={() => setSourceTarget(null)}
             theme={resolvedTheme}
-            height={220}
+            height={viewMode === 'startup' ? 'min(65vh, 900px)' : 220}
             onSelectNode={(nodeId) => setSelection({ type: 'method', key: nodeId })}
           />
 

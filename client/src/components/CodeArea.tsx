@@ -2,7 +2,7 @@ import { lazy, Suspense, useMemo } from 'react'
 import { memberKey } from '../graph/classDiagram'
 import { findStartupStep } from '../graph/startupFlow'
 import { useI18n } from '../i18n/I18nProvider'
-import type { GraphDocument, Selection } from '../types/graph'
+import type { GraphDocument, Selection, StartupFlowDocument } from '../types/graph'
 import type { SourceTarget } from './CodePanel'
 import type { SourceLocation } from './SourceLink'
 
@@ -13,13 +13,14 @@ const callContextLines = 15
 
 interface CodeAreaProps {
   graph: GraphDocument | null
+  startupFlow?: StartupFlowDocument | null
   selection: Selection | null
   /** `파일:줄`을 눌러 연 임시 위치. 있으면 선택 항목의 선언 대신 이 구간을 보여 준다. */
   sourceTarget: SourceLocation | null
   /** 임시 보기를 접고 선택 항목의 선언으로 돌아간다. */
   onClearSourceTarget: () => void
   theme: 'dark' | 'light'
-  height: number
+  height: number | string
   /** 여백의 호출 지점을 누르면 그 대상 노드를 선택한다. */
   onSelectNode: (nodeId: string) => void
 }
@@ -30,6 +31,7 @@ interface CodeAreaProps {
  */
 export function CodeArea({
   graph,
+  startupFlow,
   selection,
   sourceTarget,
   onClearSourceTarget,
@@ -43,9 +45,23 @@ export function CodeArea({
     [graph])
 
   /** 선택한 항목의 선언 구간. `파일:줄`로 옮겨 간 뒤에도 "돌아가기"의 목적지가 된다. */
-  const declaration = useMemo(() => declarationOf(graph, selection), [graph, selection])
+  const declaration = useMemo(() => declarationOf(graph, selection, startupFlow), [graph, selection, startupFlow])
+  const startupLine = useMemo(() => {
+    if (!graph || !startupFlow || selection?.type !== 'startupStep') return null
+    let key = selection.key
+    while (key) {
+      const step = findStartupStep(graph, key, startupFlow)
+      if (step?.file === startupFlow.programFile) return step.line
+      const separator = key.lastIndexOf('.')
+      if (separator < 0) break
+      key = key.slice(0, separator)
+    }
+    return null
+  }, [graph, selection, startupFlow])
 
-  const shown: SourceTarget | null = sourceTarget
+  const shown: SourceTarget | null = startupFlow
+    ? { file: startupFlow.programFile, startLine: 1, endLine: Number.MAX_SAFE_INTEGER }
+    : sourceTarget
     ? {
       file: sourceTarget.file,
       startLine: Math.max(1, sourceTarget.line - callContextLines),
@@ -53,7 +69,9 @@ export function CodeArea({
     }
     : declaration
 
-  const highlightLines = sourceTarget ? [sourceTarget.line] : declaration ? [declaration.startLine] : []
+  const highlightLines = startupFlow
+    ? startupLine === null ? [] : [startupLine]
+    : sourceTarget ? [sourceTarget.line] : declaration ? [declaration.startLine] : []
 
   /** 지금 보는 파일 안의 호출 지점. 여백 표시를 누르면 그 호출의 대상 노드로 간다. */
   const markers = useMemo(() => {
@@ -71,8 +89,8 @@ export function CodeArea({
     <section className="panel code-area" id="tracelens-code-panel">
       <header>
         <span>{t('code.title')}</span>
-        <small>{shown ? `${shown.file}:${shown.startLine}` : ''}</small>
-        {sourceTarget && declaration && (
+        <small>{shown ? startupFlow ? shown.file : `${shown.file}:${shown.startLine}` : ''}</small>
+        {!startupFlow && sourceTarget && declaration && (
           <button type="button" className="link-button" onClick={onClearSourceTarget}>
             {t('code.backToDeclaration')}
           </button>
@@ -90,6 +108,7 @@ export function CodeArea({
               markers={markers}
               onSelectMarker={(marker) => onSelectNode(marker.targetNodeId)}
               showVersion
+              fullFile={!!startupFlow}
             />
           </Suspense>
         )
@@ -99,7 +118,7 @@ export function CodeArea({
 }
 
 /** 선택한 항목의 선언 구간. 종류마다 선언이 있는 자리가 다르다. */
-export function declarationOf(graph: GraphDocument | null, selection: Selection | null): SourceTarget | null {
+export function declarationOf(graph: GraphDocument | null, selection: Selection | null, startupFlow?: StartupFlowDocument | null): SourceTarget | null {
   if (!graph || !selection) return null
 
   if (selection.type === 'method') {
@@ -138,7 +157,7 @@ export function declarationOf(graph: GraphDocument | null, selection: Selection 
   }
 
   if (selection.type === 'startupStep') {
-    const step = findStartupStep(graph, selection.key)
+    const step = findStartupStep(graph, selection.key, startupFlow)
     return step ? { file: step.file, startLine: step.line, endLine: step.line } : null
   }
 
