@@ -1,8 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  analyzeTarget,
   ApiError,
-  cancelAnalysisJob,
   getDiagnostics,
   getEntryPoints,
   getGraph,
@@ -13,9 +11,6 @@ import {
   openInEditor,
   getSamples,
   prepareSample,
-  listAnalysisJobs,
-  startAnalysisJob,
-  watchAnalysisJob,
 } from './api/client'
 import { AskPanel, maxRecentAnswers, type AskContext, type RecentAnswer } from './components/AskPanel'
 import { Breadcrumb, type BreadcrumbItem } from './components/Breadcrumb'
@@ -61,7 +56,6 @@ import { buildSvg, toDataUriFile, toSvgFile } from './graph/exportSvg'
 import { buildEntryFlow, buildEntryMap, type FlowMapLabels } from './graph/flowMap'
 import { collapseEdgesToClasses, deriveRelations } from './graph/relations'
 import { findStartupStep } from './graph/startupFlow'
-import { getCallerWindow, getDrilldownWindow, getInitialWindow, getPathWindow } from './graph/windowing'
 import { translateError, useI18n, type Language } from './i18n/I18nProvider'
 import type { TranslationKey } from './i18n/ko'
 import {
@@ -83,7 +77,7 @@ import {
 import { isStructuralChange, parse as parseUrlState, serialize as serializeUrlState } from './state/urlState'
 import { useCallFlowState } from './hooks/useCallFlowState'
 import { useAnalysisJob } from './hooks/useAnalysisJob'
-import type { AnalysisJob, DiagnosticsReport, ImpactResult, SampleView, SelectionKind } from './types/context'
+import type { DiagnosticsReport, ImpactResult, SampleView, SelectionKind } from './types/context'
 import type {
   AnalyzeSummary,
   EntryPoint,
@@ -92,7 +86,6 @@ import type {
   GraphClassMember,
   GraphDocument,
   GraphNamespaceSummary,
-  GraphWindow,
   Selection,
   ViewMode,
 } from './types/graph'
@@ -166,7 +159,6 @@ export default function App() {
     setDepth,
     direction: windowDirection,
     setDirection: setWindowDirection,
-    expandedGroups,
     setExpandedGroups,
     highlightPath,
     setHighlightPath,
@@ -325,7 +317,7 @@ export default function App() {
     setSelection(next)
     setSourceTarget(null)
     setHighlightPath([])
-  }, [])
+  }, [setHighlightPath])
 
   /** 진입점을 고른다. 호출 흐름의 창을 처음 상태로 되돌린다. */
   const selectEntryPoint = useCallback((entryPoint: EntryPoint) => {
@@ -334,7 +326,7 @@ export default function App() {
     setWindowDirection('down')
     setExpandedGroups([])
     selectItem({ type: 'method', key: entryPoint.nodeId })
-  }, [selectItem])
+  }, [selectItem, setCallFlowEntry, setFocusStack, setWindowDirection, setExpandedGroups])
   const namespacePrefix = useMemo(
     () => commonNamespacePrefix((graph?.classes ?? []).map((item) => item.namespace)),
     [graph])
@@ -384,8 +376,8 @@ export default function App() {
    * 실행 프로젝트가 여럿이면 시작 흐름·미들웨어를 골라 본다.
    * 고른 프로젝트가 지금 그래프에 없으면(재분석으로 사라졌다면) 첫 번째로 되돌린다.
    */
-  const startupFlows = graph?.startupFlows ?? []
-  const middlewarePipelines = graph?.middlewarePipelines ?? []
+  const startupFlows = useMemo(() => graph?.startupFlows ?? [], [graph])
+  const middlewarePipelines = useMemo(() => graph?.middlewarePipelines ?? [], [graph])
   const projectKeys = useMemo(() => {
     const keys = new Set<string>()
     for (const item of middlewarePipelines) keys.add(item.projectKey)
@@ -561,7 +553,7 @@ export default function App() {
     if (parsed.direction) setWindowDirection(parsed.direction)
     lastHashState.current = parsed
     return missing
-  }, [])
+  }, [setCallFlowEntry, setFocusStack, setDepth, setWindowDirection])
 
   useEffect(() => {
     const onPopState = () => {
@@ -600,7 +592,7 @@ export default function App() {
     if (initial.flowEntryId && graph.nodes.some((node) => node.id === initial.flowEntryId)) {
       setFlowEntryId(initial.flowEntryId)
     }
-  }, [graph, restoredView, initial, applyUrlState, t])
+  }, [graph, restoredView, initial, applyUrlState, t, setCallFlowEntry, setFocusStack])
 
   /* ---------------------------------------------------------------- 첫 사용 안내 진행 */
 
@@ -703,7 +695,7 @@ export default function App() {
     })
     setFocusStack((current) => current.filter((id) => nextGraph.nodes.some((node) => node.id === id)))
     setFreshnessRevision((value) => value + 1)
-  }, [])
+  }, [setCallFlowEntry, setFocusStack])
 
   // 새로고침해도 서버가 들고 있는 마지막 분석 결과로 화면을 되살린다.
   // 서버가 재시작돼 메모리가 비어 있으면(run.ps1 재실행 등), 기억해 둔 경로의 저장된 분석 결과를 재분석 없이 조용히 불러온다.
@@ -802,7 +794,7 @@ export default function App() {
 
   // 분석 작업 하나의 수명(시작·진행·취소·실패·재접속)은 훅이 들고 있다.
   const {
-    busy, setBusy, progress, jobId, analysisStartedAt, longRunning, analyze, cancelAnalysis,
+    busy, setBusy, progress, jobId, longRunning, analyze, cancelAnalysis,
   } = useAnalysisJob({
     solutionPath,
     loadGraphData,
@@ -1044,7 +1036,7 @@ export default function App() {
     setCallFlowEntry(entry ?? { ...(callFlowEntry ?? emptyEntryPoint), nodeId })
     setFocusStack([nodeId])
     setSelection({ type: 'method', key: nodeId })
-  }, [findEntryPointFor, entryPoints, callFlowEntry])
+  }, [findEntryPointFor, entryPoints, callFlowEntry, setCallFlowEntry, setFocusStack, setExpandedGroups, setWindowDirection, setHighlightPath])
 
   /**
    * 변경 영향 목록에서 고른 진입점을 기존 호출 흐름 보기로 연다(새 모드를 만들지 않는다).
@@ -1061,7 +1053,7 @@ export default function App() {
     setSourceTarget(null)
     setHighlightPath(findPath(handlerNodeId, targetNodeId))
     setSelection({ type: 'method', key: targetNodeId })
-  }, [entryPoints, findPath])
+  }, [entryPoints, findPath, setCallFlowEntry, setFocusStack, setExpandedGroups, setWindowDirection, setHighlightPath])
 
   /** 선택한 노드가 지금 창 밖이면 진입점 → 그 노드 경로를 펼쳐 보여 준다. */
   const goToSelectedNode = useCallback(() => {
@@ -1069,7 +1061,7 @@ export default function App() {
     setWindowDirection('down')
     setFocusStack([])
     setHighlightPath(findPath(callFlowEntry.nodeId, selection.key))
-  }, [selection, callFlowEntry, findPath])
+  }, [selection, callFlowEntry, findPath, setFocusStack, setWindowDirection, setHighlightPath])
 
   /**
    * 에디터에서 연다. 노드 ID 기준 API를 쓰므로 그 위치를 담은 노드를 먼저 찾는다.
@@ -1217,7 +1209,7 @@ export default function App() {
     }
 
     setSelection({ type: 'method', key: hit.id })
-  }, [entryPoints, findEntryPointFor, findPath, showInDiagram, selectEntryPoint, selectItem])
+  }, [entryPoints, findEntryPointFor, findPath, showInDiagram, selectEntryPoint, selectItem, setCallFlowEntry, setFocusStack, setExpandedGroups, setWindowDirection, setHighlightPath])
 
   /** 지금 선택의 이름. 북마크 목록과 영향 결과 머리에 쓴다. */
   const selectionLabel = useMemo(() => {
@@ -1254,7 +1246,7 @@ export default function App() {
 
   const drilldown = useCallback((nodeId: string) => {
     setFocusStack((current) => (current[current.length - 1] === nodeId ? current : [...current, nodeId]))
-  }, [])
+  }, [setFocusStack])
 
   /* ---------------------------------------------------------------- 화면 조각 */
 
@@ -1601,6 +1593,7 @@ export default function App() {
         <form onSubmit={(event) => { event.preventDefault(); void analyze() }}>
           <input
             id="tracelens-target-input"
+            disabled={busy}
             value={solutionPath}
             onChange={(event) => setSolutionPath(event.target.value)}
             placeholder={t('app.pathPlaceholder')}
@@ -1609,6 +1602,7 @@ export default function App() {
           {recentTargets.length > 0 && (
             <select
               className="recent-targets"
+              disabled={busy}
               value=""
               aria-label={t('app.recentTargets')}
               title={t('app.recentTargets')}

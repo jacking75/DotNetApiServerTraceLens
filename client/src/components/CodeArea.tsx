@@ -74,16 +74,17 @@ export function CodeArea({
     : sourceTarget ? [sourceTarget.line] : declaration ? [declaration.startLine] : []
 
   /** 지금 보는 파일 안의 호출 지점. 여백 표시를 누르면 그 호출의 대상 노드로 간다. */
+  const shownFile = shown?.file
   const markers = useMemo(() => {
-    if (!graph || !shown || selection?.type !== 'method') return []
+    if (!graph || !shownFile || selection?.type !== 'method') return []
     return graph.callSites
-      .filter((site) => site.from === selection.key && site.to.length > 0 && site.file === shown.file)
+      .filter((site) => site.from === selection.key && site.to.length > 0 && site.file === shownFile)
       .map((site) => ({
         line: site.line,
         targetNodeId: site.to,
         label: nodeNameById.get(site.to) ?? site.to,
       }))
-  }, [graph, shown, selection, nodeNameById])
+  }, [graph, shownFile, selection, nodeNameById])
 
   return (
     <section className="panel code-area" id="tracelens-code-panel">

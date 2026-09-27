@@ -64,7 +64,9 @@ describe('StartupFlowView', () => {
     expect(screen.getByText('ConfigureDatabase()')).toBeTruthy()
     expect(screen.getByText('UseAuthentication()')).toBeTruthy()
     expect(document.querySelectorAll('.startup-stage')).toHaveLength(2)
-    expect(document.querySelectorAll('.startup-node-cell')).toHaveLength(4)
+    for (const label of ['ConfigureDatabase()', 'AddControllers()', 'UseAuthentication()', 'MapControllers()']) {
+      expect(screen.getByRole('button', { name: new RegExp(label.replace(/[()]/g, '\\$&')) })).toBeTruthy()
+    }
   })
 
   it('selects a node and expands an extension method branch', () => {

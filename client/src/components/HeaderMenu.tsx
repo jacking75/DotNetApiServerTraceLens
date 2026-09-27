@@ -15,6 +15,19 @@ interface HeaderMenuProps {
 export function HeaderMenu({ label, title, children, id }: HeaderMenuProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const focusEdge = useRef<'first' | 'last' | null>(null)
+
+  const items = () => [...(ref.current?.querySelectorAll<HTMLElement>(
+    '.header-menu-panel button:not([disabled]), .header-menu-panel a[href], .header-menu-panel select:not([disabled])',
+  ) ?? [])]
+
+  useEffect(() => {
+    if (!open || !focusEdge.current) return
+    const options = items()
+    ;(focusEdge.current === 'last' ? options.at(-1) : options[0])?.focus()
+    focusEdge.current = null
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -23,7 +36,11 @@ export function HeaderMenu({ label, title, children, id }: HeaderMenuProps) {
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
+      if (event.key === 'Escape' && ref.current?.contains(event.target as Node)) {
+        event.preventDefault()
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
     }
 
     document.addEventListener('pointerdown', onPointerDown)
@@ -35,20 +52,50 @@ export function HeaderMenu({ label, title, children, id }: HeaderMenuProps) {
   }, [open])
 
   return (
-    <div className="header-menu" ref={ref}>
+    <div className="header-menu" ref={ref} onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+    }}>
       <button
+        ref={triggerRef}
         type="button"
         className="browse"
         aria-expanded={open}
         aria-controls={id}
         title={title ?? label}
         onClick={() => setOpen((value) => !value)}
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+          event.preventDefault()
+          const edge = event.key === 'ArrowUp' ? 'last' : 'first'
+          if (open) {
+            const options = items()
+            ;(edge === 'last' ? options.at(-1) : options[0])?.focus()
+          } else {
+            focusEdge.current = edge
+            setOpen(true)
+          }
+        }}
       >
         {label} <span aria-hidden="true">▾</span>
       </button>
       {open && (
-        // 항목을 고르면 닫는다. 메뉴 하나에서 두 가지를 연달아 고르는 경우는 없다.
-        <div className="header-menu-panel" id={id} role="menu" onClick={() => setOpen(false)}>
+        <div className="header-menu-panel" id={id} role="group" aria-label={label}
+          onClick={(event) => {
+            if (!(event.target instanceof Element) || !event.target.closest('button:not([disabled]), a[href]')) return
+            triggerRef.current?.focus()
+            setOpen(false)
+          }}
+          onKeyDown={(event) => {
+            if (event.target instanceof HTMLSelectElement) return
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+            const options = items()
+            if (options.length === 0) return
+            event.preventDefault()
+            const index = options.indexOf(event.target as HTMLElement)
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+              : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length
+            options[next]?.focus()
+          }}>
           {children}
         </div>
       )}

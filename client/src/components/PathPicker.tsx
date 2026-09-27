@@ -48,6 +48,7 @@ export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: 
     const requestId = ++requestIdRef.current
     setBusy(true)
     setError(null)
+    setSelected(null)
     try {
       const next = await browsePath(path)
       if (requestId !== requestIdRef.current) return false
@@ -107,7 +108,7 @@ export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: 
 
   const entries = listing?.entries ?? []
   const pickDirectory = mode === 'directory'
-  const chosen = pickDirectory ? listing?.path ?? null : selected?.path ?? null
+  const chosen = busy || error ? null : pickDirectory ? listing?.path ?? null : selected?.path ?? null
   const title = pickDirectory ? t('picker.titleDirectory') : t('picker.title')
 
   return (
@@ -209,9 +210,9 @@ export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: 
           </form>
         </div>
 
-        {error && <div className="panel-message error">{error}</div>}
+        {error && <div className="panel-message error" role="alert">{error}</div>}
 
-        <div className="picker-list">
+        <div className="picker-list" aria-busy={busy}>
           {busy && <div className="panel-message">{t('picker.loading')}</div>}
           {!busy && entries.length === 0 && !error && (
             <div className="panel-message">{t('picker.empty')}</div>
@@ -222,8 +223,9 @@ export function PathPicker({ initialPath, mode = 'target', onSelect, onClose }: 
               key={entry.path}
               className={`picker-row ${entry.kind.toLowerCase()} ${selected?.path === entry.path ? 'selected' : ''}`}
               onClick={() => openEntry(entry)}
-              onDoubleClick={() => entry.kind !== 'Directory' && entry.kind !== 'Unsupported' && onSelect(entry.path)}
-              disabled={entry.kind === 'Unsupported'}
+              onDoubleClick={() => !pickDirectory && entry.kind !== 'Directory' && entry.kind !== 'Unsupported' && onSelect(entry.path)}
+              disabled={entry.kind === 'Unsupported' || (pickDirectory && entry.kind !== 'Directory')}
+              aria-pressed={selected?.path === entry.path}
               title={entry.kind === 'Unsupported' ? `${entry.path}\n${entry.reason ?? ''}` : entry.path}
             >
               <span className="picker-icon">{entry.kind === 'Directory' ? '📁' : '📄'}</span>

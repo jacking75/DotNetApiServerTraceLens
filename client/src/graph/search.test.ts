@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { parseQuery, searchGraph } from './search'
+import { parseQuery, resolveRecentHits, searchGraph } from './search'
 import type { GraphClass, GraphDocument, GraphNode } from '../types/graph'
+
+describe('최근 검색 복원', () => {
+  it('현재 이름으로 복원하고 중복·삭제·잘못된 종류는 버린다', () => {
+    const entry = graph.entryPoints[0]
+    const key = `entryPoint:${entry.endpointId}`
+    const hits = resolveRecentHits(graph, [key, key, 'method:missing', 'bad:value', 'invalid'])
+    expect(hits).toEqual([{ kind: 'entryPoint', id: entry.endpointId, label: 'POST /api/orders', detail: entry.handlerDisplayName }])
+    expect(resolveRecentHits(null, [key])).toEqual([])
+  })
+})
 
 function node(id: string, displayName: string, classId = 'Shop.OrderService'): GraphNode {
   return {

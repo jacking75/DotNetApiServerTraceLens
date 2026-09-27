@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Builder;
 using TraceLens.Context;
 using TraceLens.Server.Endpoints;
 using Xunit;
@@ -13,7 +14,7 @@ public sealed class SampleEndpointsTests
     [Fact]
     public void List_ReturnsPackagedSamples()
     {
-        var result = SampleEndpoints.List();
+        var result = SampleEndpoints.List(WebApplication.CreateBuilder().Environment);
 
         var valueResult = Assert.IsAssignableFrom<IValueHttpResult>(result);
         var samples = Assert.IsType<SampleView[]>(valueResult.Value);
@@ -28,7 +29,7 @@ public sealed class SampleEndpointsTests
     [Fact]
     public async Task PrepareAsync_ReturnsNotFound_ForUnknownId()
     {
-        var result = await SampleEndpoints.PrepareAsync("does-not-exist", new PrepareSampleRequest());
+        var result = await SampleEndpoints.PrepareAsync("does-not-exist", new PrepareSampleRequest(), WebApplication.CreateBuilder().Environment);
 
         var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
         Assert.Equal(StatusCodes.Status404NotFound, statusResult.StatusCode);

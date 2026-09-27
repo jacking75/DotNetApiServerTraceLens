@@ -10,7 +10,7 @@ interface FreshnessBadgeProps {
   canReanalyze: boolean
   refreshKey: number
   analyzing: boolean
-  onReanalyze: () => Promise<void>
+  onReanalyze: () => Promise<boolean>
   /** 신선도가 무엇인지 모르는 사람을 위해 용어집으로 보낸다. */
   onExplain: (term: GlossaryTerm) => void
   /** 신선도를 확인할 때 서버 연결 여부가 함께 드러난다. 한곳에서 잡아 배너로 알린다. */

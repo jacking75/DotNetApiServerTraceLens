@@ -9,6 +9,11 @@ import type { EntryPoint, GraphWindow, NodeKind } from '../types/graph'
 export const nodeWidth = 216
 export const nodeHeight = 56
 
+/** 1보다 작은 간격 배율은 상자 자체보다 배치 간격을 좁혀 형제 노드를 겹치게 한다. */
+export const callFlowLayout = {
+  name: 'breadthfirst', directed: true, spacingFactor: 1.15, padding: 32, avoidOverlap: true,
+} as const
+
 /** 펼침 배지(`⊕`)의 지름. 라벨 위 작은 원은 누르기 어려웠다. */
 export const expandBadgeSize = 24
 

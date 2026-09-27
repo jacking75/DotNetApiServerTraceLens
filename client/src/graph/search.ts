@@ -46,6 +46,42 @@ export interface ParsedQuery {
 
 const httpVerbs = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 
+/** 최근 항목은 현재 분석에서 다시 확인한다. 삭제된 항목과 잘못된 저장값은 표시하지 않는다. */
+export function resolveRecentHits(graph: GraphDocument | null, recent: readonly string[]): SearchHit[] {
+  if (!graph) return []
+  return [...new Set(recent)].flatMap((value): SearchHit[] => {
+    const colon = value.indexOf(':')
+    if (colon < 1) return []
+    const kind = value.slice(0, colon)
+    const id = value.slice(colon + 1)
+    if (kind === 'entryPoint') {
+      const item = graph.entryPoints.find((entry) => entry.endpointId === id)
+      return item ? [{ kind, id, label: `${item.httpMethod} ${item.route}`, detail: item.handlerDisplayName }] : []
+    }
+    if (kind === 'method') {
+      const item = graph.nodes.find((node) => node.id === id)
+      return item ? [{ kind, id, label: item.displayName, detail: item.classId ?? item.file }] : []
+    }
+    if (kind === 'class') {
+      const item = graph.classes.find((entry) => entry.id === id)
+      return item ? [{ kind, id, label: item.name, detail: item.namespace }] : []
+    }
+    if (kind === 'file') {
+      return graph.nodes.some((node) => node.file === id)
+        ? [{ kind, id, label: id.split(/[\\/]/).pop() ?? id, detail: id }] : []
+    }
+    if (kind === 'rule') {
+      const item = [...(graph.dataAccess?.rules ?? []), ...(graph.middleware?.rules ?? [])].find((rule) => rule.id === id)
+      return item ? [{ kind, id, label: id, detail: item.name }] : []
+    }
+    if (kind === 'finding') {
+      const item = [...(graph.dataAccess?.findings ?? []), ...(graph.middleware?.findings ?? [])].find((finding) => finding.id === id)
+      return item ? [{ kind, id, label: `${item.ruleId} ${item.symbol}`, detail: item.what }] : []
+    }
+    return []
+  })
+}
+
 /**
  * 입력에서 접두사 필터를 떼어 낸다.
  * `GET /orders` → 진입점 중 GET만, `ns:Shop.Orders` → 네임스페이스, `rule:COMP` → 규칙, `file:Order` → 파일.

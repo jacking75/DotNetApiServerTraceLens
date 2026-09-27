@@ -1,6 +1,6 @@
 import cytoscape from 'cytoscape'
 import { describe, expect, it } from 'vitest'
-import { buildElements, buildStyle, nodeLabel, toCytoscapeColor } from './cytoscapeStyle'
+import { buildElements, buildStyle, callFlowLayout, nodeLabel, toCytoscapeColor } from './cytoscapeStyle'
 import { kindColors } from '../components/kindColors'
 import type { GraphWindow, NodeKind } from '../types/graph'
 
@@ -29,6 +29,29 @@ const graphWindow: GraphWindow = {
 } as unknown as GraphWindow
 
 describe('cytoscapeStyle', () => {
+  it.each([4, 12])('분기 %i개를 배치해도 노드 상자가 서로 겹치지 않는다', (count) => {
+    const children = Array.from({ length: count }, (_, index) => `child-${index}`)
+    const instance = cytoscape({
+      headless: true, styleEnabled: true,
+      elements: [
+        ...['root', ...children].map((id) => ({ data: { id, label: id, badge: 'none' } })),
+        ...children.map((id) => ({ data: { id: `edge-${id}`, source: 'root', target: id } })),
+      ],
+      style: buildStyle({ label: '#fff', nodeBorder: '#fff', surface: '#111', edge: '#888', accent: '#0af' }, kindColors),
+      layout: { ...callFlowLayout, boundingBox: { x1: 0, y1: 0, w: 600, h: 450 } },
+    })
+    try {
+      const bounds = instance.nodes().map((item) => item.boundingBox({ includeLabels: false }))
+      for (let i = 0; i < bounds.length; i++) {
+        for (let j = i + 1; j < bounds.length; j++) {
+          const a = bounds[i], b = bounds[j]
+          expect(a.x2 <= b.x1 || b.x2 <= a.x1 || a.y2 <= b.y1 || b.y2 <= a.y1).toBe(true)
+        }
+      }
+    } finally {
+      instance.destroy()
+    }
+  })
   /**
    * 스타일시트가 파싱되지 않으면 예외가 캔버스가 아니라 앱 전체를 죽인다.
    * 실제로 `background-gradient-stop-colors: data(color)`가 그랬다 —

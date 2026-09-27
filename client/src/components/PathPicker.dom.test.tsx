@@ -110,6 +110,31 @@ describe('PathPicker 접근성', () => {
     expect(await screen.findByText('D:\\')).toBeDefined()
   })
 
+  it('폴더 모드에서 파일을 더블클릭해도 파일 경로를 확정하지 않는다', async () => {
+    const onSelect = vi.fn()
+    render(<I18nProvider><PathPicker initialPath="" mode="directory" onSelect={onSelect} onClose={vi.fn()} /></I18nProvider>)
+    await userEvent.dblClick(await screen.findByText('Sample.sln'))
+    expect(onSelect).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: '선택' }))
+    expect(onSelect).toHaveBeenCalledWith('C:\\Work')
+  })
+
+  it('폴더 이동 중과 실패 뒤에 이전 폴더를 확정할 수 없다', async () => {
+    const onSelect = vi.fn()
+    render(<I18nProvider><PathPicker initialPath="" mode="directory" onSelect={onSelect} onClose={vi.fn()} /></I18nProvider>)
+    await screen.findByText('Sample.sln')
+    let reject!: (reason: Error) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((_resolve, fail) => { reject = fail })))
+    await userEvent.click(screen.getByRole('button', { name: /src/ }))
+    const confirm = screen.getByRole('button', { name: '선택' }) as HTMLButtonElement
+    expect(confirm.disabled).toBe(true)
+    reject(new Error('Access denied'))
+    await screen.findByRole('alert')
+    expect(confirm.disabled).toBe(true)
+    await userEvent.click(confirm)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
   it('주소 표시줄에 절대 경로를 입력해 바로 이동한다', async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input)

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { searchGraph, type SearchHit } from '../graph/search'
+import { resolveRecentHits, searchGraph, type SearchHit } from '../graph/search'
 import { useModal } from '../hooks/useModal'
 import { useI18n } from '../i18n/I18nProvider'
 import type { Bookmark } from '../state/viewState'
@@ -24,11 +24,11 @@ interface QuickFindProps {
 export function QuickFind({ graph, recent, bookmarks, onPickBookmark, onPick, onClose }: QuickFindProps) {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
-  const [active, setActive] = useState(0)
   /** 구현체를 펼친 결과 줄. 인터페이스 멤버를 고르면 어디로 갈지 먼저 고르게 한다. */
   const [expanded, setExpanded] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const modalRef = useModal<HTMLDivElement>(onClose)
+  const resultsRef = useRef<HTMLDivElement>(null)
+  const modalRef = useModal<HTMLDivElement>(onClose, inputRef)
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
@@ -37,7 +37,7 @@ export function QuickFind({ graph, recent, bookmarks, onPickBookmark, onPick, on
     () => [...result.entryPoints, ...result.methods, ...result.classes, ...result.rules, ...result.files],
     [result])
 
-  useEffect(() => { setActive(0); setExpanded(null) }, [query])
+  useEffect(() => { setExpanded(null) }, [query])
 
   const groups: { key: string; label: string; hits: SearchHit[] }[] = [
     { key: 'entryPoints', label: t('panel.entryPoints'), hits: result.entryPoints },
@@ -58,31 +58,31 @@ export function QuickFind({ graph, recent, bookmarks, onPickBookmark, onPick, on
   }
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    if (event.nativeEvent.isComposing) return
+    const inInput = event.target === inputRef.current
+    const rows = [...(resultsRef.current?.querySelectorAll<HTMLButtonElement>('.find-row') ?? [])]
+    const index = rows.indexOf(event.target as HTMLButtonElement)
+    if (!inInput && index < 0) return
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp' ||
+      (!inInput && (event.key === 'Home' || event.key === 'End'))) {
+      if (rows.length === 0) return
       event.preventDefault()
-      if (flat.length === 0) return
-      const step = event.key === 'ArrowDown' ? 1 : -1
-      setActive((current) => (current + step + flat.length) % flat.length)
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1
+        : inInput ? (event.key === 'ArrowDown' ? 0 : rows.length - 1)
+          : (index + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length
+      rows[next].focus()
+      rows[next].scrollIntoView?.({ block: 'nearest' })
       return
     }
 
-    if (event.key === 'Enter' && flat[active]) {
+    if (inInput && event.key === 'Enter' && rows.length > 0) {
       event.preventDefault()
-      pick(flat[active])
+      rows[0].focus()
+      rows[0].click()
     }
   }
 
-  /** 저장해 둔 `kind:id` 문자열을 결과 줄로 되돌린다. 그래프가 바뀌어 없어진 것은 고르면 조용히 넘어간다. */
-  const recentHits = useMemo(() => {
-    if (query.trim().length > 0) return []
-    return recent
-      .map((entry) => {
-        const colon = entry.indexOf(':')
-        if (colon <= 0) return null
-        return { kind: entry.slice(0, colon) as SearchHit['kind'], id: entry.slice(colon + 1) }
-      })
-      .filter((item): item is { kind: SearchHit['kind']; id: string } => item !== null)
-  }, [recent, query])
+  const recentHits = useMemo(() => resolveRecentHits(graph, recent), [graph, recent])
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -95,16 +95,29 @@ export function QuickFind({ graph, recent, bookmarks, onPickBookmark, onPick, on
         onClick={(event) => event.stopPropagation()}
         onKeyDown={onKeyDown}
       >
+        <div className="quick-find-heading">
+          <h2>{t('find.title')}</h2>
+          <button type="button" onClick={onClose} aria-label={t('picker.close')}>✕</button>
+        </div>
         <input
           ref={inputRef}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t('find.placeholder')}
           aria-label={t('find.title')}
+          aria-describedby="quick-find-help"
         />
+        <div className="quick-find-tools">
+          <span id="quick-find-help" className="hint">{t('find.hint')}</span>
+          {query.length > 0 && <button type="button" className="link-button" onClick={() => {
+            setQuery('')
+            inputRef.current?.focus()
+          }}>{t('search.clear')}</button>}
+        </div>
+        {query.trim().length > 0 && <div className="hint" role="status">{t('find.count', { count: flat.length })}</div>}
+        <div className="quick-find-results" ref={resultsRef}>
         {query.trim().length === 0 && (
           <>
-            <div className="hint">{t('find.hint')}</div>
             <div className="hint">{t('quickFind.filterHint')}</div>
             {bookmarks.length > 0 && (
               <>
@@ -130,9 +143,11 @@ export function QuickFind({ graph, recent, bookmarks, onPickBookmark, onPick, on
                     key={`${item.kind}:${item.id}`}
                     type="button"
                     className="find-row"
-                    onClick={() => onPick({ kind: item.kind, id: item.id, label: item.id, detail: '' })}
+                    onClick={() => onPick(item)}
+                    title={`${item.label}\n${item.detail}`}
                   >
-                    <span className="grow">{item.id}</span>
+                    <span className="grow">{item.label}</span>
+                    <span className="hint">{item.detail}</span>
                   </button>
                 ))}
               </>
@@ -146,11 +161,13 @@ export function QuickFind({ graph, recent, bookmarks, onPickBookmark, onPick, on
           <div key={group.key}>
             <div className="side-group">{group.label}</div>
             {group.hits.map((hit) => (
-              <div key={`${hit.kind}:${hit.id}`}>
+              <div key={`${hit.kind}:${hit.id}:${hit.label}`}>
                 <button
                   type="button"
-                  className={`find-row${flat[active] === hit ? ' selected' : ''}`}
+                  className="find-row"
                   onClick={() => pick(hit)}
+                  title={`${hit.label}\n${hit.detail}`}
+                  aria-expanded={(hit.implementations?.length ?? 0) > 1 ? expanded === hit.id : undefined}
                 >
                   <span className="grow">{hit.label}</span>
                   {(hit.implementations?.length ?? 0) > 0 && (
@@ -175,6 +192,7 @@ export function QuickFind({ graph, recent, bookmarks, onPickBookmark, onPick, on
           </div>
         ))}
         {result.truncated && <div className="hint">{t('find.truncated')}</div>}
+        </div>
       </div>
     </div>
   )

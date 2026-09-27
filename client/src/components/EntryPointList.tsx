@@ -58,6 +58,7 @@ export function EntryPointList({
   /** 기본 접힘 상태를 뒤집은 그룹. 기본이 펼침이면 여기 든 것이 접힌 것이다. */
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const listRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
 
   const hiddenCount = useMemo(
     () => entryPoints.filter((item) => item.hiddenFromApiExplorer).length,
@@ -80,6 +81,12 @@ export function EntryPointList({
   const selectedGroupKey = useMemo(
     () => findGroupKey(groups, selectedEndpointId),
     [groups, selectedEndpointId])
+  const selectedEntry = entryPoints.find((item) => item.endpointId === selectedEndpointId)
+  const selectionHidden = selectedEntry && !selectedGroupKey
+  const resetSearch = () => {
+    setKeyword('')
+    searchRef.current?.focus()
+  }
 
   // 어떤 방법으로 진입점을 골라도(통합 찾기·URL·영향 목록) 좌측 목록에서 강조가 보여야 한다.
   useEffect(() => {
@@ -89,6 +96,7 @@ export function EntryPointList({
 
   /** 목록 안에서 ↑/↓/Home/End로 옮긴다. 진입점이 200개여도 손을 마우스로 옮기지 않게 한다. */
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!(event.target instanceof HTMLButtonElement) || !event.target.matches('.side-item')) return
     const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End']
     if (!keys.includes(event.key)) return
     const items = [...(listRef.current?.querySelectorAll<HTMLButtonElement>('.side-item') ?? [])]
@@ -110,12 +118,29 @@ export function EntryPointList({
       {header}
       {entryPoints.length > 0 && showSearch && (
         <input
+          ref={searchRef}
           className="side-search"
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
           placeholder={t('side.entrySearch')}
           aria-label={t('side.entrySearch')}
         />
+      )}
+      {entryPoints.length > 0 && (
+        <div className="entry-feedback">
+          <span className="hint" role="status">{t('side.entryCount', { shown: filtered.length, total: entryPoints.length })}</span>
+          {keyword.length > 0 && <button type="button" className="link-button" onClick={resetSearch}>{t('search.clear')}</button>}
+        </div>
+      )}
+      {selectionHidden && (
+        <div className="side-footnote">
+          <p>{t('side.selectionHidden')}</p>
+          <button type="button" className="link-button" onClick={() => {
+            setKeyword('')
+            if (selectedEntry.hiddenFromApiExplorer) setShowHidden(true)
+            setExpanded(new Set())
+          }}>{t('side.revealSelection')}</button>
+        </div>
       )}
       {entryPoints.length > 1 && (
         <div className="side-tools entry-sort" role="group" aria-label={t('side.sortBy')}>
@@ -145,7 +170,7 @@ export function EntryPointList({
       )}
       {entryPoints.length === 0 && <div className="panel-message">{emptyMessage}</div>}
       {entryPoints.length > 0 && filtered.length === 0 && (
-        <div className="panel-message">{t('side.entryPointsEmpty')}</div>
+        <div className="panel-message">{t('side.noMatches')}</div>
       )}
       {candidateCount > 0 && onShowDiagnostics && (
         <div className="side-footnote">
@@ -183,6 +208,7 @@ export function EntryPointList({
                 type="button"
                 key={entryPoint.endpointId}
                 className={`side-item${selectedEndpointId === entryPoint.endpointId ? ' selected' : ''}`}
+                aria-current={selectedEndpointId === entryPoint.endpointId ? 'true' : undefined}
                 onClick={() => onSelect(entryPoint)}
                 title={[entryPoint.nodeId, ...entryPoint.notes].join(String.fromCharCode(10))}
               >

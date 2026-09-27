@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ApiError,
   analyzeTarget,
@@ -53,7 +53,7 @@ export interface AnalysisJobState {
   analysisStartedAt: number | null
   /** 오래 걸리는 중인지. 진행 표시만으로는 알 수 없어서 따로 둔다. */
   longRunning: boolean
-  analyze: (targetPath?: string) => Promise<void>
+  analyze: (targetPath?: string) => Promise<boolean>
   cancelAnalysis: () => Promise<void>
 }
 
@@ -74,32 +74,40 @@ export function useAnalysisJob(options: UseAnalysisJobOptions): AnalysisJobState
   const [jobId, setJobId] = useState<string | null>(null)
   const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null)
   const [longRunning, setLongRunning] = useState(false)
+  const runningRef = useRef(false)
+  const cancelingRef = useRef(false)
 
   /**
    * 분석을 작업으로 실행해서 단계별 진행 상태를 보여 주고 취소도 받는다.
    * 새 그래프로의 전환은 완료 알림을 받은 뒤 여기서 한 번만 한다.
    */
   const runAnalysisJob = useCallback(async (start: () => Promise<AnalysisJob>, target: string) => {
+    if (runningRef.current) return false
+    runningRef.current = true
     setBusy(true)
     setError(null)
     setProgress(null)
     setTargetPicked(false)
     setLongRunning(false)
+    let started = false
     try {
       const job = await start()
+      started = true
       setJobId(job.id)
       // 이어 붙은 작업은 시작 시각이 과거다. "오래 걸린다" 안내가 그 시각을 기준으로 뜨게 한다.
       setAnalysisStartedAt(new Date(job.startedAt).getTime())
       let failure: { message: string; code: string | null } | null = null
       let canceled = false
+      let completed = false
       await watchAnalysisJob(job.id, (event) => {
         if (event.kind === 'progress') setProgress(`${event.stage} · ${event.message}${event.count === null ? '' : ` (${event.count})`}`)
         if (event.kind === 'error') failure = { message: event.message, code: event.code ?? null }
         if (event.kind === 'canceled') canceled = true
+        if (event.kind === 'done') completed = true
       })
       if (canceled) {
         setToast(t('app.canceledNotice'))
-        return
+        return false
       }
 
       // 서버가 분류한 code로 한 줄 요약을 고르고, 예외 원문은 접어서 보여 준다.
@@ -111,29 +119,39 @@ export function useAnalysisJob(options: UseAnalysisJobOptions): AnalysisJobState
           code: reason.code,
         })
         setErrorId(null)
-        return
+        return false
+      }
+
+      if (!completed) {
+        setError({ summary: t('app.analysisInterrupted'), detail: null, code: 'NETWORK' })
+        return false
       }
 
       const nextGraph = await loadGraphData()
       applyAnalyzedGraph(nextGraph, await summarizeFrom(nextGraph))
       rememberTarget(target)
+      return true
     } catch (reason) {
       // 작업 API 자체가 없는 환경(구버전 서버)에서만 호환 경로로 다시 시도한다.
       // 그 밖의 실패(같은 대상이 이미 돌고 있음·잘못된 경로 등)에 전체 분석을 한 번 더 돌리면 안 된다.
-      const missingJobApi = reason instanceof ApiError && (reason.status === 404 || reason.status === 405)
+      const missingJobApi = !started && reason instanceof ApiError && (reason.status === 404 || reason.status === 405)
       if (!missingJobApi) {
         setError(describeError(reason, reason instanceof Error ? reason.message : t('app.analyzeFailed')))
-        return
+        return false
       }
 
       try {
         const nextSummary = await analyzeTarget(target)
         const nextGraph = await loadGraphData()
         applyAnalyzedGraph(nextGraph, nextSummary)
+        rememberTarget(target)
+        return true
       } catch (fallbackReason) {
         setError(describeError(fallbackReason, reason instanceof Error ? reason.message : t('app.analyzeFailed')))
+        return false
       }
     } finally {
+      runningRef.current = false
       setBusy(false)
       setProgress(null)
       setJobId(null)
@@ -147,13 +165,22 @@ export function useAnalysisJob(options: UseAnalysisJobOptions): AnalysisJobState
 
   const analyze = useCallback(async (targetPath?: string) => {
     const target = (targetPath ?? solutionPath).trim()
-    if (!target) return
-    await runAnalysisJob(() => startAnalysisJob(target), target)
+    if (!target) return false
+    return await runAnalysisJob(() => startAnalysisJob(target), target)
   }, [solutionPath, runAnalysisJob])
 
   const cancelAnalysis = useCallback(async () => {
-    if (jobId) await cancelAnalysisJob(jobId)
-  }, [jobId])
+    if (!jobId || cancelingRef.current) return
+    cancelingRef.current = true
+    try {
+      await cancelAnalysisJob(jobId)
+      setToast(t('app.cancelRequested'))
+    } catch (reason) {
+      setError(describeError(reason, t('app.cancelFailed')))
+    } finally {
+      cancelingRef.current = false
+    }
+  }, [jobId, setToast, setError, describeError, t])
 
   /**
    * 분석 중에 새로고침하면 작업은 서버에서 계속 도는데 화면만 그 사실을 잊었다.
@@ -180,7 +207,7 @@ export function useAnalysisJob(options: UseAnalysisJobOptions): AnalysisJobState
   // 오래 걸리면 "기다리는 것 말고 할 수 있는 일"을 알려 준다.
   useEffect(() => {
     if (analysisStartedAt === null) return
-    const timer = window.setTimeout(() => setLongRunning(true), longRunningHintMs)
+    const timer = window.setTimeout(() => setLongRunning(true), Math.max(0, longRunningHintMs - (Date.now() - analysisStartedAt)))
     return () => window.clearTimeout(timer)
   }, [analysisStartedAt])
 

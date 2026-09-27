@@ -39,6 +39,15 @@ function themeBlockLines(source: string): Set<number> {
 }
 
 describe('테마', () => {
+  it('강조 버튼과 활성 탭의 글자는 두 테마 모두 4.5 이상의 명암 대비를 갖는다', () => {
+    const rgb = (hex: string) => [0, 2, 4].map((offset) => parseInt(hex.slice(offset, offset + 2), 16))
+    for (const selector of [':root', '[data-theme="light"]']) {
+      const block = css.slice(css.indexOf(selector)).split('}')[0]
+      const foreground = rgb(/--ink-accent-1:\s*#([\da-f]{6})/i.exec(block)![1])
+      const background = rgb(/--accent:\s*#([\da-f]{6})/i.exec(block)![1])
+      expect(contrast(foreground, background)).toBeGreaterThanOrEqual(4.5)
+    }
+  })
   it('styles.css를 실제로 읽었다', () => {
     expect(css.length).toBeGreaterThan(1000)
   })
@@ -85,7 +94,8 @@ describe('테마', () => {
     for (const match of light.matchAll(/(--ink[a-z0-9-]*)\s*:\s*#([0-9a-fA-F]{6})/g)) {
       const [, name, value] = match
       // 버튼 위의 흰 글자처럼 일부러 밝은 것은 `--ink-15`(순백)뿐이다.
-      if (name === '--ink-15') continue
+      // 강조 배경 위의 글자는 위 테스트에서 실제 배경과 대비를 검사한다.
+      if (name === '--ink-15' || name === '--ink-accent-1') continue
       const rgb = [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16))
       if (contrast(rgb, [246, 248, 252]) < 4.5) tooLight.push(`${name}: #${value}`)
     }

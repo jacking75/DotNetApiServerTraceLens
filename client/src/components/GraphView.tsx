@@ -1,6 +1,6 @@
 import cytoscape from 'cytoscape'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { buildElements, buildStyle } from '../graph/cytoscapeStyle'
+import { buildElements, buildStyle, callFlowLayout } from '../graph/cytoscapeStyle'
 import type { EntryPoint, GraphNode, GraphWindow, NodeKind } from '../types/graph'
 import { kindColors } from './kindColors'
 import { clampZoom, ZoomControls } from './ZoomControls'
@@ -87,9 +87,8 @@ export function GraphView({
         edge: cssVariable('--canvas-edge', '#657086'),
         accent: cssVariable('--accent', '#8ddcff'),
       }, kindColors),
-      // 첫 분기까지의 흐름은 한 화면에서 읽는 것이 목적이다. 계층 간 간격을 촘촘히 두고
-      // 이후 fitCallFlow가 가로 여백만으로 노드를 과도하게 키우지 않게 한다.
-      layout: { name: 'breadthfirst', directed: true, spacingFactor: 0.5, padding: 20 },
+      // 상자 간격을 확보한 뒤 캔버스 크기에 맞춰 배율을 줄인다.
+      layout: callFlowLayout,
       // 맨 휠은 스크롤, Ctrl+휠이 줌이다. 세 캔버스에서 같게 맞춘다.
       userZoomingEnabled: false,
     })

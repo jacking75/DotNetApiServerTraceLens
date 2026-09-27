@@ -8,7 +8,7 @@ interface SnapshotDiffPanelProps {
   snapshotId: string
   analyzing: boolean
   /** 비교 전에 사용자가 명시적으로 실행하는 재분석. 자동으로 부르지 않는다. */
-  onReanalyze: () => Promise<void>
+  onReanalyze: () => Promise<boolean>
   onClose: () => void
 }
 
@@ -72,8 +72,12 @@ export function SnapshotDiffPanel({ snapshotId, analyzing, onReanalyze, onClose 
     setBusy(true)
     setError(null)
     setMessage(null)
+    setDiff(null)
     try {
-      await onReanalyze()
+      if (!await onReanalyze()) {
+        setError(t('diff.analysisIncomplete'))
+        return
+      }
       setDiff(await compareSnapshots(baselineId))
     } catch (reason) {
       setError(describe(reason, 'diff.failed'))

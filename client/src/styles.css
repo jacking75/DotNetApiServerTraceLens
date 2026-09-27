@@ -1017,14 +1017,21 @@ table.findings .conf { color: var(--ink-13); font-size: calc(10.5px * var(--fs-s
 .scope-not-read { color: var(--dim-2); }
 
 /* T38 — 통합 찾기(Ctrl+K) */
-.quick-find { width: min(620px, 92vw); max-height: 70vh; }
+.quick-find { width: min(680px, 92vw); max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
+.quick-find-heading, .quick-find-tools, .entry-feedback { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.quick-find-heading { margin-bottom: 12px; }
+.quick-find-heading h2 { margin: 0; font-size: calc(16px * var(--fs-scale)); }
+.quick-find-tools { margin-bottom: 8px; flex-wrap: wrap; }
+.quick-find > input, .quick-find-heading, .quick-find-tools { flex-shrink: 0; }
+.quick-find-results { overflow-y: auto; min-height: 0; margin-top: 8px; }
+.entry-feedback { padding: 6px 8px; flex-wrap: wrap; }
 .quick-find input { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
 .find-row {
   display: flex; gap: 10px; align-items: baseline; width: 100%; text-align: left;
   background: transparent; border: 0; border-radius: 7px; padding: 5px 8px; color: var(--text); font-size: calc(12.5px * var(--fs-scale));
 }
-.find-row:hover, .find-row.selected { background: var(--surface-accent-26); }
-.find-row .grow { flex: 1; }
+.find-row:hover, .find-row:focus { background: var(--surface-accent-26); }
+.find-row .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .find-row .hint { flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
 
 /* T38 — 진입점 목록의 컨트롤러 그룹 접기 */
@@ -1091,7 +1098,7 @@ table.findings .conf { color: var(--ink-13); font-size: calc(10.5px * var(--fs-s
   --ink-7: #606f86;
   --ink-8: #5f7186;
   --ink-9: #5c6b80;
-  --ink-accent-1: #346fb1;
+  --ink-accent-1: #ffffff;
   --ink-accent-10: #516886;
   --ink-accent-11: #546880;
   --ink-accent-12: #495a70;

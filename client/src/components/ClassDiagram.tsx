@@ -128,7 +128,7 @@ export function ClassDiagram({
               showMethods={options.showMethods}
               selected={selectedClassId === graphClass.id ||
                 (highlightNamespace != null && graphClass.namespace === highlightNamespace)}
-              dimmed={selectedClassId != null && !related.has(graphClass.id)}
+              dimmed={selectedClassId != null && view.boxes.has(selectedClassId) && !related.has(graphClass.id)}
               selectedMemberKey={selectedMemberKey}
               onSelectClass={onSelectClass}
               onSelectMember={onSelectMember}

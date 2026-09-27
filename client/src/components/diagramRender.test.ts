@@ -123,6 +123,11 @@ const renderClassDiagram = (overrides: Partial<ClassDiagramOptions> = {}, select
   })))
 }
 
+it('다이어그램에 없는 클래스의 메서드를 선택해도 모든 박스를 흐리게 하지 않는다', () => {
+  expect(renderClassDiagram({}, 'Program')).not.toContain(' dim')
+  expect(renderClassDiagram({}, 'App.Core.Lonely')).toContain(' dim')
+})
+
 describe('클래스 다이어그램 렌더', () => {
   it('UML 박스와 관계 선을 그린다', () => {
     const markup = renderClassDiagram()

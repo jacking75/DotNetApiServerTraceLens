@@ -6,6 +6,16 @@
  * 심볼·라우트·코드·파일 경로는 번역하지 않는다(그대로 보여 준다).
  */
 export const ko = {
+  'search.clear': '검색 초기화',
+  'side.entryCount': '전체 {total}개 중 {shown}개 표시',
+  'side.noMatches': '현재 검색·숨김 조건에 맞는 진입점이 없다. 검색어를 지우거나 숨긴 API를 표시하면 목록을 넓힐 수 있다.',
+  'side.selectionHidden': '현재 선택한 진입점이 검색·숨김 조건에 가려져 있다.',
+  'side.revealSelection': '현재 선택 표시',
+  'find.count': '검색 결과 {count}개',
+  'app.cancelRequested': '분석 취소를 요청했다. 작업이 멈출 때까지 기다린다.',
+  'app.analysisInterrupted': '분석 완료를 확인하기 전에 연결이 끊겼다. 서버 연결을 확인하고 새로고침하면 진행 중인 작업에 다시 연결한다.',
+  'app.cancelFailed': '분석 취소 요청에 실패했다. 서버 연결을 확인한 뒤 다시 시도한다.',
+  'diff.analysisIncomplete': '재분석이 완료되지 않아 비교를 중단했다. 분석 오류를 해결하거나 취소한 분석을 다시 실행한 뒤 비교한다.',
   'lang.ko': '한국어',
   'lang.en': 'English',
   'lang.label': '언어',

@@ -6,6 +6,16 @@ import type { Dictionary } from './ko'
  * Symbols, routes, code and file paths are never translated.
  */
 export const en: Dictionary = {
+  'search.clear': 'Clear search',
+  'side.entryCount': 'Showing {shown} of {total}',
+  'side.noMatches': 'No entry points match the current search and visibility filters. Clear the search or show hidden APIs to see more.',
+  'side.selectionHidden': 'The selected entry point is hidden by the search or visibility filters.',
+  'side.revealSelection': 'Reveal selection',
+  'find.count': '{count} search results',
+  'app.cancelRequested': 'Cancellation requested. Waiting for the analysis to stop.',
+  'app.analysisInterrupted': 'The connection ended before analysis completion was confirmed. Check the server connection and reload to reconnect to a running job.',
+  'app.cancelFailed': 'Could not request cancellation. Check the server connection and try again.',
+  'diff.analysisIncomplete': 'Comparison stopped because analysis did not finish. Resolve the analysis error or rerun the canceled analysis, then compare again.',
   'lang.ko': '한국어',
   'lang.en': 'English',
   'lang.label': 'Language',
