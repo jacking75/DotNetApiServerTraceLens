@@ -43,9 +43,42 @@ cache locations, and the relationship to the existing CLI.
 4) after the AI edits code → "Re-analyze and compare"          # see what actually changed
 ```
 
-![TraceLens Call Flow view analyzing a real ASP.NET Core service, with the detail panel showing call evidence for each edge](docs/screenshots/callflow.jpg)
+![TraceLens call flow view of the sample OrderApi: the POST /api/Orders entry point expanded into its services and repositories, with source code and call evidence on the right](docs/screenshots/en/callflow-1600x950.png)
 
-*Analyzing a real multi-controller service (41 entry points, 564 classes, 732 methods) — not a toy example. The detail panel on the right shows, for every edge, why it exists: direct call, resolved via DI registration, or an estimated single-implementation guess. More screens in [docs/manual.html](docs/manual.html).*
+*The bundled sample (`samples/OrderApi`): pick `POST /Orders`, see the path down to the repositories, and read the code and the reason behind each edge on the right. Every edge says why it exists — direct call, resolved via DI registration, or an estimated single-implementation guess. More in the [manual](docs/manual.html).*
+
+---
+
+## At a glance
+
+```mermaid
+flowchart LR
+    A["Your solution<br/>.sln / .csproj"] -->|"tracelens analyze<br/>(Roslyn, static)"| B[".tracelens/graph.json<br/>nodes · edges · evidence"]
+    B --> C["Local UI<br/>127.0.0.1:25011<br/>6 views"]
+    B --> D["MCP server<br/>(local stdio)"]
+    C -->|"copy context"| E["AI coding agent<br/>Claude Code · Codex · ..."]
+    D -->|"get_context · get_impact"| E
+    E -->|"edits code"| A
+    A -.->|"re-analyze + compare"| F["What actually changed<br/>endpoints · edges · findings"]
+```
+
+```mermaid
+flowchart TD
+    R["HTTP request"] --> M1["Middleware 1"] --> M2["Middleware 2<br/>(may short-circuit)"] --> EP["Entry point<br/>controller action / Minimal API"]
+    EP --> SVC["Service"] -->|"interface call<br/>resolved via DI registration"| IMPL["Implementation"] --> REPO["Repository"] --> DB[("DB / cache")]
+```
+
+Every arrow in the second diagram is something TraceLens draws for you **with the file and line it came from**.
+The icons below are the six views, one per question you ask while reading an unfamiliar API.
+
+| You ask | View |
+|---|---|
+| "What does this endpoint call?" | **Call flow** |
+| "How is this solution shaped?" | **Class diagram** |
+| "Which endpoints share which classes?" | **Flow map** |
+| "What gets registered before the API starts?" | **Startup flow** |
+| "What is left behind if step 2 fails?" | **Data & cache** |
+| "What does a request pass through, and where can it stop?" | **Middleware** |
 
 ---
 
@@ -139,6 +172,8 @@ on the right stays put. All three panes are resizable (double-click a divider to
 
 #### Call flow — one entry point, step by step
 
+![Call flow view of the sample OrderApi: POST /api/Orders expanded into the services and repositories it calls](docs/screenshots/en/callflow-1600x950.png)
+
 Pick a route on the left. It draws from that entry point to the nearest branch point, and clicking a
 node marked `⊕` expands **two hops** from it — not one, because one hop usually reveals a single
 pass-through method and makes you click again. A window holds at most **120 nodes**; anything beyond
@@ -149,6 +184,8 @@ The detail panel shows the selected method's signature, accessibility, declaring
 direct callers and callees — and the **call evidence** behind each of those edges.
 
 #### Class diagram — the whole solution as UML
+
+![Class diagram view: the 23 classes of the sample solution as UML](docs/screenshots/en/classmap-1600x950.png)
 
 Every type is a UML box (name / fields / methods). The default layout is **tree**: types are placed
 in layers following relationship direction, edges that skip layers are routed through waypoints, and
@@ -171,6 +208,8 @@ members collapsed, dependency off and zoom-to-fit, and tells you to narrow the s
 
 #### Flow map — from an entry-point map to the full path
 
+![Flow map view: 8 entry points and the class flow beneath them](docs/screenshots/en/flowmap-1600x950.png)
+
 The default screen is a class-level map with controller boxes and their routes as rows. Click a route
 row and you drop into that entry point's **full, method-level path**, with a breadcrumb back.
 
@@ -179,12 +218,16 @@ depth limit (2/3/4/all) show as `+n` on that row; recursive self-calls are marke
 
 #### Startup flow — Program.cs in the order it runs
 
+![Startup flow view: Program.cs registrations in source order](docs/screenshots/en/startup-1600x950.png)
+
 A two-track timeline built by reading Program.cs in source order: **service registrations** (which
 interface maps to which implementation, with Scoped/Singleton/Transient lifetime) and the
 **middleware/routing pipeline** (`app.UseXxx()` / `MapXxx()`). Extension methods defined in the
 solution (`AddFixtureServices()`) start collapsed and expand to show what they really register.
 
 #### Data & cache — what changes, in what order, what is left behind
+
+![Data and cache compensation view: a four-step write without a transaction and the failure grid](docs/screenshots/en/data-comp-1600x950.png)
 
 Storage access is read from SQL literals and cache calls, then presented as: per-entry-point
 execution path · class × table access map · transaction boundaries · findings.
@@ -214,6 +257,8 @@ removed from the list — it stays there as "off".
 
 #### Middleware — what a request passes through, and where it stops
 
+![Middleware view: the request pipeline with a short-circuit point](docs/screenshots/en/middleware-1600x950.png)
+
 Lays out `app.UseXxx()` registration order as-is. For middleware defined in the solution it opens the
 `InvokeAsync` body and splits it into **on-request** and **on-response** halves around the `_next`
 call. Branches that return without calling `_next` are flagged as short-circuit points with their
@@ -224,6 +269,8 @@ actually runs.
 ---
 
 ### AI context — the part that makes an agent useful
+
+![The Ask panel under the detail column: copy context, run with Claude Code, or open in the editor](docs/screenshots/en/ask-1600x1300.png)
 
 Select anything (entry point, method, class, namespace, finding, write path, middleware step) and the
 **Ask AI** panel builds a task context. It is assembled by deterministic rules — no LLM call is
@@ -446,8 +493,8 @@ starts the server. Open <http://127.0.0.1:25011>.
 
 Client checks are `cd client; npm test` (vitest) and `npm run build` (includes type checking).
 `npm run screenshots` attaches headless Chrome to a running server (<http://127.0.0.1:25011> by
-default) and captures the six views in both themes and two window sizes into `docs/screenshots/` —
-useful for eyeballing the light theme.
+default) and captures the views into `docs/screenshots/<theme>/` (or `--out <dir>`, with `--lang en|ko` and
+`--theme dark|light`) — this is how the README images were made from `samples/OrderApi`.
 `npm run profile` attaches the same way and counts React commits and `/api/*` requests for a
 splitter drag, an entry-point selection and typing a question (numbers go in the CHANGELOG).
 
@@ -582,6 +629,7 @@ policy.
 - [docs/mcp-setup.md](docs/mcp-setup.md) — registering the MCP server with Claude Code, Codex CLI, VS Code and Cursor
 - [docs/data-contract.md](docs/data-contract.md) — the `graph.json` schema (v7), the API and MCP contracts, error codes, migration rules
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to report a missed call, and what contributions are in scope
+- [SECURITY.md](SECURITY.md) — how to report a vulnerability
 - [CHANGELOG.md](CHANGELOG.md) — release notes (updated by hand) and known limitations
 - [CLAUDE.md](CLAUDE.md) — repository instructions and design constraints for AI coding agents
 

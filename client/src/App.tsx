@@ -488,7 +488,8 @@ export default function App() {
   const lastHashState = useRef<ReturnType<typeof parseUrlState> | null>(null)
 
   useEffect(() => {
-    if (!graph) return
+    // 복원 전에 쓰면 열려 있던 링크의 해시가 기본 화면으로 덮여, 링크로 연 화면이 호출 흐름으로 되돌아간다.
+    if (!graph || !restoredView) return
     if (restoringFromHistory.current) {
       restoringFromHistory.current = false
       return
@@ -514,7 +515,7 @@ export default function App() {
     if (structural) window.history.pushState(null, '', hash)
     else window.history.replaceState(null, '', hash)
   }, [
-    graph, viewMode, callFlowEntry, focusStack, selection, dataView.sub, middlewareView.sub,
+    graph, restoredView, viewMode, callFlowEntry, focusStack, selection, dataView.sub, middlewareView.sub,
     flowEntryId, depth, classMap, windowDirection,
   ])
 
@@ -705,7 +706,9 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       try {
-        await loadGraphData()
+        const restored = await loadGraphData()
+        // `serve --target`처럼 서버가 분석 결과를 먼저 들고 있으면 저장된 경로가 없어 입력란이 비어 있다. 그래프의 경로로 채운다.
+        setSolutionPath((current) => (current.trim() ? current : restored.solutionPath))
         return
       } catch {
         // GraphStore가 비어 있다. 아래에서 저장된 파일을 찾아본다.

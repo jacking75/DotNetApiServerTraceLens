@@ -30,9 +30,11 @@ const chromeCandidates = [
   '/usr/bin/chromium',
 ]
 
+
 /** 여섯 보기 + 대화상자. 해시로 열 수 있는 것은 해시로 연다(T45가 그것을 가능하게 했다). */
 const shots = [
-  { name: 'callflow', hash: '#view=callflow' },
+  { name: 'callflow', hash: '#view=callflow', pickEntry: true },
+  { name: 'ask', hash: '#view=callflow', pickEntry: true, tab: 'ask', height: 1300 },
   { name: 'classmap', hash: '#view=classmap' },
   { name: 'flowmap', hash: '#view=flowmap' },
   { name: 'startup', hash: '#view=startup' },
@@ -42,8 +44,34 @@ const shots = [
   { name: 'middleware', hash: '#view=middleware&sub=pipe' },
 ]
 
+/** 진입점 목록에서 `POST /Orders`(컨트롤러 라우트)를 눌러 호출 흐름을 연다. 해시의 entry 값은 분석 때마다 달라질 수 있어 화면에서 고른다. */
+async function pickSampleEntry(page) {
+  const clicked = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('button, li, [role="option"], [role="button"]')]
+    const row = rows.find((element) => /^POST\s*\/Orders$/.test((element.textContent ?? '').trim()))
+    if (!row) return false
+    row.click()
+    return true
+  })
+  if (!clicked) console.error('진입점 POST /Orders를 목록에서 찾지 못했다.')
+  await new Promise((done) => setTimeout(done, 1500))
+}
+
+/** 오른쪽 패널의 탭(`ask`·`impact`)을 연다. 라벨은 언어마다 달라 i18n 사전의 두 언어 값을 모두 허용한다. */
+async function openRightTab(page, tab) {
+  const labels = tabLabels[tab]
+  await page.evaluate((names) => {
+    const target = [...document.querySelectorAll('button, [role="tab"]')]
+      .find((element) => names.includes((element.textContent ?? '').trim()))
+    target?.click()
+  }, labels)
+  await new Promise((done) => setTimeout(done, 800))
+}
+
+const tabLabels = { detail: ['Details', '상세'], ask: ['Ask', 'AI에게 질문', '질문'], impact: ['Impact', '영향', '변경 영향'] }
+
 function parseArguments(argv) {
-  const options = { theme: 'dark', port: 25099, width: 1600, height: 950, chrome: '' }
+  const options = { theme: 'dark', port: 25099, width: 1600, height: 950, chrome: '', lang: '', out: '' }
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index]
     if (!key.startsWith('--')) continue
@@ -53,6 +81,8 @@ function parseArguments(argv) {
     if (key === '--width') options.width = Number(value)
     if (key === '--height') options.height = Number(value)
     if (key === '--chrome') options.chrome = value
+    if (key === '--lang') options.lang = value
+    if (key === '--out') options.out = value
   }
 
   return options
@@ -67,7 +97,7 @@ async function main() {
     return
   }
 
-  const outputDirectory = resolve(repoRoot, 'docs', 'screenshots', options.theme)
+  const outputDirectory = options.out ? resolve(options.out) : resolve(repoRoot, 'docs', 'screenshots', options.theme)
   mkdirSync(outputDirectory, { recursive: true })
 
   const browser = await puppeteer.launch({
@@ -86,14 +116,24 @@ async function main() {
     await page.evaluate((theme) => {
       const raw = window.localStorage.getItem('tracelens.view')
       const state = raw ? JSON.parse(raw) : {}
-      window.localStorage.setItem('tracelens.view', JSON.stringify({ ...state, theme }))
+      window.localStorage.setItem('tracelens.view', JSON.stringify({ ...state, theme, guide: { seen: true, completed: [] } }))
     }, options.theme)
+    if (options.lang) {
+      await page.evaluate((lang) => window.localStorage.setItem('tracelens.lang', lang), options.lang)
+    }
+    // 저장값은 첫 로드 때만 읽는다. 다시 불러와야 테마·언어·안내 닫힘이 적용된다.
+    await page.reload({ waitUntil: 'domcontentloaded' })
 
     for (const shot of shots) {
-      await page.goto(`${base}${shot.hash}`, { waitUntil: 'networkidle2' })
+      await page.goto('about:blank')
+      await page.goto(`${base}${typeof shot.hash === 'function' ? shot.hash() : shot.hash}`, { waitUntil: 'networkidle2' })
+      if (shot.pickEntry) await pickSampleEntry(page)
+      // 오른쪽 탭은 저장되므로 앞 화면의 탭이 다음 화면으로 새지 않게 매번 정한다.
+      await page.setViewport({ width: options.width, height: shot.height ?? options.height })
+      await openRightTab(page, shot.tab ?? 'detail')
       // 캔버스 배치가 끝나기를 기다린다. 고정 대기 대신 한 프레임 뒤를 본다.
       await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))))
-      const file = resolve(outputDirectory, `${shot.name}-${options.width}x${options.height}.png`)
+      const file = resolve(outputDirectory, `${shot.name}-${options.width}x${shot.height ?? options.height}.png`)
       await page.screenshot({ path: file })
       console.log(file)
     }

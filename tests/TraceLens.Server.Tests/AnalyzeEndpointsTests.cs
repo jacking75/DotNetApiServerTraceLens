@@ -89,8 +89,8 @@ public sealed class AnalyzeEndpointsTests
     {
         // 분석기는 참조 프로젝트까지 담는 공통 상위 폴더에 결과를 쓴다. 복원은 대상 폴더만 보면 안 된다.
         var rootDirectory = Path.Combine(Path.GetTempPath(), "tracelens-load-ancestor-" + Guid.NewGuid().ToString("N"));
-        var projectDirectory = Path.Combine(rootDirectory, "GameServer");
-        var projectPath = Path.Combine(projectDirectory, "GameServer.csproj");
+        var projectDirectory = Path.Combine(rootDirectory, "SampleApi");
+        var projectPath = Path.Combine(projectDirectory, "SampleApi.csproj");
         Directory.CreateDirectory(projectDirectory);
         Directory.CreateDirectory(Path.Combine(rootDirectory, ".tracelens"));
         try
@@ -122,8 +122,8 @@ public sealed class AnalyzeEndpointsTests
     public async Task LoadSavedAsync_IgnoresAncestorGraphOfAnotherTarget()
     {
         var rootDirectory = Path.Combine(Path.GetTempPath(), "tracelens-load-other-" + Guid.NewGuid().ToString("N"));
-        var projectDirectory = Path.Combine(rootDirectory, "GameServer");
-        var projectPath = Path.Combine(projectDirectory, "GameServer.csproj");
+        var projectDirectory = Path.Combine(rootDirectory, "SampleApi");
+        var projectPath = Path.Combine(projectDirectory, "SampleApi.csproj");
         Directory.CreateDirectory(projectDirectory);
         Directory.CreateDirectory(Path.Combine(rootDirectory, ".tracelens"));
         try

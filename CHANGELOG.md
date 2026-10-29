@@ -2,9 +2,20 @@
 
 수동으로 갱신한다. 실제로 확인한 것만 적고, 확인하지 않은 지원 범위는 넣지 않는다.
 
+## 공개 준비 (2026-10-30)
+
+- **빌드 복구**: `System.Security.Cryptography.Xml`·`Pkcs` 10.0.12에 알려진 취약성 권고(NU1902/NU1903)가 생겨,
+  `TreatWarningsAsErrors` 때문에 새로 클론하면 `dotnet build`가 실패했다. 두 패키지를 10.0.14로 올렸다.
+- **링크로 연 화면이 호출 흐름으로 되돌아가는 버그 수정**: 그래프가 처음 도착할 때 해시를 쓰는 효과가 복원 효과보다 먼저 돌아
+  `#view=classmap` 같은 링크의 해시를 기본 화면으로 덮어썼다. 복원이 끝난 뒤에만 해시를 쓴다.
+- `serve --target`처럼 서버가 분석 결과를 먼저 들고 있을 때 대상 경로 입력란이 비어 있던 문제를 고쳤다.
+- 파비콘이 없어 브라우저 콘솔에 404가 남던 문제를 고쳤다.
+- 문서의 스크린샷을 `samples/OrderApi` 기준(영어·한국어)으로 모두 교체했다. 앱 스크린샷 스크립트는 `--lang`·`--out`을 받고
+  첫 사용 안내를 닫은 상태로 찍는다. 저장소에서 점검 문서·작업 일지·일회성 도구를 삭제했다.
+
 ## 사용성 점검과 개선 (2026-09-27)
 
-상세 근거와 검증 범위는 [UX 점검 문서](docs/ux-review-2026-09_kr.md)에 정리했다.
+
 
 - 진입점 검색에 표시 건수·검색 초기화·가려진 현재 선택 복구를 추가했다. 검색창의 편집 키가 목록으로 포커스를 옮기지 않는다.
 - 통합 찾기에 닫기 버튼과 결과 수를 추가하고, 방향키·Enter가 실제 포커스한 결과를 열도록 수정했다. 최근 항목은 현재 이름으로 표시하고 삭제된 항목은 제외한다.
@@ -16,7 +27,7 @@
 
 ## 0.9.0 (Unreleased) — 매일 쓰는 개발자 기준 3차 (schema v7, 부가 필드만)
 
-[docs/next-tasks-3_kr.md](docs/next-tasks-3_kr.md)의 T43~T72를 구현했다.
+`docs/next-tasks-3_kr.md`(저장소에서 삭제됨)의 T43~T72를 구현했다.
 기준은 "매일 분석하는 개발자가 둘째 주에도 계속 쓰겠는가"다.
 
 ### 성능 — 측정값
@@ -80,7 +91,7 @@ CSS 변수에서 읽은 `#rrggbbaa`(번들러가 `rgba()`를 이렇게 줄인다
 
 ## 0.9.0 (Unreleased) — 신입 사용성 2차 (schema v7, 부가 필드만)
 
-[docs/next-tasks-2_kr.md](docs/next-tasks-2_kr.md)의 T20~T42를 모두 구현했다.
+`docs/next-tasks-2_kr.md`(저장소에서 삭제됨)의 T20~T42를 모두 구현했다.
 기준은 "신입 개발자가 혼자 설치하고, 분석하고, 결과를 읽고, AI 에이전트에게 도움을 받을 수 있는가"다.
 스키마 번호는 올리지 않았다 — 아래 필드는 모두 **추가 필드**이고 옛 그래프는 빈 값으로 읽는다.
 
@@ -169,7 +180,7 @@ CSS 변수에서 읽은 `#rrggbbaa`(번들러가 `rgba()`를 이렇게 줄인다
 버전은 `Directory.Build.props`의 `<Version>` 한 곳에서 바꾼다(`pack.ps1 -Version`이 덮어쓴다).
 이 값이 `graph.json`의 `analyzerVersion`과 스냅샷 비교 전제 조건에 그대로 들어간다.
 
-[docs/next-tasks_kr.md](docs/next-tasks_kr.md)의 태스크를 구현했다.
+`docs/next-tasks_kr.md`(저장소에서 삭제됨)의 태스크를 구현했다.
 실제 사내 프로젝트(ASP.NET Core, SqlKata + CloudStructures) 1개를 기준선으로 전후를 측정했다.
 
 ### 바뀐 동작 (이전 그래프와 수치가 달라진다)
@@ -269,7 +280,7 @@ CSS 변수에서 읽은 `#rrggbbaa`(번들러가 `rgba()`를 이렇게 줄인다
 
 ## Unreleased — 보급·바이브 코딩 개선 (schema v7)
 
-[docs/adoption-and-vibe-coding-roadmap_kr.md](docs/adoption-and-vibe-coding-roadmap_kr.md)의 A~I를 구현했다.
+`docs/adoption-and-vibe-coding-roadmap_kr.md`(저장소에서 삭제됨)의 A~I를 구현했다.
 
 ### 추가
 
